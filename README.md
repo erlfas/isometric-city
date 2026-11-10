@@ -92,7 +92,7 @@ npm run preview
 
 ## Procedural Asset Pipeline (Blender CLI)
 
-To procedurally compile all 13 low-poly GLB models from source recipes:
+To procedurally compile all 31 low-poly GLB models from source recipes:
 
 ```bash
 # Using local or portable Blender installation:
@@ -100,17 +100,11 @@ blender --background --python build_assets.py
 ```
 
 The script automatically generates and saves the models into `public/models/`:
-- `town_hall.glb`
-- `szmatruz.glb`
-- `market_stall_red_white.glb`, `market_stall_blue_white.glb`, `market_stall_yellow_white.glb`
-- `market_cart.glb`
-- `town_well.glb`
-- `house_timber_log.glb`
-- `house_half_timber.glb`
-- `house_patrician_brick.glb`
-- `curtain_wall.glb`
-- `curtain_tower.glb`
-- `tree_oak.glb`
+- **Civic & Defenses:** `town_hall.glb`, `szmatruz.glb`, `town_well.glb`, `curtain_wall.glb`, `curtain_tower.glb`, `tree_oak.glb`
+- **Market Fair:** `market_stall_red_white.glb`, `market_stall_blue_white.glb`, `market_stall_yellow_white.glb`, `market_cart.glb`
+- **Vernacular Residential:** `house_timber_log.glb`, `house_half_timber.glb`, `house_patrician_brick.glb`
+- **Artisan Workshops & Mills:** `baker_house.glb`, `tanner_workshop.glb`, `brewer_malthouse.glb`, `blacksmith_workshop.glb`, `potter_workshop.glb`, `weaver_workshop.glb`, `watermill.glb`
+- **Artisan Workers & Citizens:** `worker_baker.glb`, `worker_tanner.glb`, `worker_brewer.glb`, `worker_blacksmith.glb`, `worker_potter.glb`, `worker_weaver.glb`, `worker_miller.glb`, `worker_guard.glb`, `worker_merchant.glb`, `worker_monk.glb`
 
 ---
 
@@ -132,8 +126,11 @@ The script automatically generates and saves the models into `public/models/`:
 
 ## Documentation & Specialized Skills
 
-- [`KEY_FINDINGS.md`](KEY_FINDINGS.md): Detailed post-mortem report covering WebGL face culling pitfalls, shadow bias configuration, and Blender material RNA retention.
-- [`ARCHITECTURE.md`](ARCHITECTURE.md): Comprehensive system specification and Lublin 1392 urban morphology.
+- [`docs/IMAGE_GENERATION_PROMPTS_AND_GALLERY.md`](docs/IMAGE_GENERATION_PROMPTS_AND_GALLERY.md): Visual asset gallery grouping all 2D concept art and workshop reference images with exact image generation prompts.
+- [`docs/PLAN_BUILDINGS_AND_WORKERS_IMPROVEMENT.md`](docs/PLAN_BUILDINGS_AND_WORKERS_IMPROVEMENT.md): Comprehensive architectural roadmap and improvement plan for differentiated artisan workshops and worker models.
+- [`KEY_FINDINGS.md`](KEY_FINDINGS.md): Detailed post-mortem report covering WebGL face culling pitfalls, shadow bias configuration, Blender material RNA retention, and artisan workshop morphology.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md): Comprehensive system specification, parcel generation, and Lublin 1392 urban morphology.
+- [`skills/procedural-model-creation-pipeline/SKILL.md`](skills/procedural-model-creation-pipeline/SKILL.md): Comprehensive procedural model authoring skill and workflow.
 - [`skills/blender-procedural-asset-pipeline/SKILL.md`](skills/blender-procedural-asset-pipeline/SKILL.md): Headless Blender procedural 3D authoring guide.
 - [`skills/webgl-isometric-simulation-testing/SKILL.md`](skills/webgl-isometric-simulation-testing/SKILL.md): Automated headless Chromium visual test harness.
 
