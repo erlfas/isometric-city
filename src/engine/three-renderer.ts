@@ -257,10 +257,25 @@ export class ThreeIsometricRenderer {
       'castle_donjon',
       'curtain_wall',
       'curtain_tower',
-      'tree_oak'
+      'tree_oak',
+      'house_baker',
+      'house_brewer',
+      'house_tanner',
+      'house_potter',
+      'house_weaver',
+      'blacksmith_workshop',
+      'watermill',
+      'windmill',
+      'stone_quarry',
+      'logging_camp',
+      'river_harbor',
+      'gate_krakow',
+      'gate_grodzka',
+      'monastery_cloister',
+      'archery_yard'
     ];
 
-    console.log('[ThreeRenderer] Loading 16 Blender-authored GLB assets...');
+    console.log('[ThreeRenderer] Loading 31 Blender-authored GLB assets...');
 
     for (const name of modelNames) {
       try {
@@ -322,12 +337,29 @@ export class ThreeIsometricRenderer {
       this.scene.add(church);
     }
 
-    // 5. Place Castle Donjon Keep on Castle Hill
+    // 5. Place Castle Donjon Keep & Archery Training Yard on Castle Hill
     const donjonTemplate = this.models.get('castle_donjon');
     if (donjonTemplate) {
       const donjon = donjonTemplate.clone();
       donjon.position.set(275, 2.5, 75);
       this.scene.add(donjon);
+    }
+
+    const archeryTemplate = this.models.get('archery_yard');
+    if (archeryTemplate) {
+      const yard = archeryTemplate.clone();
+      yard.position.set(245, 2.0, 95);
+      yard.rotation.y = Math.PI / 4;
+      this.scene.add(yard);
+    }
+
+    // 5b. Place Dominican Monastery & Cloister Garden in Friary Quarter
+    const cloisterTemplate = this.models.get('monastery_cloister');
+    if (cloisterTemplate) {
+      const cloister = cloisterTemplate.clone();
+      cloister.position.set(70, 0.5, -60);
+      cloister.rotation.y = 0;
+      this.scene.add(cloister);
     }
 
     // 6. Place Vibrant Royal Fair Market Stalls and Carts across Rynek
@@ -382,21 +414,33 @@ export class ThreeIsometricRenderer {
     // 7. Build Defensive Curtain Wall and Towers around Perimeter
     const wallTemplate = this.models.get('curtain_wall');
     const towerTemplate = this.models.get('curtain_tower');
+    const krakowGateTmpl = this.models.get('gate_krakow');
+    const grodzkaGateTmpl = this.models.get('gate_grodzka');
     const perimeter = plan.defense.perimeterPoints;
 
     for (let i = 0; i < perimeter.length; i++) {
       const p1 = perimeter[i];
       const p2 = perimeter[(i + 1) % perimeter.length];
 
-      // Add Tower
-      if (towerTemplate) {
+      // Add Dedicated Fortified Gate or Defense Tower
+      if (p1.id === 'gate_krakow' && krakowGateTmpl) {
+        const gate = krakowGateTmpl.clone();
+        gate.position.set(p1.x, 0, p1.z);
+        gate.rotation.y = Math.PI;
+        this.scene.add(gate);
+      } else if (p1.id === 'gate_grodzka' && grodzkaGateTmpl) {
+        const gate = grodzkaGateTmpl.clone();
+        gate.position.set(p1.x, 0, p1.z);
+        gate.rotation.y = 0;
+        this.scene.add(gate);
+      } else if (towerTemplate) {
         const tower = towerTemplate.clone();
         tower.position.set(p1.x, 0, p1.z);
         this.scene.add(tower);
       }
 
-      // Add Wall Segment
-      if (wallTemplate && p1.id !== 'gate_grodzka') {
+      // Add Wall Segment (leave openings for gates)
+      if (wallTemplate && p1.id !== 'gate_grodzka' && p1.id !== 'gate_krakow') {
         const midX = (p1.x + p2.x) * 0.5;
         const midZ = (p1.z + p2.z) * 0.5;
         const dx = p2.x - p1.x;
@@ -412,11 +456,22 @@ export class ThreeIsometricRenderer {
       }
     }
 
-    // 8. Populate 580 Parcels with Strictly Non-Overlapping Authentic Houses
+    // 8. Populate 580 Parcels with Distinct Authentic 3D Models
     const shedTmpl = this.models.get('shed_timber');
     const brickTmpl = this.models.get('house_patrician_brick');
     const halfTimberTmpl = this.models.get('house_half_timber');
     const logTmpl = this.models.get('house_timber_log');
+    const bakerTmpl = this.models.get('house_baker');
+    const brewerTmpl = this.models.get('house_brewer');
+    const tannerTmpl = this.models.get('house_tanner');
+    const potterTmpl = this.models.get('house_potter');
+    const weaverTmpl = this.models.get('house_weaver');
+    const smithTmpl = this.models.get('blacksmith_workshop');
+    const watermillTmpl = this.models.get('watermill');
+    const windmillTmpl = this.models.get('windmill');
+    const quarryTmpl = this.models.get('stone_quarry');
+    const loggingTmpl = this.models.get('logging_camp');
+    const harborTmpl = this.models.get('river_harbor');
 
     for (let i = 0; i < plan.parcels.length; i++) {
       const p = plan.parcels[i];
@@ -424,32 +479,53 @@ export class ThreeIsometricRenderer {
       let scaleX = 1.0;
       let scaleZ = 1.0;
 
+      const craftId = (p as any).craft?.id || '';
+      const bType = p.buildingType || '';
+
       if (p.isShed && shedTmpl) {
         tmpl = shedTmpl;
         scaleX = Math.min(1.05, Math.max(0.85, p.width / 5.2));
         scaleZ = Math.min(1.05, Math.max(0.85, p.depth / 6.2));
+      } else if (craftId === 'baker' || bType.includes('baker')) {
+        tmpl = bakerTmpl || halfTimberTmpl;
+      } else if (craftId === 'tanner' || bType.includes('tanner')) {
+        tmpl = tannerTmpl || logTmpl;
+      } else if (craftId === 'brewer' || bType.includes('brewer')) {
+        tmpl = brewerTmpl || brickTmpl;
+      } else if (craftId === 'blacksmith' || craftId === 'armorer' || bType.includes('blacksmith')) {
+        tmpl = smithTmpl || halfTimberTmpl;
+      } else if (craftId === 'potter' || bType.includes('potter')) {
+        tmpl = potterTmpl || logTmpl;
+      } else if (craftId === 'weaver' || craftId === 'tailor' || bType.includes('weaver')) {
+        tmpl = weaverTmpl || halfTimberTmpl;
+      } else if (bType.includes('watermill')) {
+        tmpl = watermillTmpl || logTmpl;
+      } else if (bType.includes('windmill')) {
+        tmpl = windmillTmpl || logTmpl;
+      } else if (bType.includes('quarry')) {
+        tmpl = quarryTmpl || brickTmpl;
+      } else if (bType.includes('sawmill') || bType.includes('logging')) {
+        tmpl = loggingTmpl || logTmpl;
+      } else if (bType.includes('harbor')) {
+        tmpl = harborTmpl || halfTimberTmpl;
+      } else if (p.district === 'market_square') {
+        tmpl = (i % 2 === 0 ? brickTmpl : halfTimberTmpl) || brickTmpl;
+      } else if (p.district === 'krakow_suburb') {
+        tmpl = (i % 2 === 0 ? logTmpl : halfTimberTmpl) || logTmpl;
+      } else if (bType.includes('patrician') || bType.includes('brick')) {
+        tmpl = brickTmpl;
+      } else if (bType.includes('log') || bType.includes('timber') || bType.includes('thatched') || bType.includes('loess')) {
+        tmpl = logTmpl;
       } else {
-        if (p.district === 'market_square') {
-          tmpl = (i % 2 === 0 ? brickTmpl : halfTimberTmpl) || brickTmpl;
-        } else if (p.district === 'krakow_suburb') {
-          tmpl = (i % 2 === 0 ? logTmpl : halfTimberTmpl) || logTmpl;
-        } else {
-          if (p.buildingType.includes('patrician') || p.buildingType.includes('brick')) {
-            tmpl = brickTmpl;
-          } else if (p.buildingType.includes('log') || p.buildingType.includes('timber')) {
-            tmpl = logTmpl;
-          } else {
-            tmpl = halfTimberTmpl;
-          }
-        }
-        if (!tmpl) tmpl = halfTimberTmpl || brickTmpl || logTmpl;
-        scaleX = Math.min(1.05, Math.max(0.85, p.width / 8.5));
-        scaleZ = Math.min(1.05, Math.max(0.85, p.depth / 12.0));
+        tmpl = halfTimberTmpl;
       }
+
+      if (!tmpl) tmpl = halfTimberTmpl || brickTmpl || logTmpl;
+      scaleX = Math.min(1.05, Math.max(0.85, p.width / 8.5));
+      scaleZ = Math.min(1.05, Math.max(0.85, p.depth / 12.0));
 
       if (tmpl) {
         const house = tmpl.clone();
-        // Exact collision-verified coordinates from city_plan.json
         house.position.set(p.x, p.elevation * 0.3, p.z);
         house.rotation.y = (p.orientation * Math.PI) / 180;
         house.scale.set(scaleX, 1.0, scaleZ);

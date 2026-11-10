@@ -26,9 +26,9 @@ async function bootstrap() {
 
   // Show loading indicator
   const tickerEl = document.getElementById('event-ticker-text');
-  if (tickerEl) tickerEl.textContent = 'Loading 13 Blender-compiled 3D GLB models into GPU memory...';
+  if (tickerEl) tickerEl.textContent = 'Loading 31 Blender-compiled 3D GLB models into GPU memory...';
 
-  // Load all 13 Blender-authored GLB assets
+  // Load all 31 Blender-authored GLB assets
   await threeRenderer.loadAllModels();
 
   // Populate city scene with Town Hall, Cloth Hall, Market Stalls, Curtain Walls, 580 Parcels, and Trees

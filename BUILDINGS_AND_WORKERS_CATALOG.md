@@ -215,43 +215,77 @@ All models bind to the unified 2048x2048 texture atlas through standard material
 
 #### 15. Baker's House & Masonry Oven (*Piekarnia*)
 - **ID:** `bldg_baker_house`
+- **Location:** Rynek or craft quarter street frontage (`(-40, 0, 15)`).
 - **Dimensions:** $7.5\text{m (W)} \times 10.5\text{m (D)} \times 7.8\text{m (H)}$.
-- **Architectural Motifs:** Half-timbered structure; white lime plaster infill; steep clay pantile roof; hanging guild sign: *Gilded Pretzel*.
-- **Exterior Workspace / Station:** Domed outdoor brick baking oven built into the side stone wall, covered by a timber lean-to; flour sacks stacked on pallets; split birch firewood cords.
-- **Associated Workers:** `worker_master_baker`.
+- **Stories:** 2 stories (ground floor bakery and retail window + upper residential quarters).
+- **Architectural Motifs:** Sturdy limestone plinth base; cream lime plaster and dark timber-frame upper story; high-pitched $52^\circ$ red clay pantile roof; front facade features an arched wooden customer window with fold-down display shelf for fresh sourdough loaves; hanging guild sign: *Gilded Pretzel on Forged Iron Scrollwork*.
+- **Exterior Workspace / Station (Flank Yard):** 
+  - **Outdoor Domed Bread Oven:** $3.2\text{m} \times 3.5\text{m}$ limestone foundation supporting a semi-spherical red-brick baking dome with arched stokehole emitting warm orange glow (`#ff6611`); $4.2\text{m}$ high soot-stained masonry chimney stack.
+  - **Timber Lean-To Canopy:** Open post-and-beam protective cedar shelter shielding the oven from rain.
+  - **Equipment & Props:** Long ash wood bread peel shovel leaning against wall; $1.8\text{m} \times 1.2\text{m}$ stacked cords of split birch firewood; 3 stacked burlap sacks of stone-ground rye and wheat flour (`#C7BD9C`).
+- **Associated Workers:** `worker_master_baker` (white linen tunic, canvas apron, holding bread peel shovel, sliding loaves into oven).
 - **Blender Generator:** `build_baker_house()` $\rightarrow$ `public/models/house_baker.glb`.
+- **Reference Image:** `reference_photos/baker_house.jpg`.
 
 #### 16. Brewer's Malthouse & Cask Yard (*Browar*)
 - **ID:** `bldg_brewer_malthouse`
+- **Location:** Artisan & Brewery Quarter (`(-85, 0, -35)`).
 - **Dimensions:** $9.5\text{m (W)} \times 14.0\text{m (D)} \times 9.2\text{m (H)}$.
-- **Architectural Motifs:** Sturdy brick ground floor; timber-frame upper story with louvers for malt ventilation; hanging guild sign: *Copper Mash Paddle & Tankard*.
-- **Exterior Workspace / Station:** Outdoor barrel-washing yard with wooden soak troughs, stacks of oak beer casks, cooper's hoop-driving bench, and malt drying platform.
-- **Associated Workers:** `worker_master_brewer`, `worker_cooper`.
+- **Stories:** 2 stories + ventilated drying attic.
+- **Architectural Motifs:** Massive Gothic red-brick ground floor ($0.6\text{m}$ walls) with arched wagon portal; timber-frame upper story fitted with horizontal wooden louvers (*żaluzje słodowe*) to vent warm moisture during barley germination and malt drying; weathered oak shingle roof; hanging guild sign: *Polished Copper Mash Paddle & Tankard*.
+- **Exterior Workspace / Station (Cask Yard):**
+  - **Barrel-Washing Station:** 2 heavy wooden soaking troughs ($3.6\text{m} \times 1.4\text{m}$) with oak spigots and stone drainage channel.
+  - **Pyramid Cask Stack:** 6 oak beer barrels with wrought iron hoops stacked in a 3-2-1 pyramid ($2.3\text{m}$ high).
+  - **Outdoor Tavern Hospitality:** 2 heavy oak trestle tables with matching benches where townsfolk gather to sample spiced ale and rye beer.
+  - **Coopering Bench:** Low oak shaving horse with curved drawknives and spare iron hoops.
+- **Associated Workers:** `worker_master_brewer` (leather bib apron, stirring boiling mash with copper paddle), `worker_cooper` (shaving staves on bench).
 - **Blender Generator:** `build_brewer_malthouse()` $\rightarrow$ `public/models/house_brewer.glb`.
+- **Reference Image:** `reference_photos/brewer_malthouse.jpg`.
 
 #### 17. Tanner's Riverside Workshop (*Garbarnia*)
 - **ID:** `bldg_tanner_workshop`
+- **Location:** Downstream Czechówka riverbank (`(120, 0, -85)`).
 - **Dimensions:** $8.0\text{m (W)} \times 12.5\text{m (D)} \times 7.5\text{m (H)}$.
-- **Architectural Motifs:** Open-sided timber drying galleries; thatched roof; hanging guild sign: *Stretched Ox Hide*.
-- **Exterior Workspace / Station:** 4 rectangular outdoor hide-soaking vats dug into the ground filled with tannin liquor; wooden frames holding stretched animal skins; fleshing beam trestles.
-- **Associated Workers:** `worker_master_tanner`.
+- **Stories:** 1.5 stories (low timber log ground workshop + open slatted hide-drying loft).
+- **Architectural Motifs:** Dark weathered pine timber logs with moss chinking; open-sided upper drying gallery allowing river breezes to cure hides without direct sunlight; sagging sun-bleached straw thatch roof with mossy eaves; hanging guild sign: *Stretched Tawny Ox Hide*.
+- **Exterior Workspace / Station (Tanning Yard):**
+  - **Sunken Tanning Vats:** 4 rectangular wooden vats ($2.4\text{m} \times 1.8\text{m}$) dug into the riverbank ground, filled with dark brown oak-bark tannin liquor (`#38291f`).
+  - **Vertical Hide Drying Frames:** 2 tall wooden timber trestle frames ($3.2\text{m}$ high) with rawhide thongs stretching cow and deer pelts to dry.
+  - **Fleshing Station:** Low tilted wooden fleshing beam (*stół kuśnierski*) with two-handled curved scraper knife for removing fat and hair.
+  - **Pelt Stacks:** Neatly bound stacks of salted raw skins and cured leather hides awaiting transport to cobblers.
+- **Associated Workers:** `worker_master_tanner` (waterproof oiled rawhide apron, scraping pelts on fleshing beam).
 - **Blender Generator:** `build_tanner_workshop()` $\rightarrow$ `public/models/house_tanner.glb`.
+- **Reference Image:** `reference_photos/tanner_workshop.jpg`.
 
 #### 18. Potter's Shed & Kiln Yard (*Garncarnia*)
 - **ID:** `bldg_potter_workshop`
+- **Location:** Clay loam terrace outside Kraków Gate (`(-125, 0, 45)`).
 - **Dimensions:** $7.2\text{m (W)} \times 9.8\text{m (D)} \times 6.8\text{m (H)}$.
-- **Architectural Motifs:** Wattle-and-daub walls; weathered thatch roof; hanging guild sign: *Glazed Clay Amphora*.
-- **Exterior Workspace / Station:** Domed red-brick updraft pottery kiln with arched stokehole; outdoor potter's kick-wheel table; drying shelves lined with clay jugs, bowls, and roofing tiles.
-- **Associated Workers:** `worker_master_potter`.
+- **Stories:** 1 story + thatched attic.
+- **Architectural Motifs:** Rustic wattle-and-daub cottage with cream loam plaster and exposed corner posts; steep weathered thatch roof; hanging guild sign: *Terracotta Glazed Amphora*.
+- **Exterior Workspace / Station (Kiln Yard):**
+  - **Domed Updraft Pottery Kiln:** Circular red-brick firing kiln ($2.8\text{m}$ diameter, $3.2\text{m}$ high) with stone base, arched stokehole glowing with orange firing embers (`#ff5500`), and tall square stone flue chimney ($4.0\text{m}$ high) emitting faint heat haze.
+  - **Potter's Kick-Wheel Table:** Outdoor wooden potting bench with foot-operated flywheel, water pot, and wooden shaping ribs.
+  - **Tiered Drying Racks:** 3-tier open timber shelving unit ($3.6\text{m}$ long) displaying rows of terracotta clay jugs, amphorae, cooking pots, and scalloped roof ridge tiles.
+  - **Clay Staging:** Mounds of grey river clay wrapped in damp burlap beside split pine firewood stacks.
+- **Associated Workers:** `worker_master_potter` (clay-stained smock, throwing pots on kick-wheel).
 - **Blender Generator:** `build_potter_workshop()` $\rightarrow$ `public/models/house_potter.glb`.
+- **Reference Image:** `reference_photos/potter_workshop.jpg`.
 
 #### 19. Weaver's Half-Timber Workshop (*Warsztat Tkacki*)
 - **ID:** `bldg_weaver_workshop`
+- **Location:** Bramowa textile quarter (`(-30, 0, -45)`).
 - **Dimensions:** $8.0\text{m (W)} \times 11.0\text{m (D)} \times 8.2\text{m (H)}$.
-- **Architectural Motifs:** Half-timbered structure with diagonal St. Andrew's cross braces; dormer attic with goods hoist; hanging guild sign: *Weaving Shuttle & Spindle*.
-- **Exterior Workspace / Station:** Outdoor timber yarn-stretching racks; wooden dye vats with linen cloth drying on horizontal poles.
-- **Associated Workers:** `worker_master_weaver`.
+- **Stories:** 2 stories + high attic loom loft.
+- **Architectural Motifs:** Elaborate half-timbered facade with diagonal St. Andrew's cross braces (*krzyże św. Andrzeja*) and white lime plaster daub; high $52^\circ$ red tile gable roof; projecting attic dormer with wooden hoist beam, rope pulley, and burlap wool bale; hanging guild sign: *Carved Weaving Shuttle & Spindle*.
+- **Exterior Workspace / Station (Clothiers & Dye Yard):**
+  - **Circular Stone Dyeing Vats:** 2 masonry dye cauldrons ($1.8\text{m}$ diameter) set in limestone rims, filled with steaming liquid dyes (one deep indigo blue `#2e4085`, one rich madder scarlet `#962828`).
+  - **Drying Rail Framework:** Long horizontal oak poles ($4.8\text{m}$ long) where vibrant dyed lengths of wool and linen broadcloth hang waving in the breeze.
+  - **Yarn Warping Frame:** Outdoor vertical wooden peg frame for measuring and winding warp threads.
+  - **Clothier's Handcart:** Wooden two-wheeled cart loaded with rolled bolts of finished woven broadcloth.
+- **Associated Workers:** `worker_master_weaver` (burgher cotte, holding polished shuttle, inspecting dyed cloth).
 - **Blender Generator:** `build_weaver_workshop()` $\rightarrow$ `public/models/house_weaver.glb`.
+- **Reference Image:** `reference_photos/weaver_workshop.jpg`.
 
 ---
 
