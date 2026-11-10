@@ -621,6 +621,164 @@ def build_tree_oak(mats):
     export_object(obj, "tree_oak")
 
 # -------------------------------------------------------------
+# 11. Timber Outbuilding / Backyard Shed (Szopa ciesielska)
+# -------------------------------------------------------------
+def build_shed_timber(mats):
+    clear_scene()
+    bm = bmesh.new()
+
+    mat_list = [
+        mats["timber_dark"], mats["timber_plank"], mats["roof_shingle"],
+        mats["stone_limestone"]
+    ]
+
+    # Limestone plinth: 5.2m wide x 6.2m deep x 0.4m high
+    add_box(bm, 0, 0, 0.2, 5.2, 6.2, 0.4, mat_idx=3)
+    # Timber plank walls: 4.8m x 5.8m x 2.8m high
+    add_box(bm, 0, 0, 1.8, 4.8, 5.8, 2.8, mat_idx=1)
+    # Corner posts
+    for cx in [-2.45, 2.45]:
+        for cy in [-2.95, 2.95]:
+            add_box(bm, cx, cy, 1.8, 0.35, 0.35, 2.8, mat_idx=0)
+    # Front wooden plank door
+    add_box(bm, 0, -2.95, 1.2, 1.2, 0.1, 2.0, mat_idx=0)
+    # Side lean-to firewood stack
+    add_box(bm, 2.7, 0, 0.8, 0.6, 3.2, 1.2, mat_idx=0)
+
+    # Pitched shingle roof
+    add_sloped_roof(bm, 0, 0, 3.2, 4.8, 5.8, 2.4, overhang=0.35, mat_idx=2)
+
+    bm.normal_update()
+    mesh = bpy.data.meshes.new("Mesh_ShedTimber")
+    bm.to_mesh(mesh)
+    bm.free()
+    for m in mat_list: mesh.materials.append(m)
+    obj = bpy.data.objects.new("ShedTimber", mesh)
+    bpy.context.collection.objects.link(obj)
+    export_object(obj, "shed_timber")
+
+# -------------------------------------------------------------
+# 12. Collegiate Parish Church (Kościół św. Michała - Fara)
+# -------------------------------------------------------------
+def build_church_gothic(mats):
+    clear_scene()
+    bm = bmesh.new()
+
+    mat_list = [
+        mats["brick_gothic"], mats["plaster_white"], mats["roof_tile_red"],
+        mats["stone_limestone"], mats["copper_patina"]
+    ]
+
+    # Main Gothic Nave: 16m wide x 30m long x 14m wall height
+    add_box(bm, 0, 0, 7.0, 16.0, 30.0, 14.0, mat_idx=0)
+
+    # Stepped Gothic Buttresses (Skarpy ceglane) along north and south flanks
+    for cy in [-11.0, -5.5, 0.0, 5.5, 11.0]:
+        for cx, sx in [(-8.4, -1), (8.4, 1)]:
+            # Lower tier buttress
+            add_box(bm, cx + sx * 0.45, cy, 4.5, 1.1, 1.4, 9.0, mat_idx=0)
+            # Stone weathering slope
+            add_box(bm, cx + sx * 0.45, cy, 9.2, 1.1, 1.4, 0.4, mat_idx=3)
+            # Upper tier buttress
+            add_box(bm, cx + sx * 0.25, cy, 11.5, 0.7, 1.2, 4.2, mat_idx=0)
+            add_box(bm, cx + sx * 0.25, cy, 13.8, 0.7, 1.2, 0.4, mat_idx=3)
+
+    # Lancet Window Recesses (Blendówki tynkowane na biało)
+    for cy in [-8.25, -2.75, 2.75, 8.25]:
+        for cx in [-8.05, 8.05]:
+            add_box(bm, cx, cy, 8.5, 0.12, 1.8, 7.0, mat_idx=1)
+
+    # High Pitched Gothic Red Tile Roof (60° pitch, height 11m, up to 25m)
+    add_sloped_roof(bm, 0, 0, 14.0, 16.0, 30.0, 11.0, overhang=0.4, mat_idx=2)
+
+    # Crow-stepped gables on apse (+Y) and facade (-Y)
+    for cy in [15.1, -15.1]:
+        for s in range(6):
+            sw = 16.0 - s * 2.4
+            sz = 14.0 + s * 1.8
+            add_box(bm, 0, cy, sz + 0.9, sw, 0.4, 1.8, mat_idx=0)
+            add_box(bm, -sw * 0.5 + 0.3, cy, sz + 2.0, 0.4, 0.4, 0.8, mat_idx=1)
+            add_box(bm, sw * 0.5 - 0.3, cy, sz + 2.0, 0.4, 0.4, 0.8, mat_idx=1)
+
+    # Western Bell Spire Tower (-Y end)
+    # Tower base: 8m x 8m x 26m high
+    add_box(bm, 0, -17.5, 13.0, 8.0, 8.0, 26.0, mat_idx=0)
+    # Stone belfry gallery
+    add_box(bm, 0, -17.5, 26.8, 9.2, 9.2, 1.6, mat_idx=3)
+    # Octagonal belfry
+    add_box(bm, 0, -17.5, 30.5, 7.0, 7.0, 6.0, mat_idx=0)
+    # Belfry lancet arches
+    add_box(bm, 0, -21.05, 30.5, 2.2, 0.12, 4.0, mat_idx=1)
+    # Soaring Copper Spire (rises to 46m)
+    add_box(bm, 0, -17.5, 36.5, 6.0, 6.0, 6.0, mat_idx=4)
+    add_box(bm, 0, -17.5, 42.0, 3.2, 3.2, 6.0, mat_idx=4)
+    add_box(bm, 0, -17.5, 46.0, 1.2, 1.2, 3.0, mat_idx=4)
+
+    bm.normal_update()
+    mesh = bpy.data.meshes.new("Mesh_ChurchGothic")
+    bm.to_mesh(mesh)
+    bm.free()
+    for m in mat_list: mesh.materials.append(m)
+    obj = bpy.data.objects.new("ChurchGothic", mesh)
+    bpy.context.collection.objects.link(obj)
+    export_object(obj, "church_gothic")
+
+# -------------------------------------------------------------
+# 13. Romanesque Round Keep (Donżon Zamkowy)
+# -------------------------------------------------------------
+def build_castle_donjon(mats):
+    clear_scene()
+    bm = bmesh.new()
+
+    mat_list = [
+        mats["stone_limestone"], mats["brick_gothic"], mats["roof_tile_red"],
+        mats["timber_dark"]
+    ]
+
+    # Cylinder keep (16-gon approximation, 14m diameter x 24m high)
+    segs = 16
+    radius = 7.0
+    height = 22.0
+    for i in range(segs):
+        a1 = (i / segs) * math.pi * 2
+        a2 = ((i + 1) / segs) * math.pi * 2
+        x1, y1 = math.cos(a1) * radius, math.sin(a1) * radius
+        x2, y2 = math.cos(a2) * radius, math.sin(a2) * radius
+        mx, my = (x1 + x2) * 0.5, (y1 + y2) * 0.5
+        seg_len = math.hypot(x2 - x1, y2 - y1)
+        # Thick limestone wall slice
+        add_box(bm, mx, my, height * 0.5, 2.8, seg_len, height, mat_idx=0)
+
+    # Upper machicolation corbels and gallery at 22m (radius 7.8m)
+    r_top = 7.8
+    for i in range(segs):
+        a1 = (i / segs) * math.pi * 2
+        a2 = ((i + 1) / segs) * math.pi * 2
+        x1, y1 = math.cos(a1) * r_top, math.sin(a1) * r_top
+        x2, y2 = math.cos(a2) * r_top, math.sin(a2) * r_top
+        mx, my = (x1 + x2) * 0.5, (y1 + y2) * 0.5
+        seg_len = math.hypot(x2 - x1, y2 - y1)
+        add_box(bm, mx, my, 22.8, 1.2, seg_len, 1.6, mat_idx=0)
+        # Alternating crenellations / merlons
+        if i % 2 == 0:
+            add_box(bm, mx, my, 24.4, 0.8, seg_len, 1.6, mat_idx=1)
+
+    # Conical tiled roof
+    add_box(bm, 0, 0, 25.5, 14.5, 14.5, 2.5, mat_idx=2)
+    add_box(bm, 0, 0, 27.5, 9.5, 9.5, 2.5, mat_idx=2)
+    add_box(bm, 0, 0, 29.5, 4.5, 4.5, 2.5, mat_idx=2)
+    add_box(bm, 0, 0, 31.0, 1.5, 1.5, 1.5, mat_idx=3)
+
+    bm.normal_update()
+    mesh = bpy.data.meshes.new("Mesh_CastleDonjon")
+    bm.to_mesh(mesh)
+    bm.free()
+    for m in mat_list: mesh.materials.append(m)
+    obj = bpy.data.objects.new("CastleDonjon", mesh)
+    bpy.context.collection.objects.link(obj)
+    export_object(obj, "castle_donjon")
+
+# -------------------------------------------------------------
 # Main Execution
 # -------------------------------------------------------------
 def main():
@@ -639,6 +797,9 @@ def main():
     build_house_timber_log(mats)
     build_house_half_timber(mats)
     build_house_patrician_brick(mats)
+    build_shed_timber(mats)
+    build_church_gothic(mats)
+    build_castle_donjon(mats)
     build_curtain_wall(mats)
     build_defense_tower(mats)
     build_tree_oak(mats)

@@ -338,205 +338,283 @@ def generate_lublin_city_plan():
 
     craft_cycle_index = 0
 
-    # Sector definitions with bounding boxes and street alignments
-    sectors = [
-        # 1. Market Square frontage (West, North, East, South edges of Rynek)
-        {"district": "market_square", "street": "Rynek (Market Square)", "count": 48, "center": (0, 0), "radius": 46, "ring": True},
-        # 2. Bramowa Street corridor (SW)
-        {"district": "bramowa_quarter", "street": "Ulica Bramowa", "count": 82, "xRange": (-150, -45), "zRange": (-70, -10)},
-        # 3. Grodzka Street corridor (NE)
-        {"district": "grodzka_quarter", "street": "Ulica Grodzka", "count": 88, "xRange": (40, 180), "zRange": (-10, 50)},
-        # 4. Dominican / Southern quarters (Złota, Jezuicka, Archidiakońska)
-        {"district": "dominican_quarter", "street": "Ulica Dominikańska / Złota", "count": 105, "xRange": (-110, 80), "zRange": (-135, -55)},
-        # 5. North Wall & Rybna quarter (Kowalska, Rybna)
-        {"district": "north_wall", "street": "Ulica Rybna / Kowalska", "count": 102, "xRange": (-90, 130), "zRange": (35, 115)},
-        # 6. Castle Hill Outer Bailey
-        {"district": "castle_hill", "street": "Podzamcze / Dziedziniec Zamkowy", "count": 35, "xRange": (230, 310), "zRange": (40, 125)},
-        # 7. Kraków Suburb (Exterior unwalled quarter, timber yards)
-        {"district": "krakow_suburb", "street": "Trakt Krakowski (Suburb)", "count": 120, "xRange": (-280, -165), "zRange": (-180, -30)}
+    # -------------------------------------------------------------
+    # 2D Oriented Bounding Box (OBB) & Separating Axis Theorem (SAT)
+    # Guarantees ZERO building penetrations or overlapping roofs
+    # -------------------------------------------------------------
+    def get_obb_corners(cx, cz, w, d, angle_deg, margin=0.3):
+        hw = (w / 2.0) + margin
+        hd = (d / 2.0) + margin
+        ang = math.radians(angle_deg)
+        cos_a = math.cos(ang)
+        sin_a = math.sin(ang)
+        corners = []
+        for dx, dz in [(-hw, -hd), (hw, -hd), (hw, hd), (-hw, hd)]:
+            rx = dx * cos_a - dz * sin_a
+            rz = dx * sin_a + dz * cos_a
+            corners.append((cx + rx, cz + rz))
+        return corners
+
+    def obb_overlap(corners1, corners2):
+        for corners in [corners1, corners2]:
+            for i in range(4):
+                p1 = corners[i]
+                p2 = corners[(i + 1) % 4]
+                edge_x = p2[0] - p1[0]
+                edge_z = p2[1] - p1[1]
+                axis_x = -edge_z
+                axis_z = edge_x
+
+                min1, max1 = float('inf'), float('-inf')
+                for c in corners1:
+                    proj = c[0] * axis_x + c[1] * axis_z
+                    if proj < min1: min1 = proj
+                    if proj > max1: max1 = proj
+
+                min2, max2 = float('inf'), float('-inf')
+                for c in corners2:
+                    proj = c[0] * axis_x + c[1] * axis_z
+                    if proj < min2: min2 = proj
+                    if proj > max2: max2 = proj
+
+                if max1 <= min2 or max2 <= min1:
+                    return False
+        return True
+
+    # Pre-register Landmark Bounding Boxes to avoid any building clipping them
+    LANDMARKS_OBB = [
+        get_obb_corners(0, 0, 26, 20, 0, margin=3.0),         # Town hall
+        get_obb_corners(22, -18, 26, 12, 90, margin=2.5),      # Szmatruz
+        get_obb_corners(-14, 10, 6, 6, 0, margin=2.0),         # Well
+        get_obb_corners(-160, -80, 16, 16, 210, margin=3.0),   # Krakow Gate
+        get_obb_corners(190, 20, 16, 16, 35, margin=3.0),      # Grodzka Gate
+        get_obb_corners(275, 75, 18, 18, 0, margin=3.0),       # Castle Donjon
+        get_obb_corners(260, 115, 16, 26, 0, margin=3.0),      # Castle Chapel
+        get_obb_corners(295, 110, 18, 32, 0, margin=3.0),      # Castle Palace
+        get_obb_corners(130, 20, 24, 38, 0, margin=3.0),       # Fara Church
+        get_obb_corners(-60, -90, 28, 42, 0, margin=3.0),      # Dominican Monastery
     ]
 
+    placed_obb_corners = list(LANDMARKS_OBB)
     parcel_index = 1
+    TARGET_PARCEL_COUNT = 580
 
-    # Special parcel 1: Player's Workshop in Kraków Suburb
-    player_parcel_id = "p_001_player_workshop"
-    parcels.append({
-        "id": player_parcel_id,
-        "name": "Mistrzowski Warsztat Grzesznika (Player's Guild Workshop)",
-        "district": "krakow_suburb",
-        "streetName": "Trakt Krakowski (Suburb)",
-        "x": -235.0,
-        "z": -120.0,
-        "width": 14.0,
-        "depth": 18.0,
-        "orientation": 45.0,
-        "elevation": 1.2,
-        "buildingType": "artisan_half_timber_workshop",
-        "isPlayerProperty": True,
-        "craft": {
-            "id": "carpenter",
-            "name": "Master Joiner & Cartwright",
-            "sign": "Golden Compass & Framing Chisel",
-            "guild": "Guild of Woodworkers"
-        },
-        "aging": {
-            "ageYears": 18,
-            "ridgeSag": 0.08,
-            "wallLeanAngle": 0.8,
-            "woodGraying": 0.35,
-            "mossFoundation": 0.22,
-            "maintenanceState": "sound"
-        },
-        "clutter": ["firewood_rick", "oak_timber_planks", "wheelbarrow", "shaving_bench", "tar_pitch_barrel"],
-        "scaffolding": False,
-        "wealthClass": "artisan",
-        "residents": [],
-        "workplaceFor": [],
-        "commodities": {"oak_beams": 32, "iron_nails": 250, "linseed_oil": 12}
-    })
-    parcel_index += 1
+    def try_create_parcel(px, pz, width, depth, orientation, district, street_name, is_shed=False, is_player=False):
+        nonlocal parcel_index, craft_cycle_index
+        if len(parcels) >= TARGET_PARCEL_COUNT:
+            return False
 
-    for sec in sectors:
-        cnt = sec["count"]
-        # Distribute parcels inside this sector
-        for i in range(cnt):
-            if parcel_index > TARGET_PARCEL_COUNT:
-                break
-            
-            p_id = f"p_{parcel_index:03d}"
-            
-            # Position calculation
-            if sec.get("ring"):
-                # Market square perimeter rectangle
-                # Square boundary: x in [-38, 38], z in [-28, 28]
-                perim_fraction = i / cnt
-                # Walk perimeter: Bottom, Right, Top, Left
-                if perim_fraction < 0.25: # South
-                    t = perim_fraction / 0.25
-                    px = -38 + t * 76
-                    pz = -30
-                    angle = 0
-                elif perim_fraction < 0.5: # East
-                    t = (perim_fraction - 0.25) / 0.25
-                    px = 40
-                    pz = -28 + t * 56
-                    angle = 90
-                elif perim_fraction < 0.75: # North
-                    t = (perim_fraction - 0.5) / 0.25
-                    px = 38 - t * 76
-                    pz = 30
-                    angle = 180
-                else: # West
-                    t = (perim_fraction - 0.75) / 0.25
-                    px = -40
-                    pz = 28 - t * 56
-                    angle = 270
-                # Slight setback jitter
-                px += random.uniform(-1.5, 1.5)
-                pz += random.uniform(-1.5, 1.5)
-            else:
-                x_min, x_max = sec["xRange"]
-                z_min, z_max = sec["zRange"]
-                px = round(random.uniform(x_min, x_max), 1)
-                pz = round(random.uniform(z_min, z_max), 1)
-                # Angle facing roughly towards street
-                angle = random.choice([0, 45, 90, 135, 180, 225, 270, 315])
+        # SAT collision check against all landmarks and existing buildings
+        corners = get_obb_corners(px, pz, width, depth, orientation, margin=0.25)
+        for existing in placed_obb_corners:
+            if obb_overlap(corners, existing):
+                return False
 
-            # Elevation calculation based on loess hill topography
-            # Castle hill is highest (+8m), Old Town plateau is +3m to +5m, sloping to Czechówka (+0m)
-            dist_to_castle = math.hypot(px - 280, pz - 90)
-            if dist_to_castle < 70:
-                elevation = round(6.5 + (1.0 - dist_to_castle / 70.0) * 3.5, 2)
-            else:
-                dist_to_center = math.hypot(px, pz)
-                elevation = round(max(0.5, 4.2 - (dist_to_center / 220.0) * 3.8 + random.uniform(-0.3, 0.3)), 2)
+        placed_obb_corners.append(corners)
+        p_id = f"p_{parcel_index:03d}"
+        if is_player:
+            p_id = "p_001_player_workshop"
 
-            # Determine if this plot has a shed or main house
-            is_shed = (random.random() < 0.14) and (sec["district"] != "market_square")
-            b_type = pick_building_type(sec["street"], sec["district"], is_shed=is_shed)
+        # Elevation calculation based on loess hill topography
+        dist_to_castle = math.hypot(px - 280, pz - 90)
+        if dist_to_castle < 70:
+            elevation = round(6.5 + (1.0 - dist_to_castle / 70.0) * 3.5, 2)
+        else:
+            dist_to_center = math.hypot(px, pz)
+            elevation = round(max(0.5, 4.2 - (dist_to_center / 220.0) * 3.8 + random.uniform(-0.2, 0.2)), 2)
 
-            # Assign craft to approx 50% of residential/commercial plots
-            has_craft = (not is_shed) and (random.random() < 0.52)
-            craft_data = None
-            if has_craft:
-                craft_data = CRAFTS[craft_cycle_index % len(CRAFTS)]
-                craft_cycle_index += 1
+        # Building type assignment
+        b_type = pick_building_type(street_name, district, is_shed=is_shed)
 
-            # Wealth class assignment
-            if sec["district"] == "market_square":
-                wealth = "patrician" if random.random() < 0.65 else "burgher"
-            elif sec["district"] == "castle_hill":
-                wealth = "patrician" if random.random() < 0.4 else "burgher"
-            elif sec["district"] == "krakow_suburb":
-                wealth = "artisan" if random.random() < 0.5 else "plebeian"
-            else:
-                if craft_data:
-                    wealth = craft_data["wealth"]
-                else:
-                    wealth = random.choice(["burgher", "artisan", "plebeian"])
+        # Craft assignment
+        has_craft = (not is_shed) and (random.random() < 0.52)
+        craft_data = None
+        if has_craft and not is_player:
+            craft_data = CRAFTS[craft_cycle_index % len(CRAFTS)]
+            craft_cycle_index += 1
 
-            # Parametric structural aging
-            age = random.randint(3, 115)
-            # Parabolic correlation with age
-            age_factor = age / 115.0
-            ridge_sag = round(min(0.35, 0.02 + age_factor * 0.28 + random.uniform(-0.03, 0.05)), 3)
-            wall_lean = round(min(3.0, (age_factor * 2.4 + random.uniform(-0.4, 0.6)) * random.choice([-1, 1])), 2)
-            wood_gray = round(min(1.0, 0.15 + age_factor * 0.8), 2)
-            moss_found = round(min(1.0, 0.05 + age_factor * 0.75 + (0.2 if elevation < 2.0 else 0.0)), 2)
-            
-            if age > 75:
-                maint = "dilapidated" if random.random() < 0.4 else "weathered"
-            elif age > 30:
-                maint = "weathered" if random.random() < 0.6 else "sound"
-            else:
-                maint = "pristine" if random.random() < 0.45 else "sound"
+        # Wealth class
+        if district == "market_square":
+            wealth = "patrician" if random.random() < 0.65 else "burgher"
+        elif district == "castle_hill":
+            wealth = "patrician" if random.random() < 0.4 else "burgher"
+        elif district == "krakow_suburb":
+            wealth = "artisan" if random.random() < 0.5 else "plebeian"
+        else:
+            wealth = craft_data["wealth"] if craft_data else random.choice(["burgher", "artisan", "plebeian"])
 
-            # Yard clutter
-            possible_clutter = ["firewood_rick", "oak_barrel", "leaning_ladder", "wicker_hoop", "cart_wheel", "handcart", "water_trough", "cask_stack"]
-            clutter_count = random.randint(1, 4)
-            clutter = random.sample(possible_clutter, clutter_count)
+        # Parametric structural aging
+        age = random.randint(3, 115)
+        age_factor = age / 115.0
+        ridge_sag = round(min(0.35, 0.02 + age_factor * 0.28 + random.uniform(-0.03, 0.05)), 3)
+        wall_lean = round(min(3.0, (age_factor * 2.4 + random.uniform(-0.4, 0.6)) * random.choice([-1, 1])), 2)
+        wood_gray = round(min(1.0, 0.15 + age_factor * 0.8), 2)
+        moss_found = round(min(1.0, 0.05 + age_factor * 0.75 + (0.2 if elevation < 2.0 else 0.0)), 2)
 
-            # Active building site with timber scaffolding (approx 6% of plots)
-            scaffolding = (not is_shed) and (random.random() < 0.06)
+        if age > 75:
+            maint = "dilapidated" if random.random() < 0.4 else "weathered"
+        elif age > 30:
+            maint = "weathered" if random.random() < 0.6 else "sound"
+        else:
+            maint = "pristine" if random.random() < 0.45 else "sound"
 
-            # Dimensions
-            width = random.choice([8.0, 9.5, 11.0, 12.5]) if not is_shed else random.choice([5.0, 6.5])
-            depth = random.choice([12.0, 14.5, 16.0, 18.0]) if not is_shed else random.choice([6.0, 8.0])
+        possible_clutter = ["firewood_rick", "oak_barrel", "leaning_ladder", "wicker_hoop", "cart_wheel", "handcart", "water_trough", "cask_stack"]
+        clutter = random.sample(possible_clutter, random.randint(1, 4))
+        scaffolding = (not is_shed) and (random.random() < 0.06)
 
-            parcels.append({
-                "id": p_id,
-                "district": sec["district"],
-                "streetName": sec["street"],
-                "x": px,
-                "z": pz,
-                "width": width,
-                "depth": depth,
-                "orientation": float(angle),
-                "elevation": elevation,
-                "buildingType": b_type,
-                "isShed": is_shed,
-                "craft": craft_data,
-                "aging": {
-                    "ageYears": age,
-                    "ridgeSag": ridge_sag,
-                    "wallLeanAngle": wall_lean,
-                    "woodGraying": wood_gray,
-                    "mossFoundation": moss_found,
-                    "maintenanceState": maint
-                },
-                "clutter": clutter,
-                "scaffolding": scaffolding,
-                "wealthClass": wealth,
-                "residents": [],
-                "workplaceFor": [],
-                "commodities": {
-                    "rye_sacks": random.randint(0, 15),
-                    "salted_herring_kilderkins": random.randint(0, 8),
-                    "tallow_candles": random.randint(5, 50),
-                    "grosze": random.randint(10, 600)
-                }
-            })
-            parcel_index += 1
+        parcel_obj = {
+            "id": p_id,
+            "district": district,
+            "streetName": street_name,
+            "x": round(px, 2),
+            "z": round(pz, 2),
+            "width": width,
+            "depth": depth,
+            "orientation": float(round(orientation, 1)),
+            "elevation": elevation,
+            "buildingType": b_type,
+            "isShed": is_shed,
+            "craft": craft_data,
+            "aging": {
+                "ageYears": age,
+                "ridgeSag": ridge_sag,
+                "wallLeanAngle": wall_lean,
+                "woodGraying": wood_gray,
+                "mossFoundation": moss_found,
+                "maintenanceState": maint
+            },
+            "clutter": clutter,
+            "scaffolding": scaffolding,
+            "wealthClass": wealth,
+            "residents": [],
+            "workplaceFor": [],
+            "commodities": {
+                "rye_sacks": random.randint(0, 15),
+                "salted_herring_kilderkins": random.randint(0, 8),
+                "tallow_candles": random.randint(5, 50),
+                "grosze": random.randint(10, 600)
+            }
+        }
+
+        if is_player:
+            parcel_obj["name"] = "Mistrzowski Warsztat Grzesznika (Player's Guild Workshop)"
+            parcel_obj["isPlayerProperty"] = True
+            parcel_obj["craft"] = {
+                "id": "carpenter",
+                "name": "Master Joiner & Cartwright",
+                "sign": "Golden Compass & Framing Chisel",
+                "guild": "Guild of Woodworkers"
+            }
+            parcel_obj["wealthClass"] = "artisan"
+
+        parcels.append(parcel_obj)
+        parcel_index += 1
+        return True
+
+    def generate_street_row(x1, z1, x2, z2, offset_dist, facing_side, district, street_name, step=7.0, w=7.2, d=11.0, add_courtyard=True):
+        dx = x2 - x1
+        dz = z2 - z1
+        length = math.hypot(dx, dz)
+        if length < 5: return 0
+        tx, tz = dx / length, dz / length
+        nx, nz = (-tz, tx) if facing_side > 0 else (tz, -tx)
+        facing_angle = (math.degrees(math.atan2(-nx, -nz)) + 360) % 360
+
+        cur_dist = step * 0.45
+        added = 0
+        while cur_dist < length - step * 0.35 and len(parcels) < TARGET_PARCEL_COUNT:
+            px = x1 + tx * cur_dist + nx * offset_dist
+            pz = z1 + tz * cur_dist + nz * offset_dist
+            if try_create_parcel(px, pz, w, d, facing_angle, district, street_name):
+                added += 1
+                if add_courtyard and len(parcels) < TARGET_PARCEL_COUNT and random.random() < 0.70:
+                    shed_offset = offset_dist + d * 0.5 + 4.0
+                    spx = x1 + tx * cur_dist + nx * shed_offset
+                    spz = z1 + tz * cur_dist + nz * shed_offset
+                    try_create_parcel(spx, spz, 5.0, 6.0, facing_angle, district, f"{street_name} (Podwórze)", is_shed=True)
+            cur_dist += step
+        return added
+
+    # 1. Special Parcel 1: Player's Guild Workshop in Kraków Suburb
+    try_create_parcel(-235.0, -120.0, 10.0, 14.0, 45.0, "krakow_suburb", "Trakt Krakowski (Mistrzowski Warsztat)", is_player=True)
+
+    # 2. Rynek (Market Square) Primary Frontages & Courtyards
+    # North pierzeja (Z = 34, facing South towards plaza: 180 deg)
+    # South pierzeja (Z = -34, facing North towards plaza: 0 deg)
+    for x in [-32, -24, -16, -8, 8, 16, 24, 32]:
+        try_create_parcel(x, 34, 7.5, 11.5, 180, "market_square", "Rynek (Północna Pierzeja)")
+        try_create_parcel(x, -34, 7.5, 11.5, 0, "market_square", "Rynek (Południowa Pierzeja)")
+        try_create_parcel(x, 47, 7.2, 10.5, 180, "market_square", "Zaułek Rynkowy Północny")
+        try_create_parcel(x, 57, 5.2, 6.2, 180, "market_square", "Zaułek Rynkowy Północny (Oficyna)", is_shed=True)
+        try_create_parcel(x, -47, 7.2, 10.5, 0, "market_square", "Zaułek Rynkowy Południowy")
+        try_create_parcel(x, -57, 5.2, 6.2, 0, "market_square", "Zaułek Rynkowy Południowy (Oficyna)", is_shed=True)
+
+    # West pierzeja (X = -44, facing East: 90 deg)
+    # East pierzeja (X = 44, facing West: 270 deg)
+    for z in [-20, -12, -4, 4, 12, 20]:
+        try_create_parcel(-44, z, 7.5, 11.5, 90, "market_square", "Rynek (Zachodnia Pierzeja)")
+        try_create_parcel(44, z, 7.5, 11.5, 270, "market_square", "Rynek (Wschodnia Pierzeja)")
+        try_create_parcel(-56, z, 7.2, 10.5, 90, "market_square", "Zaułek Rynkowy Zachodni")
+        try_create_parcel(56, z, 7.2, 10.5, 270, "market_square", "Zaułek Rynkowy Wschodni")
+
+    # 3. Bramowa Quarter (Kraków Gate to Rynek Arterial & Parallel Alleys)
+    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1), (28, 1), (-28, -1)]:
+        generate_street_row(-150, -75, -46, -24, off, side, "bramowa_quarter", "Ulica Bramowa", step=7.0)
+    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1)]:
+        generate_street_row(-140, -50, -50, -5, off, side, "bramowa_quarter", "Ulica Szewska", step=7.0)
+        generate_street_row(-130, -30, -60, 15, off, side, "bramowa_quarter", "Ulica Kozia", step=7.0)
+        generate_street_row(-110, -10, -50, 25, off, side, "bramowa_quarter", "Ulica Olejna", step=7.0)
+
+    # 4. Grodzka & Fara Quarters (Rynek to Grodzka Gate & Parish Square)
+    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1), (28, 1), (-28, -1)]:
+        generate_street_row(46, 18, 180, 20, off, side, "grodzka_quarter", "Ulica Grodzka", step=7.0)
+    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1)]:
+        generate_street_row(70, 32, 160, 35, off, side, "grodzka_quarter", "Zaułek Ku Farze", step=7.0)
+        generate_street_row(95, 5, 165, 8, off, side, "fara_quarter", "Plac Po Farze Południowy", step=7.0)
+
+    # 5. Złota & Archidiakońska Quarters (South Old Town)
+    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1), (28, 1), (-28, -1)]:
+        generate_street_row(15, -34, 140, -52, off, side, "fara_quarter", "Ulica Złota / Archidiakońska", step=7.0)
+    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1)]:
+        generate_street_row(-20, -70, 70, -90, off, side, "fara_quarter", "Ulica Bernardyńska", step=7.0)
+        generate_street_row(-115, -115, 130, -75, off, side, "south_wall", "Podwale Południowe", step=7.0)
+        generate_street_row(-30, -135, 70, -140, off, side, "south_wall", "Sady Podmurne", step=7.0)
+
+    # 6. Dominikańska & Jezuicka Quarters
+    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1), (28, 1)]:
+        generate_street_row(-40, -45, -85, -125, off, side, "dominican_quarter", "Ulica Dominikańska", step=7.0)
+    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1)]:
+        generate_street_row(-135, -95, -70, -135, off, side, "dominican_quarter", "Ulica Jezuicka", step=7.0)
+
+    # 7. North Wall & Rybna & Kowalska Quarters
+    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1), (28, 1), (-28, -1)]:
+        generate_street_row(-30, 36, 75, 68, off, side, "north_wall", "Ulica Rybna", step=7.0)
+    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1)]:
+        generate_street_row(-75, 50, 115, 85, off, side, "north_wall", "Ulica Kowalska", step=7.0)
+        generate_street_row(-40, 70, 60, 95, off, side, "north_wall", "Ulica Nowa / Krawiecka", step=7.0)
+        generate_street_row(-100, 55, 150, 65, off, side, "north_wall", "Podwale Północne", step=7.0)
+
+    # 8. Castle Hill Bailey (Podzamcze & Courtyard)
+    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1)]:
+        generate_street_row(215, 40, 290, 52, off, side, "castle_hill", "Podzamcze Dolne", step=7.0)
+        generate_street_row(245, 88, 310, 120, off, side, "castle_hill", "Dziedziniec Zamkowy", step=7.0)
+        generate_street_row(225, 65, 275, 125, off, side, "castle_hill", "Stok Zamkowy Północny", step=7.0)
+        generate_street_row(210, 15, 295, 30, off, side, "castle_hill", "Ogrody Podzamcza", step=7.0)
+
+    # 9. Kraków Suburb (Spacious unwalled trade quarter)
+    for off, side in [(8, 1), (-8, -1), (19, 1), (-19, -1), (30, 1), (-30, -1), (41, 1), (-41, -1), (52, 1), (-52, -1), (63, 1), (-63, -1), (74, 1), (-74, -1)]:
+        generate_street_row(-170, -85, -330, -145, off, side, "krakow_suburb", "Trakt Krakowski", step=7.0)
+    for off, side in [(8, 1), (-8, -1), (19, 1), (-19, -1), (30, 1), (-30, -1), (41, 1), (-41, -1), (52, 1), (-52, -1)]:
+        generate_street_row(-170, -40, -325, -45, off, side, "krakow_suburb", "Ulica Panny Marii", step=7.0)
+        generate_street_row(-180, -10, -320, 25, off, side, "krakow_suburb", "Ulica Wieniawska", step=7.0)
+        generate_street_row(-165, 35, -310, 55, off, side, "krakow_suburb", "Błonia Czechówki", step=7.0)
+    for off, side in [(8, 1), (-8, -1), (19, 1), (-19, -1), (30, 1), (-30, -1), (41, 1), (-41, -1), (52, 1), (-52, -1)]:
+        generate_street_row(-170, -120, -325, -180, off, side, "krakow_suburb", "Droga Nadwodna", step=7.0)
+        generate_street_row(-195, -35, -255, -170, off, side, "krakow_suburb", "Zaułek Przedmiejski", step=7.0)
+        generate_street_row(-240, -20, -315, -165, off, side, "krakow_suburb", "Droga Polna", step=7.0)
+        generate_street_row(-185, -150, -320, -215, off, side, "krakow_suburb", "Zaułek Łąkowy", step=7.0)
+        generate_street_row(-280, -30, -335, -190, off, side, "krakow_suburb", "Folwark Przedmiejski", step=7.0)
+        generate_street_row(-210, -180, -330, -230, off, side, "krakow_suburb", "Bystrzyca Pastwiska", step=7.0)
 
     print(f"[CityPlanGenerator] Generated {len(parcels)} distinct parcel nodes.")
 

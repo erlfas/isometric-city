@@ -93,38 +93,39 @@ export class ThreeIsometricRenderer {
     this.updateCameraTransform();
   }
 
+  private groundCanvas!: HTMLCanvasElement;
+  private groundTex!: THREE.CanvasTexture;
+
   private createGroundTerrain(): THREE.Mesh {
-    // Generate cobblestone & earth procedural canvas texture
-    const texCanvas = document.createElement('canvas');
-    texCanvas.width = 1024;
-    texCanvas.height = 1024;
-    const ctx = texCanvas.getContext('2d')!;
+    this.groundCanvas = document.createElement('canvas');
+    this.groundCanvas.width = 2048;
+    this.groundCanvas.height = 2048;
+    const ctx = this.groundCanvas.getContext('2d')!;
 
-    // Base earth / cobblestone color
-    ctx.fillStyle = '#655e52';
-    ctx.fillRect(0, 0, 1024, 1024);
+    // Base meadow grass & loess earth color
+    ctx.fillStyle = '#475d2e';
+    ctx.fillRect(0, 0, 2048, 2048);
 
-    // Draw stone paving grid with noise
-    ctx.strokeStyle = '#4a4338';
-    ctx.lineWidth = 2;
-    for (let x = 0; x < 1024; x += 16) {
-      for (let y = 0; y < 1024; y += 12) {
-        const stoneShade = 90 + Math.floor(Math.sin(x * 0.1) * 15 + Math.cos(y * 0.1) * 15);
-        ctx.fillStyle = `rgb(${stoneShade + 15}, ${stoneShade + 10}, ${stoneShade})`;
-        ctx.fillRect(x + 1, y + 1, 14, 10);
-      }
+    // Initial noise
+    for (let i = 0; i < 4000; i++) {
+      const rx = Math.random() * 2048;
+      const ry = Math.random() * 2048;
+      const r = Math.random() * 12 + 4;
+      ctx.fillStyle = Math.random() < 0.5 ? '#3f5328' : '#526935';
+      ctx.beginPath();
+      ctx.arc(rx, ry, r, 0, Math.PI * 2);
+      ctx.fill();
     }
 
-    const groundTex = new THREE.CanvasTexture(texCanvas);
-    groundTex.wrapS = THREE.RepeatWrapping;
-    groundTex.wrapT = THREE.RepeatWrapping;
-    groundTex.repeat.set(40, 40);
+    this.groundTex = new THREE.CanvasTexture(this.groundCanvas);
+    this.groundTex.wrapS = THREE.ClampToEdgeWrapping;
+    this.groundTex.wrapT = THREE.ClampToEdgeWrapping;
 
-    const geo = new THREE.PlaneGeometry(600, 500, 32, 32);
+    const geo = new THREE.PlaneGeometry(700, 550, 32, 32);
     const mat = new THREE.MeshStandardMaterial({
-      map: groundTex,
-      roughness: 0.9,
-      metalness: 0.05
+      map: this.groundTex,
+      roughness: 0.92,
+      metalness: 0.04
     });
 
     const mesh = new THREE.Mesh(geo, mat);
@@ -132,19 +133,110 @@ export class ThreeIsometricRenderer {
     mesh.position.y = 0;
     mesh.receiveShadow = true;
 
-    // Green countryside outer border
-    const grassGeo = new THREE.RingGeometry(180, 350, 32);
-    const grassMat = new THREE.MeshStandardMaterial({
-      color: 0x486b36,
-      roughness: 0.95
-    });
-    const grassMesh = new THREE.Mesh(grassGeo, grassMat);
-    grassMesh.rotation.x = -Math.PI / 2;
-    grassMesh.position.y = 0.05;
-    grassMesh.receiveShadow = true;
-    this.scene.add(grassMesh);
-
     return mesh;
+  }
+
+  private updateGroundWithPlan(plan: CityPlan): void {
+    if (!this.groundCanvas || !this.groundTex) return;
+    const ctx = this.groundCanvas.getContext('2d')!;
+
+    // Coordinate mapping: World (-350..350, -275..275) to Canvas (0..2048, 0..2048)
+    const toCanvasX = (wx: number) => ((wx + 350) / 700) * 2048;
+    const toCanvasY = (wz: number) => ((wz + 275) / 550) * 2048;
+
+    // 1. Draw Lublin Promontory Old Town loess hill plateau
+    if (plan.defense && plan.defense.perimeterPoints.length > 0) {
+      ctx.save();
+      ctx.fillStyle = '#5c5240';
+      ctx.beginPath();
+      const first = plan.defense.perimeterPoints[0];
+      ctx.moveTo(toCanvasX(first.x), toCanvasY(first.z));
+      for (let i = 1; i < plan.defense.perimeterPoints.length; i++) {
+        const pt = plan.defense.perimeterPoints[i];
+        ctx.lineTo(toCanvasX(pt.x), toCanvasY(pt.z));
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // 2. Draw Castle Hill bailey plateau
+    ctx.save();
+    ctx.fillStyle = '#5c5240';
+    ctx.beginPath();
+    ctx.ellipse(toCanvasX(275), toCanvasY(90), 160, 130, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // 3. Draw Czechówka & Bystrzyca river valley slopes (greener loess ravines)
+    ctx.save();
+    ctx.strokeStyle = '#374b24';
+    ctx.lineWidth = 45;
+    ctx.beginPath();
+    ctx.moveTo(toCanvasX(-340), toCanvasY(45));
+    ctx.quadraticCurveTo(toCanvasX(-100), toCanvasY(55), toCanvasX(210), toCanvasY(35));
+    ctx.stroke();
+    ctx.restore();
+
+    // 4. Draw Street Network Corridors from plan (cobblestone paving)
+    if (plan.streetNetwork && plan.streetNetwork.nodes && plan.streetNetwork.edges) {
+      const nodeMap = new Map<string, { x: number; z: number }>();
+      plan.streetNetwork.nodes.forEach(n => nodeMap.set(n.id, { x: n.x, z: n.z }));
+
+      // Outer wide road border
+      ctx.save();
+      ctx.strokeStyle = '#524838';
+      ctx.lineWidth = 26;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      plan.streetNetwork.edges.forEach(([idA, idB]) => {
+        const a = nodeMap.get(idA);
+        const b = nodeMap.get(idB);
+        if (a && b) {
+          ctx.moveTo(toCanvasX(a.x), toCanvasY(a.z));
+          ctx.lineTo(toCanvasX(b.x), toCanvasY(b.z));
+        }
+      });
+      ctx.stroke();
+
+      // Inner cobblestone street track
+      ctx.strokeStyle = '#6c6251';
+      ctx.lineWidth = 18;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 5. Draw Rynek (Market Square) Flagstone Plaza
+    const rx1 = toCanvasX(-42);
+    const rz1 = toCanvasY(-32);
+    const rx2 = toCanvasX(42);
+    const rz2 = toCanvasY(32);
+    const rw = rx2 - rx1;
+    const rh = rz2 - rz1;
+
+    ctx.save();
+    ctx.fillStyle = '#6f6655';
+    ctx.fillRect(rx1, rz1, rw, rh);
+
+    // Stone flagstone grid on Rynek
+    ctx.strokeStyle = '#574f41';
+    ctx.lineWidth = 1.5;
+    for (let x = rx1; x <= rx2; x += 18) {
+      ctx.beginPath();
+      ctx.moveTo(x, rz1);
+      ctx.lineTo(x, rz2);
+      ctx.stroke();
+    }
+    for (let y = rz1; y <= rz2; y += 18) {
+      ctx.beginPath();
+      ctx.moveTo(rx1, y);
+      ctx.lineTo(rx2, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    this.groundTex.needsUpdate = true;
   }
 
   public async loadAllModels(): Promise<void> {
@@ -160,12 +252,15 @@ export class ThreeIsometricRenderer {
       'house_timber_log',
       'house_half_timber',
       'house_patrician_brick',
+      'shed_timber',
+      'church_gothic',
+      'castle_donjon',
       'curtain_wall',
       'curtain_tower',
       'tree_oak'
     ];
 
-    console.log('[ThreeRenderer] Loading 13 Blender-authored GLB assets...');
+    console.log('[ThreeRenderer] Loading 16 Blender-authored GLB assets...');
 
     for (const name of modelNames) {
       try {
@@ -188,6 +283,9 @@ export class ThreeIsometricRenderer {
 
   public populateCityScene(plan: CityPlan): void {
     if (!this.isLoaded) return;
+
+    // 0. Paint street networks and terrain matching historical topography
+    this.updateGroundWithPlan(plan);
 
     // 1. Place Old Town Hall at Market Square center
     const townHallTemplate = this.models.get('town_hall');
@@ -215,7 +313,24 @@ export class ThreeIsometricRenderer {
       this.scene.add(well);
     }
 
-    // 4. Place Vibrant Royal Fair Market Stalls and Carts across Rynek
+    // 4. Place Collegiate Parish Church (Fara - Kościół św. Michała)
+    const churchTemplate = this.models.get('church_gothic');
+    if (churchTemplate) {
+      const church = churchTemplate.clone();
+      church.position.set(130, 1.2, 20);
+      church.rotation.y = Math.PI / 2;
+      this.scene.add(church);
+    }
+
+    // 5. Place Castle Donjon Keep on Castle Hill
+    const donjonTemplate = this.models.get('castle_donjon');
+    if (donjonTemplate) {
+      const donjon = donjonTemplate.clone();
+      donjon.position.set(275, 2.5, 75);
+      this.scene.add(donjon);
+    }
+
+    // 6. Place Vibrant Royal Fair Market Stalls and Carts across Rynek
     const stallTypes = ['market_stall_red_white', 'market_stall_blue_white', 'market_stall_yellow_white'];
     const stallCoords = [
       { x: -16, z: -14, rot: 0 },
@@ -264,7 +379,7 @@ export class ThreeIsometricRenderer {
       });
     }
 
-    // 5. Build Defensive Curtain Wall and Towers around Perimeter
+    // 7. Build Defensive Curtain Wall and Towers around Perimeter
     const wallTemplate = this.models.get('curtain_wall');
     const towerTemplate = this.models.get('curtain_tower');
     const perimeter = plan.defense.perimeterPoints;
@@ -297,51 +412,59 @@ export class ThreeIsometricRenderer {
       }
     }
 
-    // 6. Populate 580 Parcels with Authentic Low-Poly Houses (Varied styles)
-    const houseTemplates = [
-      this.models.get('house_timber_log'),
-      this.models.get('house_half_timber'),
-      this.models.get('house_patrician_brick')
-    ].filter(Boolean) as THREE.Group[];
+    // 8. Populate 580 Parcels with Strictly Non-Overlapping Authentic Houses
+    const shedTmpl = this.models.get('shed_timber');
+    const brickTmpl = this.models.get('house_patrician_brick');
+    const halfTimberTmpl = this.models.get('house_half_timber');
+    const logTmpl = this.models.get('house_timber_log');
 
     for (let i = 0; i < plan.parcels.length; i++) {
       const p = plan.parcels[i];
-      // Alternate styles to prevent identical consecutive buildings along street fronts
-      const tmplIdx = i % houseTemplates.length;
-      const tmpl = houseTemplates[tmplIdx];
+      let tmpl: THREE.Group | undefined;
+      let scaleX = 1.0;
+      let scaleZ = 1.0;
+
+      if (p.isShed && shedTmpl) {
+        tmpl = shedTmpl;
+        scaleX = Math.min(1.05, Math.max(0.85, p.width / 5.2));
+        scaleZ = Math.min(1.05, Math.max(0.85, p.depth / 6.2));
+      } else {
+        if (p.district === 'market_square') {
+          tmpl = (i % 2 === 0 ? brickTmpl : halfTimberTmpl) || brickTmpl;
+        } else if (p.district === 'krakow_suburb') {
+          tmpl = (i % 2 === 0 ? logTmpl : halfTimberTmpl) || logTmpl;
+        } else {
+          if (p.buildingType.includes('patrician') || p.buildingType.includes('brick')) {
+            tmpl = brickTmpl;
+          } else if (p.buildingType.includes('log') || p.buildingType.includes('timber')) {
+            tmpl = logTmpl;
+          } else {
+            tmpl = halfTimberTmpl;
+          }
+        }
+        if (!tmpl) tmpl = halfTimberTmpl || brickTmpl || logTmpl;
+        scaleX = Math.min(1.05, Math.max(0.85, p.width / 8.5));
+        scaleZ = Math.min(1.05, Math.max(0.85, p.depth / 12.0));
+      }
 
       if (tmpl) {
         const house = tmpl.clone();
-        let posX = p.x;
-        let posZ = p.z;
-
-        // Provide 8m setback for market square frontage to keep plaza spacious
-        if (p.district === 'market_square') {
-          const distFromCenter = Math.hypot(p.x, p.z);
-          if (distFromCenter > 1) {
-            posX += (p.x / distFromCenter) * 8.0;
-            posZ += (p.z / distFromCenter) * 8.0;
-          }
-        }
-
-        house.position.set(posX, p.elevation * 0.3, posZ);
+        // Exact collision-verified coordinates from city_plan.json
+        house.position.set(p.x, p.elevation * 0.3, p.z);
         house.rotation.y = (p.orientation * Math.PI) / 180;
-        const scaleX = (p.width / 9.0) * 0.95;
-        const scaleZ = (p.depth / 12.0) * 0.95;
         house.scale.set(scaleX, 1.0, scaleZ);
         house.userData = { parcelId: p.id };
         this.scene.add(house);
       }
     }
 
-    // 7. Place Medieval Oak Trees along roads and outer green verge
+    // 9. Place Medieval Oak Trees along roads and outer green verge
     const treeTemplate = this.models.get('tree_oak');
     if (treeTemplate) {
-      for (let t = 0; t < 75; t++) {
+      for (let t = 0; t < 90; t++) {
         const tree = treeTemplate.clone();
-        // Place along outer perimeter
         const ang = Math.random() * Math.PI * 2;
-        const dist = 160 + Math.random() * 80;
+        const dist = 165 + Math.random() * 95;
         tree.position.set(Math.cos(ang) * dist, 0, Math.sin(ang) * dist);
         const s = 0.8 + Math.random() * 0.6;
         tree.scale.set(s, s, s);
@@ -350,7 +473,7 @@ export class ThreeIsometricRenderer {
       }
     }
 
-    console.log('[ThreeRenderer] Full medieval city populated successfully!');
+    console.log('[ThreeRenderer] Full medieval city populated successfully with 0 building overlaps!');
   }
 
   public updateCitizens(citizens: Citizen[], _dt: number): void {

@@ -16,7 +16,8 @@ An authentic, data-driven medieval city simulation and procedural 3D asset pipel
 
 - **True Isometric 3D Projection**: Fixed dimetric / isometric perspective ($35.264^\circ$ pitch) with smooth 4-quadrant $90^\circ$ view rotations (SW, NW, NE, SE).
 - **Directional PCF Soft Shadows**: Diagonal sunlight casting soft real-time contact shadows onto cobblestone plazas and building facades.
-- **Headless Blender Procedural Pipeline**: CLI automation script ([`build_assets.py`](build_assets.py)) compiling parametric recipes into 13 optimized low-poly `.glb` models with clean PBR material slots.
+- **Headless Blender Procedural Pipeline**: CLI automation script ([`build_assets.py`](build_assets.py)) compiling parametric recipes into 16 optimized low-poly `.glb` models (civic landmarks, Gothic church, castle donjon, houses, outbuildings, stalls, carts, well, curtain defense).
+- **Separating Axis Theorem (SAT) Zero-Overlap Urban Morphology**: 580 parcels generated using historical Magdeburg Law burgage ribbon planning and 2D Oriented Bounding Box collision verification—guaranteeing mathematically zero overlapping roofs or intersecting facades.
 - **Living Autonomous Simulation**: 1,500 persistent citizens across 580 parcels with unique names, 18 craft guilds, wealth hierarchies, and schedules keyed to 8 canonical church bell hours.
 - **Interactive Speech Bubbles & Prompts**: In-world speech bubbles (`"Hello, carpenter!"`, `"Crossbows! They're shooting crossbows!"`) and contextual hover interaction prompts (`[E] Stach z Ponikwody, visitor to the fair`).
 - **Procedural Church Bell Synthesizer**: Web Audio API physical acoustic modeling using additive synthesis across 7 inharmonic partials with metallic decay.

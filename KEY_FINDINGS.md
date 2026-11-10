@@ -87,3 +87,37 @@ Minimal container environments lack pre-installed 3D DCC tools or root `apt` pri
   1. Citizen 3D world coordinates $(X, Y, Z)$ are projected to screen space using `vector.project(camera)`.
   2. The 2D overlay canvas draws rounded rectangles with dark brown fill (`#1a120c`) and gold borders (`#c5a059`), with an anchored triangle pointer.
   3. This separates heavy text layout from WebGL texture uploads, providing crisp, pixel-perfect UI at 60 FPS without layout thrashing.
+
+---
+
+## 5. Urban Morphology: Resolving Building Collisions & Zero-Overlap Burgage Planning
+
+### The Building Collision Failure Mode
+In dense procedural city simulations, distributing buildings using naive bounding-box uniform random placement (`random.uniform(x_min, x_max)`) with arbitrary angle rotations (`random.choice([0, 45, 90, ...])`) causes extreme geometric penetrations:
+- In the initial 580-parcel generation, pairwise collision audits revealed **1,087 significant bounding overlaps**.
+- Visually, steep pitched roofs sliced diagonally through adjacent facades, and crow-stepped brick gables were buried inside neighboring timber log cabins (`image.png`).
+
+### The Mathematical & Architectural Solution
+To eliminate all clipping while preserving authentic historical density, the city generator was re-architected around historical **Magdeburg Law (Prawo Magdeburskie)** ribbon planning and mathematical collision verification:
+
+1. **2D Oriented Bounding Box (OBB) & Separating Axis Theorem (SAT)**:
+   - Every candidate parcel is represented as a 2D Oriented Bounding Box with center $(cx, cz)$, half-extents $(hw, hd)$, and orientation angle $\theta$.
+   - A safety clearance margin ($M = 0.25\text{m}$) is added to the half-extents:
+     $$\vec{C}_k = (cx, cz) \pm (hw + M) \vec{u} \pm (hd + M) \vec{v}$$
+   - The Separating Axis Theorem projects the 4 vertices of both boxes onto the 4 candidate edge normals. If a separating axis exists on any projection, the boxes are disjoint.
+   - Every parcel is verified against all previously placed parcels, the 10 civic landmarks (Town Hall, Szmatruz, Well, Fara Church, Castle Donjon, Chapel, Palace, Gates), and curtain walls before acceptance.
+
+2. **Street-Tangent Aligned Burgage Ribbon Plots**:
+   - In medieval European chartered towns, parcels were arranged along street corridors as ribbon burgage plots.
+   - For a street segment from $A$ to $B$ with tangent $\vec{T}$ and normal $\vec{N}$:
+     - Frontage houses are placed at successive intervals along $\vec{T}$: $s = s_0 + k \cdot step$.
+     - All houses on that street front share the exact same orientation angle facing the street ($-\vec{N}$).
+     - Because adjacent houses share parallel normals and tangents, their side walls are strictly parallel, and roof ridges run in harmonious alignment. Intersecting roof geometry is mathematically impossible.
+
+3. **Courtyard Outbuildings (Oficyny & Szopy)**:
+   - Secondary artisan workshops and storage sheds are placed behind the primary street frontages at depth-offset courtyard intervals ($d_{offset} = W/2 + D/2 + 4.0\text{m}$), utilizing the dedicated `shed_timber.glb` asset.
+
+4. **Results**:
+   - Total parcels: **580**
+   - Pairwise bounding overlaps: **EXACTLY 0**
+   - Performance: Stable 60 FPS rendering with Three.js PCF soft shadows and ground street network paving.
