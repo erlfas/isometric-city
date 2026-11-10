@@ -200,3 +200,70 @@ To instantiate the correct model for each of the 580 parcels, the renderer execu
 2. **Tier 2 (Architectural District & Fallback Defaults)**:
    - If unassigned, defaults according to urban quarter typology (`market_square` alternating between patrician brick and half-timber, `krakow_suburb` favoring timber logs, and secondary courtyards utilizing `shed_timber`).
 - **Result**: Every parcel across Lublin renders its authentic historical purpose with zero visual cloning and full 60 FPS performance.
+
+---
+
+## 10. Multi-Angle Reference Engineering & AI Character Turnaround Consistency
+
+### The Single-Angle Ambiguity Trap in 3D Procedural Modeling
+- **The Problem:** In isometric strategy simulations, single-view 2D concept images or reference photos almost universally present the primary front facade ($45^\circ$ street view). 
+- **The Pitfall:** In historical medieval crafts, the primary operational machinery—such as masonry bake-ovens, bloomery smelting hearths, hide-tanning lime vats, grain hoists, and tailrace flumes—is located in the **rear courtyard or side utility yard**. A modeler or procedural script relying on a single front image is forced to invent or guess rear geometry, leading to generic boxes, clipping fences, or missing craft machinery.
+- **The Architectural 3-View Protocol Solution:**
+  1. **Front Elevation ($X \times Z$):** Street entrance, stone foundations, jetty overhangs ($\approx 0.25\text{m}$), and hanging craft guild signage.
+  2. **Side Profile Elevation ($Y \times Z$):** Accurate roof pitch determination ($\theta = \arctan(H_{\text{roof}} / (D / 2))$, typically $50^\circ - 60^\circ$), side flumes, chimney stack projection, and lean-to sheds.
+  3. **Rear Production Yard ($X \times Y$ at $Z = 0$):** Real functional equipment footprints (e.g. domed ovens at $Y = -D/2 - 1.2\text{m}$, tanning vats at $Z \in [0, 0.35\text{m}]$).
+
+### The Multi-View Character Drift Phenomenon
+- **The Discovery:** Generating three separate image generation prompts for character views (`front_view`, `side_view`, `rear_view`) consistently causes AI diffusion models to drift in clothing cut, apron shape, facial features, and held props across images.
+- **The Unified Turnaround Solution:**
+  - Instruct the model to generate a **single unified 3-view turnaround character sheet** in one 16:9 prompt:
+    ```text
+    Orthographic 3-view character model sheet showing front view, side profile view, and rear view side-by-side,
+    14th-century medieval master blacksmith, wearing heavy stained leather apron over brown woolen tunic,
+    rolled-up linen sleeves, sturdy leather boots, holding iron tongs and blacksmith hammer,
+    neutral solid beige parchment background, crisp silhouette, studio lighting, no UI
+    ```
+  - **Result:** Generates Front, Side Profile, and Rear views in identical proportions, exact matching costume details, and zero hallucination drift, providing an infallible blueprint for low-poly character box-modeling and bone rigging.
+
+---
+
+## 11. Skill Packaging Boundaries vs. Project Repository Asset Storage
+
+### Why Skills Should NOT Bundle Entire Runtime Binary Asset Libraries
+When designing reusable agent skills (such as `procedural-model-creation-pipeline`), a critical architectural question arises: *Can/should the skill store all 31 GLB models and reference photos?*
+
+- **Technical Feasibility:** The skill system allows bundling files under `skill_dir/references/` or `skill_dir/assets/`, retrievable via `get_skill_resources`.
+- **Architectural Drawbacks of Full Bundling:**
+  1. **Package Bloat:** Packing 31 binary GLB models and dozens of high-res JPEGs inflates the skill bundle to 50MB+, making skill distribution, serialization, and versioning heavy and sluggish.
+  2. **Vite / Three.js Runtime Separation:** WebGL applications load assets via asynchronous HTTP fetch (`/models/*.glb`) hosted in the web root (`public/models/`). Placing models inside an arbitrary skill directory breaks standard web deployment toolchains.
+  3. **Git Storage Duplication:** Storing models in both `public/models/` and inside the skill directory duplicates binary bloat in the git commit tree.
+
+### The Clean Hybrid Separation Pattern
+- **Skill Responsibility:**
+  - Standardized procedural modeling idioms (`bpy` + `bmesh` geometry recipes).
+  - Multi-view prompt engineering templates and coordinate mapping equations.
+  - Automation scripts (`build_assets.py`, `verify_models.py`).
+  - *Optional:* A single **golden benchmark sample asset** (`assets/benchmark_workshop.glb` + 3 reference images) to teach the agent the quality threshold.
+- **Project Repository Responsibility:**
+  - `reference_photos/<model_id>/{front,side,back}.jpg` for all source reference photos.
+  - `reference_photos/workers/*_turnaround.jpg` for character model sheets.
+  - `public/models/*.glb` for all production single-draw-call assets.
+  - `docs/` for master architectural catalogs and visual prompt galleries.
+
+---
+
+## 12. Modular Per-Asset Reference Directory Hierarchy
+
+### Migration from Flat to Hierarchical Reference Storage
+- **Flat Layout Pitfall:** Storing all images in a flat `reference_photos/` folder (`baker_front.jpg`, `baker_side.jpg`, `baker_back.jpg`, `tanner_front.jpg`...) quickly becomes unmanageable as the model count scales to dozens of workshops and workers.
+- **Modular Directory Standard:**
+  ```bash
+  reference_photos/
+  ├── [asset_archetype]/
+  │   ├── front.jpg       # Facade & street view
+  │   ├── side.jpg        # Gable pitch & profile
+  │   └── back.jpg        # Production yard & machinery
+  └── workers/
+      ├── worker_[id]_turnaround.jpg  # 3-view turnaround sheet
+  ```
+- **Backward Compatibility:** Existing single-view assets are preserved or mirrored so historical documentation and automated scripts retain unbroken URI references.

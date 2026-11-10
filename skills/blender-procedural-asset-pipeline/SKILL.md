@@ -236,3 +236,34 @@ def verify_exported_assets(models_dir):
         print(f"Verified: {os.path.basename(path)} ({size:,} bytes)")
     print(f"All {len(glbs)} assets passed verification!")
 ```
+
+---
+
+## 7. Translating Multi-Angle Reference Images to Bmesh Coordinates
+
+When constructing geometry from an architectural 3-view set (`front.jpg`, `side.jpg`, `back.jpg`) or character turnaround (`*_turnaround.jpg`):
+
+### 1. Architectural Coordinate Extraction (Blender Z-Up)
+- **Front View ($X \times Z$ Plane):**
+  - Defines parcel width $W$ along $X \in [-W/2, W/2]$.
+  - Defines story heights: Plinth $Z \in [0, H_0]$, First floor $Z \in [H_0, H_1]$, Jetty overhang $\Delta X = 0.25\text{m}$.
+  - Positions street entrance doors and hung guild signs.
+- **Side Profile View ($Y \times Z$ Plane):**
+  - Defines building depth $D$ along $Y \in [-D/2, D/2]$.
+  - Defines true roof gable pitch: $\theta = \arctan(H_{\text{roof}} / (D / 2))$. For Central European Brick Gothic, target $50^\circ - 60^\circ$.
+  - Positions side flumes, mill waterwheels, lean-to roofs, and chimney stack projection along $Y$.
+- **Rear View Yard Props ($X \times Y$ Footprints at $Z = 0$):**
+  - Outdoor bake ovens: $Y_{\text{center}} = -D/2 - 1.2\text{m}$, radius $= 1.1\text{m}$.
+  - Smelting furnaces & coal bunkers: Placed in rear corners with $X \in [W/4, W/2]$, $Y \in [-D/2 - 1.5, -D/2]$.
+  - Tanning vats: Sunken negative Z coordinates or low rim boxes at $Z \in [0, 0.35\text{m}]$ behind the main cabin.
+
+### 2. Character Model Turnaround Proportions
+For 3-view worker turnaround sheets (`worker_*_turnaround.jpg`), map the 3 views to standardized proportional heights:
+- **Total Height ($H_{\text{total}} \approx 1.75\text{m}$):**
+  - Head & Headwear: $Z \in [1.50\text{m}, 1.75\text{m}]$ (Diameter $\approx 0.25\text{m}$)
+  - Torso & Apron: $Z \in [0.85\text{m}, 1.50\text{m}]$ (Chest width $X \approx 0.45\text{m}$, depth $Y \approx 0.28\text{m}$)
+  - Legs & Chausses: $Z \in [0.15\text{m}, 0.85\text{m}]$
+  - Sturdy Work Boots: $Z \in [0.00\text{m}, 0.15\text{m}]$
+- **Tool Attachment Offsets:**
+  - Dominant hand (Right): $X = +0.35\text{m}$, $Y = +0.10\text{m}$, $Z = 0.85\text{m}$ (e.g. Forging hammer, bread peel, fleshing knife).
+  - Offhand (Left): $X = -0.35\text{m}$, $Y = +0.10\text{m}$, $Z = 0.85\text{m}$ (e.g. Iron tongs, flour sack, skin clamp).
