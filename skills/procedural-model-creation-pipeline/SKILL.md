@@ -38,22 +38,68 @@ Before authoring procedural code, examine concept art to identify:
    - *Weaver*: St. Andrew's cross braces, attic hoist, circular dye cauldrons, cloth drying rails.
    - *Watermill / Windmill*: Waterwheels, mill flumes, canvas sails, tail-poles.
 
-### Generating Orthographic Isometric Reference Images
-When producing AI reference imagery, enforce dimetric/isometric projection without perspective convergence:
+### Generating Multi-Angle & 3-View Reference Images
+To completely eliminate architectural ambiguity and production yard guesswork, author reference imagery using a disciplined **3-View Reference Methodology**:
+
+#### 1. Architectural 3-View Elevation & Isometric Protocol
+For every craft building or workshop, establish three distinct camera angles before authoring geometry:
+- **Front Elevation / Primary Entrance:** Captures public street presence, stone portals, timber jetty overhangs, lintels, and craft guild signage.
+- **Side Elevation / Profile:** Captures exact roof pitch ($45^\circ - 60^\circ$ for Central European Gothic), chimney stack projections, timber braces, and waterwheel or mill race alignments.
+- **Rear Elevation / Production Yard:** Captures the functional industrial heart: sunken tanning vats, wood ricks, drying lofts, brick kilns, barrels, hoists, and storage outhouses.
+
+Standard prompt formulas for each view:
+```text
+# 1. Front View / Street Elevation:
+2D isometric medieval city-builder game screenshot, late 1990s PC strategy game aesthetic,
+front elevation view, street entrance of [BUILDING/WORKSHOP], timber-framed facade with guild sign,
+Central European Brick Gothic, muted earthy colors, hard directional drop shadows, orthographic projection, no UI
+
+# 2. Side Elevation / Flume & Gable Profile:
+2D isometric medieval city-builder game screenshot, late 1990s PC strategy game aesthetic,
+side profile elevation view of [BUILDING/WORKSHOP], steep 50-degree gable roof, brick chimney stack,
+Central European timber vernacular, muted earthy palette, orthographic projection, no UI
+
+# 3. Rear Elevation / Outdoor Yard:
+2D isometric medieval city-builder game screenshot, late 1990s PC strategy game aesthetic,
+rear yard view of [BUILDING/WORKSHOP], [OUTDOOR EQUIPMENT & WORKSPACES], timber fence,
+stacked raw materials, muted earthy palette, hard directional drop shadows, orthographic projection, no UI
+```
+
+#### 2. Worker & Citizen 3-View Turnaround Sheets
+For character models and animated craftspeople, **never generate 3 separate disconnected prompts** (which causes AI outfit and proportion drift). Instead, generate a **single unified 3-view turnaround character sheet**:
 
 ```text
-2D isometric medieval city-builder game screenshot, late 1990s PC strategy game aesthetic,
-pre-rendered 3D sprites, [SPECIFIC WORKSHOP OR BUILDING], [DISTINCT OUTDOOR EQUIPMENT],
-Central European Brick Gothic and timber vernacular architecture, muted earthy color palette,
-crisp surface textures, hard directional drop shadows, orthographic projection, no UI
+Orthographic 3-view character model sheet showing front, profile side, and rear views side-by-side,
+14th-century medieval [CRAFT WORKER / CITIZEN], historically accurate linen tunic, woolen chausses,
+[SPECIALIZED APRON / WORK GEAR], holding [PRIMARY CRAFT TOOL], neutral solid parchment background,
+crisp silhouette, studio lighting, late 1990s PC strategy game sprite reference, no UI
 ```
 
-### Dedicated Reference Staging
-Always stage generated reference images in a dedicated folder (e.g. `reference_photos/`) committed to the repository, keeping them separate from general concept art and runtime 3D models:
+### Dedicated Reference Directory Hierarchy
+Organize reference photos into clean, per-asset subdirectories in `reference_photos/` committed to the repository:
 ```bash
-mkdir -p reference_photos
-# Example: reference_photos/baker_house.jpg, reference_photos/tanner_workshop.jpg
+reference_photos/
+├── baker_house/
+│   ├── front.jpg
+│   ├── side.jpg
+│   └── back.jpg
+├── blacksmith_workshop/
+│   ├── front.jpg
+│   ├── side.jpg
+│   └── back.jpg
+├── ...
+└── workers/
+    ├── worker_blacksmith_turnaround.jpg
+    ├── worker_baker_turnaround.jpg
+    └── ...
 ```
+
+### Skill Storage vs. Project Repository Architecture
+- **Skill Scope (`skills/procedural-model-creation-pipeline/`)**: Stores reusable procedural knowledge, automation scripts (`scripts/`), and golden benchmark templates (`assets/benchmark_workshop.glb`). It does not store all multi-megabyte project assets to prevent bloated skill packages.
+- **Repository Scope**: The project repository stores the full asset collection:
+  - `reference_photos/<model_id>/` for multi-view source imagery.
+  - `public/models/*.glb` for all single-draw-call WebGL runtime assets.
+  - `docs/` for master architectural catalogs and visual galleries.
 
 ---
 

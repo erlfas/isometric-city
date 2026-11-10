@@ -9,15 +9,19 @@
 
 ## Table of Contents
 1. [Master Prompt Engineering Standards](#1-master-prompt-engineering-standards)
-2. [Artisan Guild Workshop Reference Photos](#2-artisan-guild-workshop-reference-photos-reference_photos)
-   - [Baker's House & Masonry Oven](#bakers-house--masonry-oven)
+2. [Artisan Guild Workshop Multi-View Reference Photos](#2-artisan-guild-workshop-multi-view-reference-photos-reference_photos)
+   - [Baker's House & Masonry Oven (3-View Set)](#bakers-house--masonry-oven-3-view-set)
    - [Tanner's Riverside Workshop](#tanners-riverside-workshop)
    - [Brewer's Malthouse & Cask Yard](#brewers-malthouse--cask-yard)
-   - [Blacksmith's Workshop & Open Forge](#blacksmiths-workshop--open-forge)
+   - [Blacksmith's Workshop & Open Forge (3-View Set)](#blacksmiths-workshop--open-forge-3-view-set)
    - [Potter's Shed & Kiln Yard](#potters-shed--kiln-yard)
    - [Weaver's Half-Timber Workshop](#weavers-half-timber-workshop)
    - [Riverside Watermill](#riverside-watermill)
-3. [Macro City District & Regional Concept Art](#3-macro-city-district--regional-concept-art-concept_art)
+3. [Worker & Citizen 3-View Turnaround Sheets](#3-worker--citizen-3-view-turnaround-sheets-reference_photosworkers)
+   - [Master Blacksmith Turnaround](#master-blacksmith-turnaround)
+   - [Artisan Baker Turnaround](#artisan-baker-turnaround)
+   - [Master Tanner Turnaround](#master-tanner-turnaround)
+4. [Macro City District & Regional Concept Art](#4-macro-city-district--regional-concept-art-concept_art)
    - [Artisan and Brewery District](#artisan-and-brewery-district)
    - [Brick Monastery with a Cloister Garden](#brick-monastery-with-a-cloister-garden)
    - [Fortified Castle Courtyard & Bailey](#fortified-castle-courtyard--bailey)
@@ -27,8 +31,8 @@
    - [Rural Farming Village & Post Windmill](#rural-farming-village--post-windmill)
    - [Stone Quarry & Logging Camp](#stone-quarry--logging-camp)
    - [Tournament Fairground Outside City Walls](#tournament-fairground-outside-city-walls)
-4. [In-Engine Screenshots & Visual Deliverables](#4-in-engine-screenshots--visual-deliverables)
-5. [Summary Matrix: Image to 3D Model Mapping](#5-summary-matrix-image-to-3d-model-mapping)
+5. [In-Engine Screenshots & Visual Deliverables](#5-in-engine-screenshots--visual-deliverables)
+6. [Summary Matrix: Image to 3D Model Mapping](#6-summary-matrix-image-to-3d-model-mapping)
 
 ---
 
@@ -58,26 +62,36 @@ These images provide direct visual blueprints for procedural Blender modeling (`
 
 ---
 
-### Baker's House & Masonry Oven
+### Baker's House & Masonry Oven (3-View Set)
 
-![Baker's House & Bakery Workshop](../reference_photos/baker_house.jpg)
+#### Front / Primary Street Entrance:
+![Baker's House Front Entrance](../reference_photos/baker_house/front.jpg)
 
-- **File Path:** [`reference_photos/baker_house.jpg`](../reference_photos/baker_house.jpg)
-- **Associated 3D Model:** [`public/models/house_baker.glb`](../public/models/house_baker.glb)
-- **Associated Worker:** `worker_master_baker`
-- **Aspect Ratio:** `16:9`
-- **Generation Prompt:**
-  ```text
-  2D isometric medieval city-builder game screenshot, late 1990s PC strategy game aesthetic, pre-rendered 3D sprites, medieval baker's house and bakery workshop, outdoor domed brick bread oven with smoking stone chimney, stacked birch firewood cords, wooden peel shovel, sacks of flour, gilded pretzel guild sign, timber-framed plaster walls, clay pantile roof, muted earthy color palette, crisp surface textures, hard directional drop shadows, orthographic projection, no UI
-  ```
-- **Architectural & Workspace Key Features:**
-  - Limestone plinth with half-timbered second story and steep red clay pantile roof.
-  - Outdoor domed red-brick baking oven with warm glowing fire emitting from the arched stokehole.
-  - Soot-stained masonry chimney stack with rising wood smoke.
-  - Protective timber post-and-beam lean-to canopy.
-  - Stacks of split birch firewood and 3 burlap sacks of stone-ground rye and wheat flour.
-  - Long ash wood bread peel shovel leaning against the masonry wall.
-  - Front street window with fold-down display shelf and hung gilded pretzel guild sign.
+#### Side Profile Elevation (Flour Chute & Firewood Shed):
+![Baker's House Side Elevation](../reference_photos/baker_house/side.jpg)
+
+#### Rear Yard Elevation (Domed Stone Bake-Oven & Ash Shovels):
+![Baker's House Rear Yard Oven](../reference_photos/baker_house/back.jpg)
+
+- **Directory:** [`reference_photos/baker_house/`](../reference_photos/baker_house/)
+  - `front.jpg`: Isometric front facade with pretzel guild sign and entrance portal.
+  - `side.jpg`: Side profile showing steep $50^\circ$ roof, side firewood shelter, and flour chute.
+  - `back.jpg`: Rear yard with massive domed stone bread oven, brick chimney, bread peel, and firewood cords.
+- **Associated 3D Model:** [`public/models/baker_house.glb`](../public/models/baker_house.glb)
+- **Associated Worker:** `worker_baker` ([Turnaround Reference](#artisan-baker-turnaround))
+- **Key Generation Prompts:**
+  - *Front View (16:9):*
+    ```text
+    2D isometric medieval city-builder game screenshot, late 1990s PC strategy game aesthetic, pre-rendered 3D sprites, medieval baker's house and bakery workshop, outdoor domed brick bread oven with smoking stone chimney, stacked birch firewood cords, wooden peel shovel, sacks of flour, gilded pretzel guild sign, timber-framed plaster walls, clay pantile roof, muted earthy color palette, crisp surface textures, hard directional drop shadows, orthographic projection, no UI
+    ```
+  - *Side Profile View (1:1):*
+    ```text
+    2D isometric medieval city-builder game screenshot, late 1990s PC strategy game aesthetic, side profile elevation view of medieval baker house, steep 50-degree gable roof with aged cedar wood shingles, half-timbered upper floor, side firewood shed with stacked split oak logs, flour sack delivery chute, Central European timber vernacular, muted earthy color palette, crisp textures, hard directional drop shadows, orthographic projection, no UI
+    ```
+  - *Rear Yard View (1:1):*
+    ```text
+    2D isometric medieval city-builder game screenshot, late 1990s PC strategy game aesthetic, rear yard view of medieval baker house, large domed stone bread baking oven with smoking brick chimney built into the back wall, wooden ash shovels, bread peel leaning against oven, stacked cords of firewood, flour barrels, small vegetable garden, wattle fence, Central European timber and stone architecture, muted earthy palette, hard directional drop shadows, orthographic projection, no UI
+    ```
 
 ---
 
@@ -127,26 +141,36 @@ These images provide direct visual blueprints for procedural Blender modeling (`
 
 ---
 
-### Blacksmith's Workshop & Open Forge
+### Blacksmith's Workshop & Open Forge (3-View Set)
 
-![Blacksmith's Workshop & Open Forge](../reference_photos/blacksmith_workshop.jpg)
+#### Front / Primary Forge Canopy:
+![Blacksmith's Workshop Front Entrance](../reference_photos/blacksmith_workshop/front.jpg)
 
-- **File Path:** [`reference_photos/blacksmith_workshop.jpg`](../reference_photos/blacksmith_workshop.jpg)
+#### Side Profile Elevation (Coal Storage Bunker & Quench Trough):
+![Blacksmith's Workshop Side Elevation](../reference_photos/blacksmith_workshop/side.jpg)
+
+#### Rear Storage Yard (Bloomery Smelting Furnace & Iron Racks):
+![Blacksmith's Workshop Rear Yard](../reference_photos/blacksmith_workshop/back.jpg)
+
+- **Directory:** [`reference_photos/blacksmith_workshop/`](../reference_photos/blacksmith_workshop/)
+  - `front.jpg`: Primary open forge with anvil, glowing hearth, weapon rack, and timber canopy.
+  - `side.jpg`: Side profile showing coal and charcoal storage shed, water trough, and brick chimney stack.
+  - `back.jpg`: Rear storage yard with brick bloomery furnace, raw iron billets, scrap metal pile, and slag.
 - **Associated 3D Model:** [`public/models/blacksmith_workshop.glb`](../public/models/blacksmith_workshop.glb)
-- **Associated Workers:** `worker_blacksmith_master`, `worker_blacksmith_striker`
-- **Aspect Ratio:** `16:9`
-- **Generation Prompt:**
-  ```text
-  2D isometric medieval city-builder game screenshot, late 1990s PC strategy game aesthetic, pre-rendered 3D sprites, medieval blacksmith workshop, outdoor covered timber shed with open masonry hearth forge and glowing hot orange embers, thick smoke from stone chimney, heavy iron anvil on oak tree stump, water quenching wooden trough with rising steam, weapon rack with iron axe heads and swords, stacks of coal and iron ingots, muted earthy color palette, crisp surface textures, hard directional drop shadows, orthographic projection, no UI
-  ```
-- **Architectural & Workspace Key Features:**
-  - 2-story workshop with limestone foundation and half-timber upper dwelling.
-  - Projecting open timber post-and-beam forge canopy roof.
-  - Raised masonry hearth furnace with open glowing orange fire/embers and soot-stained stone chimney.
-  - Heavy cast iron anvil mounted on a weathered oak tree stump.
-  - Long wooden water-quenching trough with steam trigger effect.
-  - Vertical timber weapon and tool rack holding forged axe heads, swords, and spears.
-  - Coal mounds and stacks of square iron billets.
+- **Associated Workers:** `worker_blacksmith` ([Turnaround Reference](#master-blacksmith-turnaround))
+- **Key Generation Prompts:**
+  - *Front View (16:9):*
+    ```text
+    2D isometric medieval city-builder game screenshot, late 1990s PC strategy game aesthetic, pre-rendered 3D sprites, medieval blacksmith workshop, outdoor covered timber shed with open masonry hearth forge and glowing hot orange embers, thick smoke from stone chimney, heavy iron anvil on oak tree stump, water quenching wooden trough with rising steam, weapon rack with iron axe heads and swords, stacks of coal and iron ingots, muted earthy color palette, crisp surface textures, hard directional drop shadows, orthographic projection, no UI
+    ```
+  - *Side Profile View (1:1):*
+    ```text
+    2D isometric medieval city-builder game screenshot, late 1990s PC strategy game aesthetic, side profile elevation view of medieval blacksmith forge, timber lean-to canopy supported by heavy oak posts, covered coal and charcoal storage bin with dark coal heap, water quench trough, iron tool racks, Central European brick and timber vernacular, hard directional drop shadows, orthographic projection, no UI
+    ```
+  - *Rear Yard View (1:1):*
+    ```text
+    2D isometric medieval city-builder game screenshot, late 1990s PC strategy game aesthetic, rear storage yard view of medieval blacksmith forge, brick bloomery smelting furnace with glowing smoke, stacked pig iron ingots, racks of raw iron bars, scrap metal scrapheap, coal cart, low timber fence, dirt ground with soot patches, orthographic projection, no UI
+    ```
 
 ---
 
@@ -216,7 +240,75 @@ These images provide direct visual blueprints for procedural Blender modeling (`
 
 ---
 
-## 3. Macro City District & Regional Concept Art (`concept_art/`)
+## 3. Worker & Citizen 3-View Turnaround Sheets (`reference_photos/workers/`)
+
+These multi-view character turnaround model sheets provide exact orthographic silhouettes, historical costume details, work aprons, and tool specifications for procedural character creation and rigging in Blender.
+
+---
+
+### Master Blacksmith Turnaround
+
+![Master Blacksmith 3-View Turnaround](../reference_photos/workers/worker_blacksmith_turnaround.jpg)
+
+- **File Path:** [`reference_photos/workers/worker_blacksmith_turnaround.jpg`](../reference_photos/workers/worker_blacksmith_turnaround.jpg)
+- **Associated 3D Model:** [`public/models/worker_blacksmith.glb`](../public/models/worker_blacksmith.glb)
+- **Aspect Ratio:** `16:9`
+- **Views Included:** Front View, Profile Side View, Rear View
+- **Generation Prompt:**
+  ```text
+  Orthographic 3-view character model sheet showing front view, side profile view, and rear view side-by-side, 14th-century medieval master blacksmith, wearing heavy stained leather apron over brown woolen tunic, rolled-up linen sleeves, sturdy leather boots, holding iron tongs and blacksmith hammer, leather belt with pouch, neutral solid beige parchment background, crisp silhouette, studio lighting, late 1990s PC strategy game sprite reference, no UI
+  ```
+- **Costume & Equipment Details:**
+  - Heavy soot-stained cowhide apron with forged steel buckles and rear tie straps.
+  - Brown woolen tunic with rolled-up natural linen undergarment sleeves.
+  - Double-wrapped leather tool belt supporting small utility knife sheath and coin purse.
+  - Held craft tools: long-handled iron forging tongs with red-hot heated billet tip, and heavy steel cross-peen hammer.
+  - Reinforced knee-high leather work boots.
+
+---
+
+### Artisan Baker Turnaround
+
+![Artisan Baker 3-View Turnaround](../reference_photos/workers/worker_baker_turnaround.jpg)
+
+- **File Path:** [`reference_photos/workers/worker_baker_turnaround.jpg`](../reference_photos/workers/worker_baker_turnaround.jpg)
+- **Associated 3D Model:** [`public/models/worker_baker.glb`](../public/models/worker_baker.glb)
+- **Aspect Ratio:** `16:9`
+- **Views Included:** Front View, Profile Side View, Rear View
+- **Generation Prompt:**
+  ```text
+  Orthographic 3-view character model sheet showing front view, side profile view, and rear view side-by-side, 14th-century medieval artisan baker, white linen apron dusted with white flour over simple undyed woolen tunic, rolled-up sleeves, holding long wooden bread peel shovel, canvas baker cap, leather turnshoes, neutral solid beige parchment background, crisp silhouette, studio lighting, late 1990s PC strategy game sprite reference, no UI
+  ```
+- **Costume & Equipment Details:**
+  - Bleached linen baker's apron heavily dusted with rye and wheat flour.
+  - Puffed canvas chef's baker cap (*barett*) covering dark curls.
+  - Undyed homespun woolen tunic with cord waist cinch.
+  - Held craft tool: full-length $1.8\text{m}$ wooden bread peel paddle shovel.
+  - Soft cowhide turnshoes.
+
+---
+
+### Master Tanner Turnaround
+
+![Master Tanner 3-View Turnaround](../reference_photos/workers/worker_tanner_turnaround.jpg)
+
+- **File Path:** [`reference_photos/workers/worker_tanner_turnaround.jpg`](../reference_photos/workers/worker_tanner_turnaround.jpg)
+- **Associated 3D Model:** [`public/models/worker_tanner.glb`](../public/models/worker_tanner.glb)
+- **Aspect Ratio:** `16:9`
+- **Views Included:** Front View, Profile Side View, Rear View
+- **Generation Prompt:**
+  ```text
+  Orthographic 3-view character model sheet showing front view, side profile view, and rear view side-by-side, 14th-century medieval tanner worker, heavy dark oiled leather apron stained with tanbark, thick rubberized water-resistant leather work boots, rolled-up woolen sleeves, holding a curved two-handed iron fleshing knife, cloth coif head covering, neutral solid beige parchment background, crisp silhouette, studio lighting, late 1990s PC strategy game sprite reference, no UI
+  ```
+- **Costume & Equipment Details:**
+  - Water-resistant oiled leather apron stained with oak tanbark and lime solution.
+  - Linen coif tied under the chin to keep hair free of chemical baths.
+  - Thick, greased high water boots for wading into sunken lime vats.
+  - Held craft tool: curved two-handled iron fleshing drawknife for scraping hides across the wooden beam.
+
+---
+
+## 4. Macro City District & Regional Concept Art (`concept_art/`)
 
 These panoramic concept artworks define the regional geography, atmospheric lighting, and architectural hierarchy of Lublin Anno Domini 1392.
 
@@ -348,7 +440,7 @@ These panoramic concept artworks define the regional geography, atmospheric ligh
 
 ---
 
-## 4. In-Engine Screenshots & Visual Deliverables
+## 5. In-Engine Screenshots & Visual Deliverables
 
 ### Final High-Resolution Simulation View
 ![Final Simulation Screenshot](../public/screenshot_final.png)
@@ -359,23 +451,30 @@ These panoramic concept artworks define the regional geography, atmospheric ligh
 
 ---
 
-## 5. Summary Matrix: Image to 3D Model Mapping
+## 6. Summary Matrix: Image to 3D Model Mapping
 
 | # | Image File | Category | Associated 3D GLB Asset | Associated Worker / Activity |
 |---|---|---|---|---|
-| 1 | `reference_photos/baker_house.jpg` | Workshop Reference | `public/models/house_baker.glb` | `worker_master_baker` (sliding bread into oven) |
-| 2 | `reference_photos/tanner_workshop.jpg` | Workshop Reference | `public/models/house_tanner.glb` | `worker_master_tanner` (scraping hide on fleshing beam) |
-| 3 | `reference_photos/brewer_malthouse.jpg` | Workshop Reference | `public/models/house_brewer.glb` | `worker_master_brewer` & `worker_cooper` |
-| 4 | `reference_photos/blacksmith_workshop.jpg` | Workshop Reference | `public/models/blacksmith_workshop.glb` | `worker_blacksmith_master` (forging on anvil) |
-| 5 | `reference_photos/potter_workshop.jpg` | Workshop Reference | `public/models/house_potter.glb` | `worker_master_potter` (throwing clay amphora) |
-| 6 | `reference_photos/weaver_workshop.jpg` | Workshop Reference | `public/models/house_weaver.glb` | `worker_master_weaver` (operating loom & dyeing) |
-| 7 | `reference_photos/watermill.jpg` | Workshop Reference | `public/models/watermill.glb` | `worker_miller_master` & `worker_flour_porter` |
-| 8 | `concept_art/artisan and brewery district.jpg` | District Concept Art | Multiple Craft Workshops | Artisans, potters, brewers |
-| 9 | `concept_art/brick_monastery_with_a_cloister_garden.jpg` | Civic/Religious Concept Art | `public/models/monastery_cloister.glb` | `worker_monk_gardener`, `worker_monk_apothecary` |
-| 10 | `concept_art/fortified_castle_courtyard.jpg` | Fortification Concept Art | `public/models/castle_donjon.glb` | `worker_royal_castellan`, `worker_castle_guard` |
-| 11 | `concept_art/fortified_river_crossing_with_a_watermill.jpg` | Regional Concept Art | `public/models/watermill.glb`, `gate_grodzka.glb` | Millers, carters, gate bailiffs |
-| 12 | `concept_art/hillside iron mine and smelting camp.jpg` | Industrial Concept Art | `public/models/blacksmith_workshop.glb` | Miners, smelters, charcoal burners |
-| 13 | `concept_art/riverside_harbor.jpg` | Commercial Concept Art | `public/models/river_harbor.glb` | `worker_harbor_master`, `worker_harbor_stevedore` |
-| 14 | `concept_art/rural_farming_village.jpg` | Regional Concept Art | `public/models/windmill.glb`, `house_timber_log.glb` | `worker_farmer_scyther`, `worker_windmiller` |
-| 15 | `concept_art/stone_quarry_and_logging_camp.jpg` | Industrial Concept Art | `public/models/stone_quarry.glb`, `logging_camp.glb` | `worker_quarryman_hewer`, `worker_pit_sawyer` |
-| 16 | `concept_art/tournament fairground outside the city walls.jpg` | Military Concept Art | `public/models/curtain_wall.glb`, `curtain_tower.glb` | Knights, heralds, spectators |
+| 1 | `reference_photos/baker_house/front.jpg` | Workshop 3-View Set (Front) | `public/models/baker_house.glb` | `worker_baker` (sliding bread into oven) |
+| 2 | `reference_photos/baker_house/side.jpg` | Workshop 3-View Set (Side Profile) | `public/models/baker_house.glb` | `worker_baker` (firewood & flour delivery) |
+| 3 | `reference_photos/baker_house/back.jpg` | Workshop 3-View Set (Rear Yard) | `public/models/baker_house.glb` | `worker_baker` (stokehole & ash cleanup) |
+| 4 | `reference_photos/blacksmith_workshop/front.jpg` | Workshop 3-View Set (Front) | `public/models/blacksmith_workshop.glb` | `worker_blacksmith` (forging on anvil) |
+| 5 | `reference_photos/blacksmith_workshop/side.jpg` | Workshop 3-View Set (Side Profile) | `public/models/blacksmith_workshop.glb` | `worker_blacksmith` (coal bunker & quench trough) |
+| 6 | `reference_photos/blacksmith_workshop/back.jpg` | Workshop 3-View Set (Rear Yard) | `public/models/blacksmith_workshop.glb` | `worker_blacksmith` (bloomery smelting & iron racks) |
+| 7 | `reference_photos/tanner_workshop/front.jpg` | Workshop Reference (Primary) | `public/models/tanner_workshop.glb` | `worker_tanner` (scraping hide on fleshing beam) |
+| 8 | `reference_photos/brewer_malthouse/front.jpg` | Workshop Reference (Primary) | `public/models/brewer_malthouse.glb` | `worker_brewer` & cooper |
+| 9 | `reference_photos/potter_workshop/front.jpg` | Workshop Reference (Primary) | `public/models/potter_workshop.glb` | `worker_potter` (throwing clay amphora) |
+| 10 | `reference_photos/weaver_workshop/front.jpg` | Workshop Reference (Primary) | `public/models/weaver_workshop.glb` | `worker_weaver` (operating loom & dyeing) |
+| 11 | `reference_photos/watermill/front.jpg` | Workshop Reference (Primary) | `public/models/watermill.glb` | `worker_miller` & flour porters |
+| 12 | `reference_photos/workers/worker_blacksmith_turnaround.jpg` | Character 3-View Turnaround | `public/models/worker_blacksmith.glb` | Master Blacksmith (leather apron, tongs, hammer) |
+| 13 | `reference_photos/workers/worker_baker_turnaround.jpg` | Character 3-View Turnaround | `public/models/worker_baker.glb` | Artisan Baker (flour-dusted apron, bread peel) |
+| 14 | `reference_photos/workers/worker_tanner_turnaround.jpg` | Character 3-View Turnaround | `public/models/worker_tanner.glb` | Master Tanner (oiled apron, fleshing drawknife) |
+| 15 | `concept_art/artisan and brewery district.jpg` | District Concept Art | Multiple Craft Workshops | Artisans, potters, brewers |
+| 16 | `concept_art/brick_monastery_with_a_cloister_garden.jpg` | Civic/Religious Concept Art | `public/models/monastery_cloister.glb` | Monks, gardeners, herbalists |
+| 17 | `concept_art/fortified_castle_courtyard.jpg` | Fortification Concept Art | `public/models/castle_donjon.glb` | Castellan, guards, knights |
+| 18 | `concept_art/fortified_river_crossing_with_a_watermill.jpg` | Regional Concept Art | `public/models/watermill.glb`, `gate_grodzka.glb` | Millers, carters, gate bailiffs |
+| 19 | `concept_art/hillside iron mine and smelting camp.jpg` | Industrial Concept Art | `public/models/blacksmith_workshop.glb` | Miners, smelters, charcoal burners |
+| 20 | `concept_art/riverside_harbor.jpg` | Commercial Concept Art | `public/models/river_harbor.glb` | Harbor master, stevedores |
+| 21 | `concept_art/rural_farming_village.jpg` | Regional Concept Art | `public/models/windmill.glb`, `house_timber_log.glb` | Farmers, scythers, windmiller |
+| 22 | `concept_art/stone_quarry_and_logging_camp.jpg` | Industrial Concept Art | `public/models/stone_quarry.glb`, `logging_camp.glb` | Quarrymen, hewers, pit sawyers |
+| 23 | `concept_art/tournament fairground outside the city walls.jpg` | Military Concept Art | `public/models/curtain_wall.glb`, `curtain_tower.glb` | Knights, heralds, spectators |
