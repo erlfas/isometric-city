@@ -1,0 +1,937 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "project": "Lublin Anno Domini 1392",
+  "description": "Master catalog of all architectural building archetypes, outdoor workspaces, and craft workers.",
+  "buildings": [
+    {
+      "id": "bldg_town_hall_ratusz",
+      "name_en": "Old Town Hall",
+      "name_pl": "Ratusz Miejski",
+      "category": "civic",
+      "district_affinity": ["market_square"],
+      "dimensions": { "width": 18.0, "depth": 24.0, "wall_height": 12.0, "total_height": 28.5 },
+      "stories": 3,
+      "materials": {
+        "foundation": "stone_limestone",
+        "walls": "brick_gothic",
+        "tracery": "plaster_white",
+        "roof": "roof_tile_red",
+        "spires": "copper_patina"
+      },
+      "roof_type": "gable_stepped",
+      "roof_pitch_deg": 55,
+      "exterior_workspace": {
+        "type": "council_stone_staircase",
+        "offset": { "x": 0.0, "y": 0.0, "z": -12.5 },
+        "props": [
+          { "type": "limestone_balustrade", "offset": { "x": 0.0, "z": -1.5 } },
+          { "type": "proclamation_board", "offset": { "x": -2.5, "z": 0.0 } },
+          { "type": "wrought_iron_lantern", "offset": { "x": 2.5, "z": 0.0 }, "features": ["light_emitter"] }
+        ]
+      },
+      "backyard_doodads": [],
+      "associated_workers": ["worker_burgomaster", "worker_town_scribe"],
+      "blender_generator": "build_town_hall",
+      "model_path": "/models/town_hall.glb"
+    },
+    {
+      "id": "bldg_szmatruz_cloth_hall",
+      "name_en": "Szmatruz Cloth & Bread Hall",
+      "name_pl": "Szmatruz (Sukiennice i Jatki Chlebowe)",
+      "category": "civic_market",
+      "district_affinity": ["market_square"],
+      "dimensions": { "width": 14.0, "depth": 28.0, "wall_height": 6.0, "total_height": 11.5 },
+      "stories": 2,
+      "materials": {
+        "pillars": "brick_gothic",
+        "capitals": "stone_limestone",
+        "roof": "roof_tile_red"
+      },
+      "roof_type": "gable_pitched",
+      "roof_pitch_deg": 50,
+      "exterior_workspace": {
+        "type": "market_hall_arcade",
+        "offset": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "props": [
+          { "type": "draper_cutting_table", "offset": { "x": -3.5, "z": -5.0 } },
+          { "type": "bread_display_shelf", "offset": { "x": 3.5, "z": -5.0 } },
+          { "type": "balance_hanging_scales", "offset": { "x": -3.5, "z": 0.0 } }
+        ]
+      },
+      "backyard_doodads": [],
+      "associated_workers": ["worker_draper_merchant", "worker_bread_seller"],
+      "blender_generator": "build_szmatruz",
+      "model_path": "/models/szmatruz.glb"
+    },
+    {
+      "id": "bldg_parish_church_fara",
+      "name_en": "Collegiate Parish Church of St. Michael",
+      "name_pl": "Kościół Kolegiacki św. Michała (Fara)",
+      "category": "religious",
+      "district_affinity": ["fara_quarter"],
+      "dimensions": { "width": 16.0, "depth": 32.0, "wall_height": 14.0, "total_height": 46.0 },
+      "stories": 1,
+      "materials": {
+        "walls": "brick_gothic",
+        "buttress_caps": "stone_limestone",
+        "roof": "roof_tile_red",
+        "belfry_spire": "copper_patina"
+      },
+      "roof_type": "high_pitched_gothic_gable",
+      "roof_pitch_deg": 60,
+      "exterior_workspace": {
+        "type": "churchyard_porch",
+        "offset": { "x": 0.0, "y": 0.0, "z": -18.5 },
+        "props": [
+          { "type": "stone_holy_water_stoup", "offset": { "x": -1.2, "z": 0.0 } },
+          { "type": "stone_cemetery_cross", "offset": { "x": 8.0, "z": -4.0 } },
+          { "type": "parish_tithe_box", "offset": { "x": 1.2, "z": 0.0 } }
+        ]
+      },
+      "backyard_doodads": [],
+      "associated_workers": ["worker_parish_priest", "worker_sexton_bellringer"],
+      "blender_generator": "build_church_gothic",
+      "model_path": "/models/church_gothic.glb"
+    },
+    {
+      "id": "bldg_monastery_cloister",
+      "name_en": "Monastery with Cloister Garden",
+      "name_pl": "Klasztor Dominikanów z Wirydarzem",
+      "category": "religious_agricultural",
+      "district_affinity": ["dominican_quarter"],
+      "dimensions": { "width": 26.0, "depth": 26.0, "wall_height": 8.5, "total_height": 14.0 },
+      "stories": 2,
+      "materials": {
+        "arcade_pillars": "brick_gothic",
+        "walls": "plaster_white",
+        "roof": "roof_tile_red",
+        "quad_soil": "dirt_garden"
+      },
+      "roof_type": "hip_quadrangle",
+      "roof_pitch_deg": 48,
+      "exterior_workspace": {
+        "type": "cloister_herb_garden",
+        "offset": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "props": [
+          { "type": "raised_timber_herb_beds", "offset": { "x": -3.5, "z": -3.5 } },
+          { "type": "raised_timber_herb_beds", "offset": { "x": 3.5, "z": -3.5 } },
+          { "type": "raised_timber_herb_beds", "offset": { "x": -3.5, "z": 3.5 } },
+          { "type": "raised_timber_herb_beds", "offset": { "x": 3.5, "z": 3.5 } },
+          { "type": "central_stone_water_fountain", "offset": { "x": 0.0, "z": 0.0 } }
+        ]
+      },
+      "backyard_doodads": [],
+      "associated_workers": ["worker_monk_gardener", "worker_monk_apothecary"],
+      "blender_generator": "build_monastery_cloister",
+      "model_path": "/models/monastery_cloister.glb"
+    },
+    {
+      "id": "bldg_castle_donjon",
+      "name_en": "Castle Donjon Keep & Bailey",
+      "name_pl": "Donżon i Dziedziniec Zamkowy",
+      "category": "fortified_royal",
+      "district_affinity": ["castle_hill"],
+      "dimensions": { "width": 14.0, "depth": 14.0, "wall_height": 24.0, "total_height": 30.0 },
+      "stories": 4,
+      "materials": {
+        "cylinder_walls": "stone_limestone",
+        "upper_machicolations": "brick_gothic",
+        "roof": "roof_tile_red"
+      },
+      "roof_type": "conical_turret",
+      "roof_pitch_deg": 52,
+      "exterior_workspace": {
+        "type": "castle_bailey_walk",
+        "offset": { "x": 0.0, "y": 0.0, "z": -9.0 },
+        "props": [
+          { "type": "raised_draw_stair_platform", "offset": { "x": 0.0, "z": 0.0 } },
+          { "type": "iron_brazier_fire_basket", "offset": { "x": 3.2, "z": 0.0 }, "features": ["flame_emitter", "light_emitter"] },
+          { "type": "royal_banner_pole", "offset": { "x": -3.2, "z": 0.0 } }
+        ]
+      },
+      "backyard_doodads": [],
+      "associated_workers": ["worker_royal_castellan", "worker_castle_guard"],
+      "blender_generator": "build_castle_donjon",
+      "model_path": "/models/castle_donjon.glb"
+    },
+    {
+      "id": "bldg_krakow_gate",
+      "name_en": "Kraków Gate & Barbican Drawbridge",
+      "name_pl": "Brama Krakowska z Przedbramiem",
+      "category": "fortified_gateway",
+      "district_affinity": ["bramowa_quarter"],
+      "dimensions": { "width": 11.0, "depth": 13.0, "wall_height": 18.0, "total_height": 24.0 },
+      "stories": 4,
+      "materials": {
+        "base_square": "stone_limestone",
+        "octagonal_tower": "brick_gothic",
+        "spire": "copper_patina"
+      },
+      "roof_type": "pyramidal_octagonal_spire",
+      "roof_pitch_deg": 65,
+      "exterior_workspace": {
+        "type": "outer_drawbridge_post",
+        "offset": { "x": 0.0, "y": 0.0, "z": -8.5 },
+        "props": [
+          { "type": "timber_drawbridge_chains", "offset": { "x": 0.0, "z": 0.0 } },
+          { "type": "iron_portcullis_grate", "offset": { "x": 0.0, "z": 2.0 } },
+          { "type": "guards_sentry_box", "offset": { "x": 4.5, "z": 0.0 } }
+        ]
+      },
+      "backyard_doodads": [],
+      "associated_workers": ["worker_gate_captain", "worker_guard_crossbow"],
+      "blender_generator": "build_krakow_gate",
+      "model_path": "/models/gate_krakow.glb"
+    },
+    {
+      "id": "bldg_grodzka_gate",
+      "name_en": "Grodzka Gate & Ravine Bridge",
+      "name_pl": "Brama Grodzka i Most Zamkowy",
+      "category": "fortified_gateway",
+      "district_affinity": ["grodzka_quarter"],
+      "dimensions": { "width": 9.5, "depth": 11.0, "wall_height": 14.0, "total_height": 18.0 },
+      "stories": 3,
+      "materials": {
+        "walls": "brick_gothic",
+        "roof": "roof_tile_red"
+      },
+      "roof_type": "hip_roof",
+      "roof_pitch_deg": 50,
+      "exterior_workspace": {
+        "type": "bridge_toll_booth",
+        "offset": { "x": 4.2, "y": 0.0, "z": -2.0 },
+        "props": [
+          { "type": "octagonal_toll_kiosk", "offset": { "x": 0.0, "z": 0.0 } },
+          { "type": "toll_balance_scales", "offset": { "x": 0.0, "z": -0.8 } },
+          { "type": "iron_toll_chest", "offset": { "x": 0.0, "z": 0.8 } }
+        ]
+      },
+      "backyard_doodads": [],
+      "associated_workers": ["worker_royal_toll_collector", "worker_city_bailiff"],
+      "blender_generator": "build_grodzka_gate",
+      "model_path": "/models/gate_grodzka.glb"
+    },
+    {
+      "id": "bldg_castle_archery_yard",
+      "name_en": "Castle Archery & Training Yard",
+      "name_pl": "Majdan Strzelecki i Szkoła Fechtunku",
+      "category": "military_training",
+      "district_affinity": ["castle_hill"],
+      "dimensions": { "width": 14.0, "depth": 22.0, "wall_height": 3.6, "total_height": 4.5 },
+      "stories": 1,
+      "materials": {
+        "fence": "timber_dark",
+        "lane_surface": "sand_dirt"
+      },
+      "roof_type": "lean_to_open_shed",
+      "roof_pitch_deg": 25,
+      "exterior_workspace": {
+        "type": "archery_range_lane",
+        "offset": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "props": [
+          { "type": "straw_archery_target_10m", "offset": { "x": 0.0, "z": 4.0 } },
+          { "type": "straw_archery_target_15m", "offset": { "x": 2.5, "z": 6.5 } },
+          { "type": "straw_archery_target_20m", "offset": { "x": -2.5, "z": 9.0 } },
+          { "type": "vertical_weapon_rack", "offset": { "x": -4.5, "z": -6.0 } },
+          { "type": "spinning_quintain_dummy", "offset": { "x": 3.5, "z": -2.0 } }
+        ]
+      },
+      "backyard_doodads": [],
+      "associated_workers": ["worker_master_at_arms", "worker_guard_crossbow"],
+      "blender_generator": "build_archery_yard",
+      "model_path": "/models/archery_yard.glb"
+    },
+    {
+      "id": "bldg_riverside_watermill",
+      "name_en": "Riverside Watermill & Sluice",
+      "name_pl": "Młyn Wodny ze Śluzą i Kołem Podsiębiernym",
+      "category": "industrial_resource",
+      "district_affinity": ["grodzka_quarter"],
+      "dimensions": { "width": 9.0, "depth": 12.0, "wall_height": 4.8, "total_height": 8.5 },
+      "stories": 2,
+      "materials": {
+        "pilings": "timber_dark",
+        "log_walls": "timber_dark",
+        "roof": "roof_thatch"
+      },
+      "roof_type": "steep_thatch_gable",
+      "roof_pitch_deg": 55,
+      "exterior_workspace": {
+        "type": "waterwheel_raceway_pier",
+        "offset": { "x": 5.2, "y": 0.0, "z": 0.0 },
+        "props": [
+          { "type": "undershot_waterwheel_12paddle", "offset": { "x": 0.0, "z": 0.0 }, "features": ["continuous_rotation", "water_splash_emitter"] },
+          { "type": "timber_quayside_flour_pier", "offset": { "x": -2.0, "z": 4.5 } },
+          { "type": "stacked_flour_sacks_pyramid", "offset": { "x": -2.0, "z": 5.5 } },
+          { "type": "two_wheeled_flour_handbarrow", "offset": { "x": -3.5, "z": 4.0 } }
+        ]
+      },
+      "backyard_doodads": [],
+      "associated_workers": ["worker_miller_master", "worker_flour_porter"],
+      "blender_generator": "build_watermill",
+      "model_path": "/models/watermill.glb"
+    },
+    {
+      "id": "bldg_post_windmill",
+      "name_en": "Hilltop Post Windmill",
+      "name_pl": "Wiatrak Koźlak na Wzgórzu",
+      "category": "industrial_resource",
+      "district_affinity": ["krakow_suburb"],
+      "dimensions": { "width": 6.5, "depth": 6.5, "wall_height": 9.0, "total_height": 13.0 },
+      "stories": 3,
+      "materials": {
+        "central_pier": "stone_limestone",
+        "weatherboard_body": "timber_plank",
+        "roof": "roof_shingle"
+      },
+      "roof_type": "gabled_timber_cap",
+      "roof_pitch_deg": 48,
+      "exterior_workspace": {
+        "type": "windmill_sail_hub_mound",
+        "offset": { "x": 0.0, "y": 0.0, "z": -4.2 },
+        "props": [
+          { "type": "four_blade_canvas_sails", "offset": { "x": 0.0, "y": 9.0, "z": 0.0 }, "features": ["continuous_rotation"] },
+          { "type": "heavy_diagonal_tail_pole", "offset": { "x": 0.0, "z": 5.5 } },
+          { "type": "grain_wagon_and_sacks", "offset": { "x": 4.5, "z": -2.0 } }
+        ]
+      },
+      "backyard_doodads": [
+        { "type": "split_rail_paddock_fence", "offset": { "x": 0.0, "z": 0.0 }, "radius": 7.5 }
+      ],
+      "associated_workers": ["worker_windmiller"],
+      "blender_generator": "build_windmill",
+      "model_path": "/models/windmill.glb"
+    },
+    {
+      "id": "bldg_limestone_quarry",
+      "name_en": "Stepped Limestone Quarry & Crane",
+      "name_pl": "Kamieniołom Wapienia z Żurawiem Ciesielskim",
+      "category": "industrial_resource",
+      "district_affinity": ["south_wall"],
+      "dimensions": { "width": 24.0, "depth": 28.0, "wall_height": 3.0, "total_height": 9.0 },
+      "stories": 3,
+      "materials": {
+        "rock_ledges": "stone_limestone",
+        "derrick_crane": "timber_dark",
+        "crane_ropes": "iron_wrought"
+      },
+      "roof_type": "open_pit",
+      "roof_pitch_deg": 0,
+      "exterior_workspace": {
+        "type": "quarry_hoist_ledge",
+        "offset": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "props": [
+          { "type": "wooden_derrick_jib_crane", "offset": { "x": 2.5, "z": -2.0 }, "features": ["suspended_ashlar_block", "swivel_hoist"] },
+          { "type": "masons_stonecutting_trestle", "offset": { "x": -4.0, "z": 3.0 } },
+          { "type": "dressed_ashlar_cubes_grid", "offset": { "x": -2.0, "z": 6.0 } },
+          { "type": "limestone_rubble_scree", "offset": { "x": 6.0, "z": 4.0 } }
+        ]
+      },
+      "backyard_doodads": [],
+      "associated_workers": ["worker_quarryman_hewer", "worker_stonemason"],
+      "blender_generator": "build_stone_quarry",
+      "model_path": "/models/stone_quarry.glb"
+    },
+    {
+      "id": "bldg_logging_camp_sawmill",
+      "name_en": "Logging Camp & Pit Sawmill",
+      "name_pl": "Obóz Drwali i Trak Ciesielski",
+      "category": "industrial_resource",
+      "district_affinity": ["krakow_suburb"],
+      "dimensions": { "width": 18.0, "depth": 22.0, "wall_height": 3.5, "total_height": 5.5 },
+      "stories": 1,
+      "materials": {
+        "timber_frame": "timber_dark",
+        "logs": "timber_plank",
+        "roof": "roof_shingle"
+      },
+      "roof_type": "open_drying_shelter",
+      "roof_pitch_deg": 35,
+      "exterior_workspace": {
+        "type": "two_man_pit_saw_trestle",
+        "offset": { "x": 0.0, "y": 0.0, "z": -2.0 },
+        "props": [
+          { "type": "elevated_sawpit_trestle", "offset": { "x": 0.0, "z": 0.0 } },
+          { "type": "yellow_sawdust_mound", "offset": { "x": 0.0, "z": 0.0 } },
+          { "type": "massive_log_ricks_stack", "offset": { "x": -5.0, "z": 3.0 } },
+          { "type": "tree_stumps_and_felling_axes", "offset": { "x": 4.5, "z": 4.0 } }
+        ]
+      },
+      "backyard_doodads": [
+        { "type": "split_firewood_cords", "offset": { "x": 5.0, "z": -4.0 } }
+      ],
+      "associated_workers": ["worker_woodcutter", "worker_pit_sawyer"],
+      "blender_generator": "build_logging_camp",
+      "model_path": "/models/logging_camp.glb"
+    },
+    {
+      "id": "bldg_river_harbor_wharf",
+      "name_en": "Riverside Harbor Wharves & Basin",
+      "name_pl": "Przystań Rzeczna z Żurawiem Portowym i Kogami",
+      "category": "maritime_trade",
+      "district_affinity": ["krakow_suburb"],
+      "dimensions": { "width": 28.0, "depth": 16.0, "wall_height": 4.0, "total_height": 9.0 },
+      "stories": 1,
+      "materials": {
+        "boardwalk": "timber_plank",
+        "crane_housing": "timber_dark",
+        "crane_roof": "roof_shingle"
+      },
+      "roof_type": "wharf_lean_to",
+      "roof_pitch_deg": 30,
+      "exterior_workspace": {
+        "type": "harbor_crane_wharf_berth",
+        "offset": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "props": [
+          { "type": "treadwheel_harbor_crane", "offset": { "x": 3.5, "z": 0.0 }, "features": ["swinging_jib_arm", "cargo_sling"] },
+          { "type": "moored_river_cog_vessel", "offset": { "x": -7.5, "z": 4.0 }, "features": ["single_mast", "sterncastle"] },
+          { "type": "oak_cargo_barrels_cluster", "offset": { "x": 0.0, "z": -3.0 } },
+          { "type": "burlap_salt_grain_sacks", "offset": { "x": 4.0, "z": -3.0 } }
+        ]
+      },
+      "backyard_doodads": [],
+      "associated_workers": ["worker_harbor_master", "worker_harbor_stevedore", "worker_cog_captain"],
+      "blender_generator": "build_river_harbor",
+      "model_path": "/models/river_harbor.glb"
+    },
+    {
+      "id": "bldg_blacksmith_workshop",
+      "name_en": "Blacksmith's Workshop & Outdoor Forge",
+      "name_pl": "Kuźnia Miejska z Paleniskiem Zewnętrznym",
+      "category": "industrial_craft",
+      "district_affinity": ["krakow_suburb", "grodzka_quarter"],
+      "dimensions": { "width": 8.4, "depth": 11.2, "wall_height": 4.2, "total_height": 8.6 },
+      "stories": 2,
+      "materials": {
+        "foundation": "stone_limestone",
+        "walls": "timber_dark",
+        "infill": "brick_gothic",
+        "roof": "roof_shingle",
+        "chimney": "brick_gothic"
+      },
+      "roof_type": "gable_half_hipped",
+      "roof_pitch_deg": 52,
+      "exterior_workspace": {
+        "type": "open_lean_to_forge",
+        "offset": { "x": 3.6, "y": 0.0, "z": -2.0 },
+        "props": [
+          { "type": "stone_furnace_hearth", "offset": { "x": 0.0, "z": 0.0 }, "features": ["flame_emitter", "smoke_emitter", "light_emitter"] },
+          { "type": "iron_anvil_on_stump", "offset": { "x": 1.2, "z": 0.8 } },
+          { "type": "water_quenching_trough", "offset": { "x": 1.2, "z": -0.8 } },
+          { "type": "weapon_rack", "offset": { "x": 2.2, "z": 0.0 } }
+        ]
+      },
+      "backyard_doodads": [
+        { "type": "firewood_rick", "offset": { "x": -3.8, "z": 4.0 } },
+        { "type": "scrap_iron_pile", "offset": { "x": 2.5, "z": 3.5 } },
+        { "type": "split_rail_fence", "offset": { "x": 0.0, "z": 5.2 }, "length": 8.0 }
+      ],
+      "associated_workers": ["worker_blacksmith_master", "worker_blacksmith_striker"],
+      "blender_generator": "build_blacksmith_workshop",
+      "model_path": "/models/blacksmith_workshop.glb"
+    },
+    {
+      "id": "bldg_baker_house",
+      "name_en": "Baker's House & Masonry Oven",
+      "name_pl": "Dom Piekarza z Piecem Chlebowym",
+      "category": "food_craft",
+      "district_affinity": ["bramowa_quarter", "fara_quarter"],
+      "dimensions": { "width": 7.5, "depth": 10.5, "wall_height": 4.0, "total_height": 7.8 },
+      "stories": 2,
+      "materials": {
+        "walls": "timber_dark",
+        "plaster": "plaster_white",
+        "roof": "roof_tile_red",
+        "oven": "brick_gothic"
+      },
+      "roof_type": "gable_pitched",
+      "roof_pitch_deg": 50,
+      "exterior_workspace": {
+        "type": "outdoor_brick_bread_oven",
+        "offset": { "x": -3.6, "y": 0.0, "z": -1.5 },
+        "props": [
+          { "type": "domed_brick_bread_oven", "offset": { "x": 0.0, "z": 0.0 }, "features": ["smoke_emitter"] },
+          { "type": "bread_cooling_trestle", "offset": { "x": 0.0, "z": 1.5 } },
+          { "type": "birch_firewood_pile", "offset": { "x": 0.0, "z": -1.5 } }
+        ]
+      },
+      "backyard_doodads": [
+        { "type": "flour_sack_stack", "offset": { "x": 2.5, "z": 3.5 } }
+      ],
+      "associated_workers": ["worker_master_baker"],
+      "blender_generator": "build_baker_house",
+      "model_path": "/models/house_baker.glb"
+    },
+    {
+      "id": "bldg_brewer_malthouse",
+      "name_en": "Brewer's Malthouse & Cask Yard",
+      "name_pl": "Browar i Słodownia z Placem Bednarskim",
+      "category": "beverage_craft",
+      "district_affinity": ["krakow_suburb", "north_wall"],
+      "dimensions": { "width": 9.5, "depth": 14.0, "wall_height": 5.0, "total_height": 9.2 },
+      "stories": 2,
+      "materials": {
+        "ground_floor": "brick_gothic",
+        "upper_floor": "timber_dark",
+        "roof": "roof_tile_red"
+      },
+      "roof_type": "gable_half_hipped",
+      "roof_pitch_deg": 52,
+      "exterior_workspace": {
+        "type": "cask_washing_and_cooper_yard",
+        "offset": { "x": 4.5, "y": 0.0, "z": 0.0 },
+        "props": [
+          { "type": "barrel_washing_soak_trough", "offset": { "x": 0.0, "z": -2.0 } },
+          { "type": "coopers_hoop_driving_bench", "offset": { "x": 0.0, "z": 1.5 } },
+          { "type": "oak_beer_casks_stack_of_six", "offset": { "x": 1.8, "z": 0.0 } }
+        ]
+      },
+      "backyard_doodads": [
+        { "type": "barley_malt_drying_rack", "offset": { "x": -3.5, "z": 4.0 } }
+      ],
+      "associated_workers": ["worker_master_brewer", "worker_cooper"],
+      "blender_generator": "build_brewer_malthouse",
+      "model_path": "/models/house_brewer.glb"
+    },
+    {
+      "id": "bldg_tanner_workshop",
+      "name_en": "Tanner's Riverside Workshop",
+      "name_pl": "Garbarnia Nadrzeczna z Kadziami",
+      "category": "leather_craft",
+      "district_affinity": ["krakow_suburb", "south_wall"],
+      "dimensions": { "width": 8.0, "depth": 12.5, "wall_height": 3.8, "total_height": 7.5 },
+      "stories": 2,
+      "materials": {
+        "walls": "timber_dark",
+        "drying_loft": "timber_plank",
+        "roof": "roof_thatch"
+      },
+      "roof_type": "steep_thatch_gable",
+      "roof_pitch_deg": 54,
+      "exterior_workspace": {
+        "type": "tanning_vats_and_drying_frames",
+        "offset": { "x": 3.8, "y": 0.0, "z": 0.0 },
+        "props": [
+          { "type": "sunken_hide_soaking_vats", "offset": { "x": 0.0, "z": -1.5 } },
+          { "type": "stretched_hide_wooden_frames", "offset": { "x": 0.0, "z": 2.0 } },
+          { "type": "curved_fleshing_beam_bench", "offset": { "x": 1.6, "z": 0.0 } }
+        ]
+      },
+      "backyard_doodads": [],
+      "associated_workers": ["worker_master_tanner"],
+      "blender_generator": "build_tanner_workshop",
+      "model_path": "/models/house_tanner.glb"
+    },
+    {
+      "id": "bldg_potter_workshop",
+      "name_en": "Potter's Shed & Kiln Yard",
+      "name_pl": "Garncarnia z Piecem Ceramicznym",
+      "category": "ceramic_craft",
+      "district_affinity": ["krakow_suburb"],
+      "dimensions": { "width": 7.2, "depth": 9.8, "wall_height": 3.4, "total_height": 6.8 },
+      "stories": 1,
+      "materials": {
+        "walls": "plaster_cream",
+        "roof": "roof_thatch",
+        "kiln": "brick_gothic"
+      },
+      "roof_type": "gable_thatched",
+      "roof_pitch_deg": 50,
+      "exterior_workspace": {
+        "type": "pottery_firing_kiln_yard",
+        "offset": { "x": -3.5, "y": 0.0, "z": 0.0 },
+        "props": [
+          { "type": "domed_brick_pottery_kiln", "offset": { "x": 0.0, "z": -1.5 }, "features": ["smoke_emitter"] },
+          { "type": "potters_kickwheel_trestle", "offset": { "x": 0.0, "z": 1.8 } },
+          { "type": "drying_shelves_with_clay_jugs", "offset": { "x": 1.5, "z": 0.0 } }
+        ]
+      },
+      "backyard_doodads": [
+        { "type": "raw_clay_pit", "offset": { "x": 2.5, "z": 3.0 } }
+      ],
+      "associated_workers": ["worker_master_potter"],
+      "blender_generator": "build_potter_workshop",
+      "model_path": "/models/house_potter.glb"
+    },
+    {
+      "id": "bldg_weaver_workshop",
+      "name_en": "Weaver's Half-Timber Workshop",
+      "name_pl": "Warsztat Tkacki z Suszarnią Sukna",
+      "category": "textile_craft",
+      "district_affinity": ["bramowa_quarter", "grodzka_quarter"],
+      "dimensions": { "width": 8.0, "depth": 11.0, "wall_height": 4.4, "total_height": 8.2 },
+      "stories": 2,
+      "materials": {
+        "walls": "timber_dark",
+        "infill": "plaster_white",
+        "roof": "roof_tile_red"
+      },
+      "roof_type": "gable_with_dormer_hoist",
+      "roof_pitch_deg": 52,
+      "exterior_workspace": {
+        "type": "yarn_drying_and_dye_yard",
+        "offset": { "x": 3.5, "y": 0.0, "z": 0.0 },
+        "props": [
+          { "type": "linen_bleaching_horizontal_poles", "offset": { "x": 0.0, "z": 0.0 } },
+          { "type": "wooden_dye_vat", "offset": { "x": 0.0, "z": -2.2 } },
+          { "type": "spindle_drying_bench", "offset": { "x": 1.4, "z": 1.2 } }
+        ]
+      },
+      "backyard_doodads": [],
+      "associated_workers": ["worker_master_weaver"],
+      "blender_generator": "build_weaver_workshop",
+      "model_path": "/models/house_weaver.glb"
+    },
+    {
+      "id": "bldg_patrician_brick_kamienica",
+      "name_en": "Patrician Stepped Brick Kamienica",
+      "name_pl": "Kamienica Patrycjuszowska ze Szczytem Schodkowym",
+      "category": "residential_wealthy",
+      "district_affinity": ["market_square", "bramowa_quarter"],
+      "dimensions": { "width": 9.0, "depth": 14.0, "wall_height": 8.5, "total_height": 15.5 },
+      "stories": 3,
+      "materials": {
+        "walls": "brick_gothic",
+        "tracery": "plaster_white",
+        "roof": "roof_tile_red"
+      },
+      "roof_type": "stepped_gable_pinnacles",
+      "roof_pitch_deg": 56,
+      "exterior_workspace": {
+        "type": "stone_portal_street_front",
+        "offset": { "x": 0.0, "y": 0.0, "z": -7.2 },
+        "props": [
+          { "type": "gothic_arched_stone_portal", "offset": { "x": 0.0, "z": 0.0 } },
+          { "type": "cellar_iron_bulkhead_doors", "offset": { "x": -2.5, "z": 0.4 } },
+          { "type": "patrician_stone_bench", "offset": { "x": 2.5, "z": 0.2 } }
+        ]
+      },
+      "backyard_doodads": [
+        { "type": "flagstone_paved_courtyard", "offset": { "x": 0.0, "z": 4.5 } },
+        { "type": "stone_rimmed_private_well", "offset": { "x": -2.5, "z": 4.5 } }
+      ],
+      "associated_workers": ["worker_patrician_merchant"],
+      "blender_generator": "build_house_patrician_brick",
+      "model_path": "/models/house_patrician_brick.glb"
+    },
+    {
+      "id": "bldg_half_timber_jettied_house",
+      "name_en": "Merchant Half-Timbered Jettied Tenement",
+      "name_pl": "Kamienica Szachulcowa z Nadwieszeniem",
+      "category": "residential_middle",
+      "district_affinity": ["grodzka_quarter", "fara_quarter"],
+      "dimensions": { "width": 8.0, "depth": 12.0, "wall_height": 7.5, "total_height": 13.5 },
+      "stories": 3,
+      "materials": {
+        "plinth": "stone_limestone",
+        "timbers": "timber_dark",
+        "infill": "plaster_cream",
+        "roof": "roof_tile_red"
+      },
+      "roof_type": "gable_with_dormer",
+      "roof_pitch_deg": 54,
+      "exterior_workspace": {
+        "type": "fold_down_storefront_stall",
+        "offset": { "x": 0.0, "y": 0.0, "z": -6.2 },
+        "props": [
+          { "type": "fold_down_wooden_counter", "offset": { "x": 1.5, "z": 0.0 } },
+          { "type": "hung_carved_guild_sign", "offset": { "x": -1.8, "y": 3.0, "z": 0.0 } }
+        ]
+      },
+      "backyard_doodads": [
+        { "type": "split_rail_fence", "offset": { "x": 0.0, "z": 5.0 }, "length": 7.5 },
+        { "type": "firewood_rick", "offset": { "x": -2.8, "z": 3.5 } },
+        { "type": "two_wheeled_handcart", "offset": { "x": 2.2, "z": 4.0 } }
+      ],
+      "associated_workers": ["worker_burgher_guildsman", "worker_housewife"],
+      "blender_generator": "build_house_half_timber",
+      "model_path": "/models/house_half_timber.glb"
+    },
+    {
+      "id": "bldg_rural_thatched_log_cabin",
+      "name_en": "Rural Interlocking Log Cottage",
+      "name_pl": "Wiejska Chata Zrębowa z Ogrodzeniem",
+      "category": "vernacular_peasant",
+      "district_affinity": ["krakow_suburb", "north_wall"],
+      "dimensions": { "width": 6.5, "depth": 8.5, "wall_height": 3.0, "total_height": 6.2 },
+      "stories": 1,
+      "materials": {
+        "log_walls": "timber_dark",
+        "roof": "roof_thatch"
+      },
+      "roof_type": "steep_thatch_ridge_crosses",
+      "roof_pitch_deg": 52,
+      "exterior_workspace": {
+        "type": "cabbage_garden_and_porch",
+        "offset": { "x": 0.0, "y": 0.0, "z": -4.6 },
+        "props": [
+          { "type": "rustic_timber_door_stoop", "offset": { "x": 0.0, "z": 0.0 } },
+          { "type": "axe_embedded_in_stump", "offset": { "x": 2.2, "z": 0.0 } }
+        ]
+      },
+      "backyard_doodads": [
+        { "type": "wattle_hurdle_garden_fence", "offset": { "x": 0.0, "z": 3.5 }, "length": 6.0 },
+        { "type": "cabbage_vegetable_mounds", "offset": { "x": -1.5, "z": 3.0 } },
+        { "type": "wicker_chicken_coop", "offset": { "x": 2.0, "z": 3.5 } }
+      ],
+      "associated_workers": ["worker_peasant_farmer"],
+      "blender_generator": "build_house_timber_log",
+      "model_path": "/models/house_timber_log.glb"
+    }
+  ],
+  "workers": [
+    {
+      "id": "worker_blacksmith_master",
+      "name_en": "Master Blacksmith",
+      "name_pl": "Mistrz Kowalski",
+      "guild": "Smiths & Armorers Guild",
+      "wealth_stratum": "artisan",
+      "associated_building_id": "bldg_blacksmith_workshop",
+      "visual_attire": {
+        "tunic_color": "#DFDBD2",
+        "apron_color": "#2A1E14",
+        "hose_color": "#26262B",
+        "headwear": "linen_coif_white",
+        "gloves": true
+      },
+      "held_props": { "right_hand": "cross_peen_hammer", "left_hand": "blacksmith_tongs_hot_iron" },
+      "default_station": {
+        "relative_to": "exterior_workspace.iron_anvil_on_stump",
+        "offset": { "x": -0.5, "y": 0.0, "z": 0.0 },
+        "facing_angle_deg": 90
+      },
+      "work_cycle": {
+        "animation_loop": "blacksmith_hammer_anvil_cycle",
+        "cycle_duration_seconds": 5.7,
+        "fx_triggers": [
+          { "time_sec": 1.2, "event": "anvil_spark" },
+          { "time_sec": 2.4, "event": "anvil_spark" },
+          { "time_sec": 4.8, "event": "water_steam_quench" }
+        ]
+      },
+      "voice_lines": ["Good steel needs neither polish nor boast.", "The King's cavalry rides on Lublin iron!"]
+    },
+    {
+      "id": "worker_blacksmith_striker",
+      "name_en": "Smith's Striker Apprentice",
+      "name_pl": "Czeladnik Kowalski (Młotowy)",
+      "guild": "Smiths & Armorers Guild",
+      "wealth_stratum": "plebeian",
+      "associated_building_id": "bldg_blacksmith_workshop",
+      "visual_attire": { "tunic_color": "#7A6A53", "apron_color": "#3B2E24", "hose_color": "#4A3B2C", "headwear": "none", "gloves": true },
+      "held_props": { "two_handed": "heavy_sledgehammer" },
+      "default_station": { "relative_to": "exterior_workspace.iron_anvil_on_stump", "offset": { "x": 0.5, "y": 0.0, "z": 0.0 }, "facing_angle_deg": 270 },
+      "work_cycle": { "animation_loop": "two_hand_sledge_strike", "cycle_duration_seconds": 2.8, "fx_triggers": [{ "time_sec": 1.4, "event": "anvil_spark" }] },
+      "voice_lines": ["Blow the bellows, heat the hearth!"]
+    },
+    {
+      "id": "worker_woodcutter",
+      "name_en": "Woodcutter",
+      "name_pl": "Drwal",
+      "guild": "Foresters Fraternity",
+      "wealth_stratum": "plebeian",
+      "associated_building_id": "bldg_logging_camp_sawmill",
+      "visual_attire": { "tunic_color": "#5C4938", "apron_color": "none", "hose_color": "#362B21", "headwear": "woolen_hood_dark", "gloves": true },
+      "held_props": { "two_handed": "felling_broad_axe" },
+      "default_station": { "relative_to": "exterior_workspace.tree_stumps_and_felling_axes", "offset": { "x": 0.0, "y": 0.0, "z": 0.0 }, "facing_angle_deg": 0 },
+      "work_cycle": { "animation_loop": "axe_chop_log_cycle", "cycle_duration_seconds": 3.2, "fx_triggers": [{ "time_sec": 1.6, "event": "wood_chip_flying" }] },
+      "voice_lines": ["Pine for rafters, oak for walls!"]
+    },
+    {
+      "id": "worker_pit_sawyer",
+      "name_en": "Pit Sawyer",
+      "name_pl": "Trakarz Ciesielski",
+      "guild": "Carpenters Guild",
+      "wealth_stratum": "artisan",
+      "associated_building_id": "bldg_logging_camp_sawmill",
+      "visual_attire": { "tunic_color": "#8C7B65", "apron_color": "none", "hose_color": "#4A3B2C", "headwear": "linen_headband", "gloves": false },
+      "held_props": { "two_handed": "two_man_pit_saw_handle" },
+      "default_station": { "relative_to": "exterior_workspace.elevated_sawpit_trestle", "offset": { "x": 0.0, "y": 0.0, "z": 0.0 }, "facing_angle_deg": 180 },
+      "work_cycle": { "animation_loop": "saw_push_pull_cycle", "cycle_duration_seconds": 2.0, "fx_triggers": [{ "time_sec": 1.0, "event": "sawdust_drift" }] },
+      "voice_lines": ["Straight cut, true beam!"]
+    },
+    {
+      "id": "worker_quarryman_hewer",
+      "name_en": "Quarryman & Rock Hewer",
+      "name_pl": "Łamacz Kamienia (Skalnik)",
+      "guild": "Masons Confraternity",
+      "wealth_stratum": "plebeian",
+      "associated_building_id": "bldg_limestone_quarry",
+      "visual_attire": { "tunic_color": "#9E8656", "apron_color": "none", "hose_color": "#4A3B2C", "headwear": "rough_felt_cap", "gloves": true },
+      "held_props": { "two_handed": "iron_pickaxe" },
+      "default_station": { "relative_to": "exterior_workspace.quarry_hoist_ledge", "offset": { "x": 4.0, "y": 0.0, "z": 2.0 }, "facing_angle_deg": 45 },
+      "work_cycle": { "animation_loop": "pickaxe_rock_strike", "cycle_duration_seconds": 2.6, "fx_triggers": [{ "time_sec": 1.3, "event": "stone_dust_puff" }] },
+      "voice_lines": ["Solid loess limestone for the King's tower!"]
+    },
+    {
+      "id": "worker_stonemason",
+      "name_en": "Master Stone Mason",
+      "name_pl": "Mularz Kamieniarz",
+      "guild": "Masons Confraternity",
+      "wealth_stratum": "burgher",
+      "associated_building_id": "bldg_limestone_quarry",
+      "visual_attire": { "tunic_color": "#DFDBD2", "apron_color": "#7A6A53", "hose_color": "#3B342B", "headwear": "linen_coif_white", "gloves": false },
+      "held_props": { "right_hand": "stonemasons_mallet", "left_hand": "iron_chisel" },
+      "default_station": { "relative_to": "exterior_workspace.masons_stonecutting_trestle", "offset": { "x": 0.0, "y": 0.0, "z": 0.0 }, "facing_angle_deg": 90 },
+      "work_cycle": { "animation_loop": "chisel_ashlar_cycle", "cycle_duration_seconds": 4.0, "fx_triggers": [{ "time_sec": 1.0, "event": "chisel_chip" }] },
+      "voice_lines": ["Square, plumb, and true."]
+    },
+    {
+      "id": "worker_miller_master",
+      "name_en": "Master Miller",
+      "name_pl": "Młynarz",
+      "guild": "Millers Fraternity",
+      "wealth_stratum": "burgher",
+      "associated_building_id": "bldg_riverside_watermill",
+      "visual_attire": { "tunic_color": "#ECE9E2", "apron_color": "#DFDBD2", "hose_color": "#7A6A53", "headwear": "flour_dusted_cap", "gloves": false },
+      "held_props": { "right_hand": "wooden_flour_scoop" },
+      "default_station": { "relative_to": "exterior_workspace.timber_quayside_flour_pier", "offset": { "x": 0.0, "y": 0.0, "z": 0.0 }, "facing_angle_deg": 0 },
+      "work_cycle": { "animation_loop": "inspect_flour_scoop", "cycle_duration_seconds": 5.0, "fx_triggers": [] },
+      "voice_lines": ["Water turns the stones, mill grinds the wheat."]
+    },
+    {
+      "id": "worker_flour_porter",
+      "name_en": "Mill Flour Porter",
+      "name_pl": "Tragarz Mąki",
+      "guild": "Millers Fraternity",
+      "wealth_stratum": "plebeian",
+      "associated_building_id": "bldg_riverside_watermill",
+      "visual_attire": { "tunic_color": "#7A6A53", "apron_color": "none", "hose_color": "#4A3B2C", "headwear": "burlap_cowl", "gloves": false },
+      "held_props": { "shoulder": "flour_sack_50kg" },
+      "default_station": { "relative_to": "exterior_workspace.stacked_flour_sacks_pyramid", "offset": { "x": 1.0, "y": 0.0, "z": 0.0 }, "facing_angle_deg": 270 },
+      "work_cycle": { "animation_loop": "carry_sack_step_cycle", "cycle_duration_seconds": 6.0, "fx_triggers": [] },
+      "voice_lines": ["Heavy sacks for the city ovens."]
+    },
+    {
+      "id": "worker_windmiller",
+      "name_en": "Windmiller",
+      "name_pl": "Wiatrakarz",
+      "guild": "Millers Fraternity",
+      "wealth_stratum": "burgher",
+      "associated_building_id": "bldg_post_windmill",
+      "visual_attire": { "tunic_color": "#DFDBD2", "apron_color": "#9E8656", "hose_color": "#4A3B2C", "headwear": "woolen_smock", "gloves": true },
+      "held_props": { "right_hand": "rope_winch_crank" },
+      "default_station": { "relative_to": "exterior_workspace.heavy_diagonal_tail_pole", "offset": { "x": 0.0, "y": 0.0, "z": 0.0 }, "facing_angle_deg": 0 },
+      "work_cycle": { "animation_loop": "adjust_sail_tailpole", "cycle_duration_seconds": 6.5, "fx_triggers": [] },
+      "voice_lines": ["East wind carries rain, west wind grinds grain!"]
+    },
+    {
+      "id": "worker_master_baker",
+      "name_en": "Master Baker",
+      "name_pl": "Mistrz Piekarski",
+      "guild": "Bakers Fraternity",
+      "wealth_stratum": "burgher",
+      "associated_building_id": "bldg_baker_house",
+      "visual_attire": { "tunic_color": "#DFDBD2", "apron_color": "#C7C1B6", "hose_color": "#5C4938", "headwear": "white_linen_cap", "gloves": false },
+      "held_props": { "two_handed": "long_wooden_bread_peel" },
+      "default_station": { "relative_to": "exterior_workspace.domed_brick_bread_oven", "offset": { "x": 1.0, "y": 0.0, "z": 0.0 }, "facing_angle_deg": 270 },
+      "work_cycle": { "animation_loop": "slide_bread_into_oven", "cycle_duration_seconds": 5.2, "fx_triggers": [{ "time_sec": 2.5, "event": "oven_heat_glow" }] },
+      "voice_lines": ["Fresh rye and spelt bread for the Royal Fair!"]
+    },
+    {
+      "id": "worker_master_brewer",
+      "name_en": "Master Brewer",
+      "name_pl": "Mistrz Piwowarski",
+      "guild": "Brewers Confraternity",
+      "wealth_stratum": "patrician",
+      "associated_building_id": "bldg_brewer_malthouse",
+      "visual_attire": { "tunic_color": "#8C3B2B", "apron_color": "#4A3B2C", "hose_color": "#26262B", "headwear": "velvet_trimmed_chaperon", "gloves": false },
+      "held_props": { "right_hand": "copper_mash_paddle" },
+      "default_station": { "relative_to": "exterior_workspace.barrel_washing_soak_trough", "offset": { "x": 0.0, "y": 0.0, "z": 0.0 }, "facing_angle_deg": 90 },
+      "work_cycle": { "animation_loop": "stir_mash_tun_cycle", "cycle_duration_seconds": 5.5, "fx_triggers": [] },
+      "voice_lines": ["Pure spring water, malt, and aromatic hops!"]
+    },
+    {
+      "id": "worker_cooper",
+      "name_en": "Cooper (Barrel Maker)",
+      "name_pl": "Bednarz",
+      "guild": "Coopers Guild",
+      "wealth_stratum": "artisan",
+      "associated_building_id": "bldg_brewer_malthouse",
+      "visual_attire": { "tunic_color": "#7A6A53", "apron_color": "#3B2E24", "hose_color": "#26262B", "headwear": "linen_coif_white", "gloves": true },
+      "held_props": { "right_hand": "coopers_adze", "left_hand": "iron_barrel_hoop" },
+      "default_station": { "relative_to": "exterior_workspace.coopers_hoop_driving_bench", "offset": { "x": 0.0, "y": 0.0, "z": 0.0 }, "facing_angle_deg": 0 },
+      "work_cycle": { "animation_loop": "drive_barrel_hoop", "cycle_duration_seconds": 3.8, "fx_triggers": [{ "time_sec": 1.8, "event": "adze_tap" }] },
+      "voice_lines": ["Tight staves hold good wine and strong ale!"]
+    },
+    {
+      "id": "worker_master_tanner",
+      "name_en": "Master Tanner",
+      "name_pl": "Mistrz Garbarski",
+      "guild": "Tanners Guild",
+      "wealth_stratum": "artisan",
+      "associated_building_id": "bldg_tanner_workshop",
+      "visual_attire": { "tunic_color": "#5C4938", "apron_color": "#26262B", "hose_color": "#3B2E24", "headwear": "none", "gloves": true },
+      "held_props": { "two_handed": "curved_fleshing_knife" },
+      "default_station": { "relative_to": "exterior_workspace.curved_fleshing_beam_bench", "offset": { "x": 0.0, "y": 0.0, "z": 0.0 }, "facing_angle_deg": 90 },
+      "work_cycle": { "animation_loop": "scrape_hide_beam", "cycle_duration_seconds": 4.5, "fx_triggers": [] },
+      "voice_lines": ["Oak bark tannin makes tough leather boots."]
+    },
+    {
+      "id": "worker_master_potter",
+      "name_en": "Master Potter",
+      "name_pl": "Garncarz",
+      "guild": "Potters Guild",
+      "wealth_stratum": "artisan",
+      "associated_building_id": "bldg_potter_workshop",
+      "visual_attire": { "tunic_color": "#9E8656", "apron_color": "#DFDBD2", "hose_color": "#4A3B2C", "headwear": "headband", "gloves": false },
+      "held_props": { "right_hand": "wooden_shaping_rib" },
+      "default_station": { "relative_to": "exterior_workspace.potters_kickwheel_trestle", "offset": { "x": 0.0, "y": 0.0, "z": 0.0 }, "facing_angle_deg": 0 },
+      "work_cycle": { "animation_loop": "kickwheel_shape_clay", "cycle_duration_seconds": 5.0, "fx_triggers": [] },
+      "voice_lines": ["Clay from the Czechówka ravine makes fine vessels."]
+    },
+    {
+      "id": "worker_master_weaver",
+      "name_en": "Master Weaver",
+      "name_pl": "Tkacz Sukiennik",
+      "guild": "Weavers Guild",
+      "wealth_stratum": "artisan",
+      "associated_building_id": "bldg_weaver_workshop",
+      "visual_attire": { "tunic_color": "#8C3B2B", "apron_color": "none", "hose_color": "#26262B", "headwear": "wool_hood_burgundy", "gloves": false },
+      "held_props": { "right_hand": "threaded_weaving_shuttle" },
+      "default_station": { "relative_to": "exterior_workspace.linen_bleaching_horizontal_poles", "offset": { "x": 0.0, "y": 0.0, "z": 0.0 }, "facing_angle_deg": 0 },
+      "work_cycle": { "animation_loop": "inspect_spun_yarn", "cycle_duration_seconds": 4.8, "fx_triggers": [] },
+      "voice_lines": ["Flemish warp, Lublin weft."]
+    },
+    {
+      "id": "worker_monk_gardener",
+      "name_en": "Dominican Friar Herb Gardener",
+      "name_pl": "Brat Zakonny Ogrodnik",
+      "guild": "Order of Preachers (Dominican)",
+      "wealth_stratum": "cleric",
+      "associated_building_id": "bldg_monastery_cloister",
+      "visual_attire": { "tunic_color": "#DFDBD2", "apron_color": "none", "hose_color": "#26262B", "headwear": "dark_brown_monastic_cowl", "gloves": false },
+      "held_props": { "right_hand": "wooden_garden_hoe", "left_hand": "wicker_herb_basket" },
+      "default_station": { "relative_to": "exterior_workspace.central_stone_water_fountain", "offset": { "x": 2.5, "y": 0.0, "z": 2.5 }, "facing_angle_deg": 225 },
+      "work_cycle": { "animation_loop": "tend_herb_bed_kneel", "cycle_duration_seconds": 6.2, "fx_triggers": [] },
+      "voice_lines": ["Ora et labora. The sage blooms well this season."]
+    },
+    {
+      "id": "worker_guard_crossbow",
+      "name_en": "City Crossbow Guardsman",
+      "name_pl": "Strażnik Miejski (Kusznicy)",
+      "guild": "Town Watch / Brotherhood of the Rooster",
+      "wealth_stratum": "artisan",
+      "associated_building_id": "bldg_krakow_gate",
+      "visual_attire": { "tunic_color": "#8C3B2B", "apron_color": "none", "hose_color": "#26262B", "headwear": "iron_kettle_hat_sallet", "gloves": true },
+      "held_props": { "two_handed": "cocked_iron_crossbow" },
+      "default_station": { "relative_to": "exterior_workspace.outer_drawbridge_post", "offset": { "x": 2.5, "y": 0.0, "z": 0.0 }, "facing_angle_deg": 180 },
+      "work_cycle": { "animation_loop": "guard_scan_patrol_step", "cycle_duration_seconds": 6.0, "fx_triggers": [] },
+      "voice_lines": ["Halt! State your business at Kraków Gate!", "Crossbows ready on the battlements!"]
+    },
+    {
+      "id": "worker_farmer_scyther",
+      "name_en": "Peasant Farmer & Scyther",
+      "name_pl": "Chłop Kośnik",
+      "guild": "Peasantry",
+      "wealth_stratum": "plebeian",
+      "associated_building_id": "bldg_rural_thatched_log_cabin",
+      "visual_attire": { "tunic_color": "#DFDBD2", "apron_color": "none", "hose_color": "#7A6A53", "headwear": "woven_straw_hat", "gloves": false },
+      "held_props": { "two_handed": "curved_harvest_scythe" },
+      "default_station": { "relative_to": "exterior_workspace.cabbage_garden_and_porch", "offset": { "x": -2.0, "y": 0.0, "z": 0.0 }, "facing_angle_deg": 0 },
+      "work_cycle": { "animation_loop": "scythe_wheat_sweep", "cycle_duration_seconds": 4.2, "fx_triggers": [{ "time_sec": 2.1, "event": "wheat_swath_cut" }] },
+      "voice_lines": ["Golden grain under the harvest sun."]
+    }
+  ]
+}
