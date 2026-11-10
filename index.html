@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lublin Anno Domini 1392 • Royal Fair Simulation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- 3D & 2.5D Layered Viewport -->
+      <div id="viewport-container">
+        <canvas id="webgl-canvas"></canvas>
+        <canvas id="overlay-canvas"></canvas>
+      </div>
+
+      <!-- Top Header & Clock Bar -->
+      <header id="top-header">
+        <div class="brand-section">
+          <div class="royal-crest" title="Royal Crest of King Władysław II Jagiełło">🦅</div>
+          <div class="title-group">
+            <h1>Lublin Anno Domini 1392</h1>
+            <div class="subtitle">Royal Fair of the Assumption • Continental Trade Crossroads</div>
+          </div>
+        </div>
+
+        <div class="clock-section">
+          <div class="time-display">
+            <span id="hud-time">09:00</span>
+            <span id="hud-bell-name">Tercja (Terce: Fair Opening)</span>
+          </div>
+
+          <div class="btn-group">
+            <button id="btn-play-pause" class="active" title="Toggle Simulation Time">⏸ Pause</button>
+            <button data-speed="1" title="Realtime 1 Sim Min = 1 Sec">1x</button>
+            <button data-speed="5" class="active" title="Standard 5x Speed">5x</button>
+            <button data-speed="20" title="Brisk 20x Speed">20x</button>
+            <button data-speed="60" title="Fast Day Cycle">60x</button>
+          </div>
+
+          <div class="time-jumps">
+            <button data-jump-hour="5" title="Jump to Matins (Dawn 05:00)">🌅 Dawn</button>
+            <button data-jump-hour="12" title="Jump to Sext (High Fair Noon 12:00)">☀️ High Fair</button>
+            <button data-jump-hour="18" title="Jump to Vespers (Dusk 18:00)">🌆 Dusk</button>
+            <button data-jump-hour="21" title="Jump to Compline (Curfew 21:00)">🌙 Curfew</button>
+          </div>
+
+          <button id="btn-toll-bell" class="gold-btn" title="Toll Collegiate Church Bells">🔔 Toll Bell</button>
+          <button id="btn-audio-mute" title="Toggle Medieval Soundscapes">🔊 Sound</button>
+        </div>
+      </header>
+
+      <!-- View & Heatmap Modes Toolbar -->
+      <nav id="view-toolbar">
+        <span class="toolbar-label">Visualization:</span>
+        <button data-mode="none" class="active">🏰 3D City View</button>
+        <button data-mode="wealth">💰 Wealth Hierarchy</button>
+        <button data-mode="aging">🏚️ Structural Aging & Sag</button>
+        <button data-mode="traffic">🚶 Foot Traffic Density</button>
+        <button data-mode="defense">🛡️ City Defenses & Patrols</button>
+      </nav>
+
+      <!-- Camera & Navigation Controls (Bottom-Left) -->
+      <aside id="nav-panel">
+        <div class="nav-row">
+          <span class="toolbar-label">Camera:</span>
+          <button id="btn-rotate-ccw" title="Rotate Counter-Clockwise">↺ 90°</button>
+          <button id="btn-rotate-cw" title="Rotate Clockwise">↻ 90°</button>
+          <div class="compass-box" id="compass-heading">SW (Kraków Rd)</div>
+          <button id="btn-zoom-in" title="Zoom In">+</button>
+          <button id="btn-zoom-out" title="Zoom Out">−</button>
+        </div>
+        <div class="nav-row">
+          <span class="toolbar-label">Landmarks:</span>
+          <button data-landmark="rynek" title="Central Market Square & Old Town Hall">Rynek</button>
+          <button data-landmark="krakow_gate" title="Kraków Gate & Barbican">Kraków Gate</button>
+          <button data-landmark="grodzka_gate" title="Grodzka Gate & Bridge">Grodzka Gate</button>
+          <button data-landmark="castle" title="Castle Hill, Donjon Keep & Chapel">Castle Hill</button>
+          <button data-landmark="workshop" title="Player Workshop (Kraków Suburb)">Workshop</button>
+        </div>
+      </aside>
+
+      <!-- Inspector Drawer (Right Side) -->
+      <aside id="inspector-panel">
+        <div class="inspector-top-bar">
+          <h2>Registry & Chronicle</h2>
+          <button id="btn-close-inspector" class="close-btn" title="Close Panel">✕</button>
+        </div>
+        <div id="inspector-content">
+          <!-- Dynamically populated by inspector.ts -->
+        </div>
+      </aside>
+
+      <!-- Bottom Event Ticker / Chronicle -->
+      <footer id="event-ticker">
+        <span class="ticker-icon">📜</span>
+        <span class="ticker-label">Lublin Chronicle:</span>
+        <span id="event-ticker-text">King Władysław II Jagiełło confirms the royal fair privileges. Over 1,500 burghers and foreign merchants gather at the Market Square.</span>
+      </footer>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
