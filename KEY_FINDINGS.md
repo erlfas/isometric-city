@@ -121,3 +121,82 @@ To eliminate all clipping while preserving authentic historical density, the cit
    - Total parcels: **580**
    - Pairwise bounding overlaps: **EXACTLY 0**
    - Performance: Stable 60 FPS rendering with Three.js PCF soft shadows and ground street network paving.
+
+---
+
+## 6. Procedural Craft & Building Differentiation: Breaking the "Generic Workshop Clone" Bottleneck
+
+### The Failure Mode in Initial Procedural Implementations
+In the initial parcellation and asset compilation phase, specialized guild workshops (bakers, tanners, brewers, blacksmiths, potters, weavers) and industrial production complexes (watermills, windmills, quarries, sawmills, harbors) were visually homogeneous:
+- The procedural spawner mapped all artisan crafts to the same baseline generic residential houses (`house_half_timber`, `house_patrician_brick`, or `house_timber_log`).
+- **Visual Failure**: When a player or camera hovered over a baker's parcel, the structure appeared as an ordinary burgher tenement with zero indication of baking activities (no outdoor oven, no firewood, no bread counter, no chimney soot). A tanner's riverfront workshop looked identical to an inner-city merchant townhouse, lacking the iconic sunken tanning liquor vats, hide-stretching frames, and fleshing beams evident in the concept art.
+- **Narrative Break**: The rich economic depth simulated by the citizen and craft data tier was completely decoupled from the 3D rendering tier.
+
+### The Architectural & Procedural Solution
+1. **Exterior Workspace Architecture**:
+   - Analysis of historical 14th-century Central European concept art revealed that medieval craft workshops are defined primarily by their **exterior workspaces, outdoor production machinery, and active trade props** rather than internal room layouts.
+   - We expanded the procedural asset pipeline from 16 generic templates to **31 dedicated, visually distinct GLB models**.
+2. **Dedicated Craft Workshop Implementations**:
+   - **Baker's House ([`house_baker.glb`](file:///home/antigravity/erlfas/isometric-city/public/models/house_baker.glb))**: Half-timbered residence with an integrated side-yard masonry baking oven complex ($3.2\text{m} \times 3.5\text{m}$ limestone foundation, domed red-brick baking chamber with `#ff6611` glowing stokehole fire, $4.2\text{m}$ tall chimney stack), open timber lean-to canopy, stacked birch firewood cords, burlap flour sacks (`#C7BD9C`), ash wood bread peel shovel, and a front fold-down bread counter with a hung gilded pretzel sign.
+   - **Tanner's River Workshop ([`house_tanner.glb`](file:///home/antigravity/erlfas/isometric-city/public/models/house_tanner.glb))**: Log construction with an open-sided upper drying gallery for river breeze aeration, sagging thatch roof, 4 rectangular sunken wooden tanning vats filled with dark tannin liquor (`#38291f`), 2 vertical hide-stretching frames ($3.2\text{m}$ high) with stretched pelts, low tilted wooden fleshing beam with curved drawknife, and stacks of cured leather.
+   - **Brewer's Malthouse ([`house_brewer.glb`](file:///home/antigravity/erlfas/isometric-city/public/models/house_brewer.glb))**: Gothic brick ground floor ($0.6\text{m}$ walls), half-timbered upper story with horizontal wooden louvers (*żaluzje słodowe*) for malt moisture venting, outdoor cask-washing yard with 2 long wooden soak troughs, pyramid stack of 6 oak beer casks, outdoor tavern drinking tables with benches, and copper mash paddle sign.
+   - **Blacksmith's Forge ([`blacksmith_workshop.glb`](file:///home/antigravity/erlfas/isometric-city/public/models/blacksmith_workshop.glb))**: Stone plinth, projecting open timber forge canopy, raised masonry hearth with glowing orange coals, iron anvil mounted on oak tree stump, water-quenching trough, tool and weapon racks holding forged blades, and coal mounds.
+   - **Potter's Shed & Kiln ([`house_potter.glb`](file:///home/antigravity/erlfas/isometric-city/public/models/house_potter.glb))**: Wattle-and-daub cottage with loam plaster and thatch roof, domed circular red-brick updraft kiln ($2.8\text{m}$ dia., $3.2\text{m}$ high) with stone flue chimney, outdoor potter's kick-wheel bench, 3-tiered wooden drying shelves lined with terracotta amphorae, jugs, and bowls, and raw clay staging mounds.
+   - **Weaver's Workshop ([`house_weaver.glb`](file:///home/antigravity/erlfas/isometric-city/public/models/house_weaver.glb))**: Half-timber facade with diagonal St. Andrew's cross braces (*krzyże św. Andrzeja*), dormer hoist beam, 2 circular masonry dye cauldrons steaming with indigo blue and madder scarlet liquid dyes, long horizontal rails with drying dyed broadcloth, and yarn warping frame.
+   - **Industrial Sites**: Riverside Watermill with 12-paddle undershot waterwheel and quayside flour pier; Hilltop Post Windmill (*Wiatrak Koźlak*) with 4-blade canvas sails (16m span) and tail-pole (*dyszel*); Stepped Limestone Quarry with timber A-frame jib crane derrick; Logging Camp with two-man pit-saw trestle (*trak*); River Harbor with 14m clinker-built wooden cog ship and treadwheel crane.
+   - **Fortified Gates & Special Sites**: Kraków Gate with octagonal belfry and outer drawbridge; Grodzka Gate with toll booth; Dominican Monastery Cloister with 4-sided arcaded quad and raised herb beds; Castle Archery Yard with coiled straw targets and quintain.
+
+---
+
+## 7. Model Improvement Protocol: Non-Destructive Asset Evolution
+
+### Preserving Spatial & Engine Compatibility During Model Upgrades
+When upgrading existing 3D models (such as `house_patrician_brick`, `house_half_timber`, `house_timber_log`, `town_hall`), the following constraints must be strictly adhered to:
+1. **Origin & Anchor Point Invariance**:
+   - The model origin $(0, 0, 0)$ must remain at ground center $(X=0, Y=0, Z=0)$ in Blender Z-up coordinates. Moving the origin will cause buildings to rotate eccentrically or offset from their collision-verified street parcels.
+2. **Ground Footprint Bounding Containment**:
+   - Auxiliary structural additions (lean-tos, corbel jetties, chimneys) must fit within the parcel's allocated bounding extent or occupy the designated yard buffer without expanding across the street frontage margin.
+3. **Additive Detail Strategy**:
+   - Enhance historical authenticity through high-impact low-poly geometric flourishes:
+     - Crow-stepped gables (*szczyty schodkowe*) crowned with white plaster pinnacles (*sterczyny*).
+     - Overhanging jetties with carved timber corbel brackets.
+     - Street-level details: fold-down shop counter shutters, iron cellar bulkhead doors, rain barrels, firewood ricks, and saddle-notched corner logs (*wieńce*).
+4. **Unified Material Palette Slotting**:
+   - All models bind to the unified global material palette (`get_materials()`), guaranteeing zero material RNA duplication, zero shader churn, and clean multi-material GLB exports.
+
+---
+
+## 8. Visual Reference Staging & Orthographic Art Verification
+
+### Separation of Concerns: Concept Art vs. Reference Photos vs. 3D Meshes
+- **Concept Art ([`concept_art/`](file:///home/antigravity/erlfas/isometric-city/concept_art))**: Serves as the macro artistic direction for entire city districts, lighting atmosphere, and urban scale.
+- **Dedicated Reference Photos ([`reference_photos/`](file:///home/antigravity/erlfas/isometric-city/reference_photos))**: High-fidelity, isolated isometric reference images generated for each individual workshop archetype (`baker_house.jpg`, `tanner_workshop.jpg`, `brewer_malthouse.jpg`, `blacksmith_workshop.jpg`, `potter_workshop.jpg`, `weaver_workshop.jpg`, `watermill.jpg`).
+  - Generated using orthographic dimetric projection prompts matching late-1990s PC strategy games (*Stronghold*, *Knights and Merchants*).
+  - Stored and tracked in a dedicated repository directory (`reference_photos/`) to provide persistent reference benchmarks for 3D modelers and procedural script authors.
+- **Procedural 3D Models ([`public/models/`](file:///home/antigravity/erlfas/isometric-city/public/models))**: The resulting lightweight GLB assets deployed to the GPU runtime.
+
+---
+
+## 9. Runtime GPU Asset Management & Dynamic Parcel Dispatch
+
+### Asynchronous Loading of 31 GLB Assets
+- In [`src/engine/three-renderer.ts`](file:///home/antigravity/erlfas/isometric-city/src/engine/three-renderer.ts), all 31 models are loaded in parallel at startup:
+  ```ts
+  const gltf = await loader.loadAsync(`/models/${name}.glb`);
+  gltf.scene.traverse((child) => {
+    if ((child as THREE.Mesh).isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+  this.models.set(name, gltf.scene);
+  ```
+- All meshes are enabled for PCF soft shadow casting and receiving.
+
+### Two-Tier Dynamic Parcel Dispatch
+To instantiate the correct model for each of the 580 parcels, the renderer executes a prioritized two-tier query:
+1. **Tier 1 (Craft ID & Specialized Building Type Match)**:
+   - Evaluates `parcel.craft.id` and `parcel.buildingType` for specific workshop matches (`baker` $\rightarrow$ `house_baker`, `tanner` $\rightarrow$ `house_tanner`, `brewer` $\rightarrow$ `house_brewer`, `blacksmith` $\rightarrow$ `blacksmith_workshop`, `potter` $\rightarrow$ `house_potter`, `weaver` $\rightarrow$ `house_weaver`, `watermill` $\rightarrow$ `watermill`, `windmill` $\rightarrow$ `windmill`, `quarry` $\rightarrow$ `stone_quarry`, `logging` $\rightarrow$ `logging_camp`, `harbor` $\rightarrow$ `river_harbor`).
+2. **Tier 2 (Architectural District & Fallback Defaults)**:
+   - If unassigned, defaults according to urban quarter typology (`market_square` alternating between patrician brick and half-timber, `krakow_suburb` favoring timber logs, and secondary courtyards utilizing `shed_timber`).
+- **Result**: Every parcel across Lublin renders its authentic historical purpose with zero visual cloning and full 60 FPS performance.

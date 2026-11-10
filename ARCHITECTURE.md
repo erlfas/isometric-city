@@ -19,7 +19,7 @@ flowchart TD
 ```
 
 - **Runtime & Bundler**: Vite + TypeScript + Three.js Orthographic Isometric Pipeline with PCF soft shadows.
-- **Modeling & Asset Pipeline**: Headless Blender 3.6 Python (`bpy` / `bmesh`) CLI scripts ([`build_assets.py`](file:///home/antigravity/erlfas/isometric-city/build_assets.py)) compiling parametric recipes into 13 low-poly GLTF/GLB models in `public/models/`.
+- **Modeling & Asset Pipeline**: Headless Blender 3.6 Python (`bpy` / `bmesh`) CLI scripts ([`build_assets.py`](file:///home/antigravity/erlfas/isometric-city/build_assets.py)) compiling parametric recipes into 31 low-poly GLTF/GLB models in `public/models/`, including dedicated artisan guild workshops, industrial production sites, fortified gates, and civic landmarks.
 - **Data Architecture**: Decoupled JSON Intermediate Representation ([`city_plan.json`](file:///home/antigravity/erlfas/isometric-city/public/city_plan.json)), consumed by both Blender asset builders and the web runtime.
 
 ![Lublin 1392 Isometric Simulation](/home/antigravity/.gemini/jetski/brain/v1/default/jetski_remote_agents_3p/673edb28-1686-428d-9247-62639ab2b5b5/simulation_preview.png)
