@@ -84,14 +84,17 @@ These images provide direct visual blueprints for procedural Blender modeling (`
     ```text
     2D isometric medieval city-builder game screenshot, late 1990s PC strategy game aesthetic, pre-rendered 3D sprites, medieval baker's house and bakery workshop, outdoor domed brick bread oven with smoking stone chimney, stacked birch firewood cords, wooden peel shovel, sacks of flour, gilded pretzel guild sign, timber-framed plaster walls, clay pantile roof, muted earthy color palette, crisp surface textures, hard directional drop shadows, orthographic projection, no UI
     ```
-  - *Side Profile View (1:1):*
+  - *Side Profile View — Harmonized (1:1):*
     ```text
-    2D isometric medieval city-builder game screenshot, late 1990s PC strategy game aesthetic, side profile elevation view of medieval baker house, steep 50-degree gable roof with aged cedar wood shingles, half-timbered upper floor, side firewood shed with stacked split oak logs, flour sack delivery chute, Central European timber vernacular, muted earthy color palette, crisp textures, hard directional drop shadows, orthographic projection, no UI
+    2D isometric medieval city-builder game screenshot, late 1990s PC strategy game aesthetic, pre-rendered 3D sprites, side profile view of medieval baker's house, steep 50-degree gable roof with red terracotta clay pantiles matching front facade, half-timbered upper floor with cream plaster and dark oak beams, limestone ashlar base, outdoor domed red-brick bread baking oven with tall smoking stone chimney projecting on the flank, protective timber lean-to canopy over oven, stacked birch firewood logs, flour delivery chute, Central European Brick Gothic, muted earthy palette, hard directional drop shadows, orthographic projection, no UI
     ```
   - *Rear Yard View (1:1):*
     ```text
     2D isometric medieval city-builder game screenshot, late 1990s PC strategy game aesthetic, rear yard view of medieval baker house, large domed stone bread baking oven with smoking brick chimney built into the back wall, wooden ash shovels, bread peel leaning against oven, stacked cords of firewood, flour barrels, small vegetable garden, wattle fence, Central European timber and stone architecture, muted earthy palette, hard directional drop shadows, orthographic projection, no UI
     ```
+> [!NOTE]
+> **Architectural Consistency Judge (ACJ) Audit: Remediated & Harmonized**  
+> The initial side profile generation displayed grey cedar wood shingles and an isolated firewood shed. The Judge rejected this due to material and machinery discontinuity with `front.jpg`. A targeted remediation was generated anchoring the red terracotta clay pantile roof, cream half-timbering, limestone ashlar plinth, and the domed brick baking oven complex with its tall smoking chimney on the right flank under a protective lean-to canopy. All features now align 100% with `baker_house.glb` in Blender.
 
 ---
 

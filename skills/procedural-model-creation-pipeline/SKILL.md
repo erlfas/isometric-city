@@ -94,6 +94,43 @@ reference_photos/
     └── ...
 ```
 
+### Multi-Angle Architectural Consistency Judge Protocol (ACJ)
+
+Before approving any multi-view reference set (`front.jpg`, `side.jpg`, `back.jpg`) for 3D modeling, execute the **Architectural Consistency Judge (ACJ)** audit. The Judge evaluates cross-view continuity across 4 mandatory criteria:
+
+```
++------------------------------------------------------------------------------------------+
+|                       ARCHITECTURAL CONSISTENCY JUDGE (ACJ) RUBRIC                       |
++--------------------------+---------------------------------------------------------------+
+| 1. Material Continuity   | Roof type/color (pantile vs shingle vs thatch) must be 100%   |
+|                          | identical across all views. Wall plinth and framing must not  |
+|                          | mutate (e.g. brick cannot suddenly become logs).              |
++--------------------------+---------------------------------------------------------------+
+| 2. Volumetric Harmony    | Roof pitch (e.g. 50°), eave height, plinth level, and jetty   |
+|                          | overhangs must align precisely between front and side angles. |
++--------------------------+---------------------------------------------------------------+
+| 3. Machinery Footprint   | Craft stations (domed ovens, kilns, flumes, vats, anvils)    |
+|                          | must maintain invariant (X, Y, Z) coordinates across views.   |
++--------------------------+---------------------------------------------------------------+
+| 4. Lighting & Shadows    | Hard directional drop shadows and sun direction must match.   |
++--------------------------+---------------------------------------------------------------+
+```
+
+#### Systematic Remediation Loop:
+1. **Designate Canonical Master:** Designate `front.jpg` (or the catalog specification in `BUILDINGS_AND_WORKERS_CATALOG.md`) as the canonical truth.
+2. **Audit Secondary Views:** Inspect `side.jpg` and `back.jpg` against the 4-point rubric.
+3. **Trigger Targeted Remediation:**
+   - If material or machinery discrepancies are detected (e.g., front has red clay pantiles and a side oven, but side/back have grey wood shingles or a rear oven), the Judge **rejects** the discordant image.
+   - Re-prompt the view using an explicit constraint formula anchoring all features of the canonical view:
+     ```text
+     [CANONICAL_VIEW_FEATURES: roof material, plinth, wall framing] +
+     [CORRECTED_VIEW_ANGLE: side profile / rear yard] +
+     [INVARIANT_MACHINERY_COORDINATES: matching flank oven / hearth position]
+     ```
+4. **3D Model Verification:** Ensure the Blender Python procedural recipe in `build_assets.py` matches the harmonized canonical reference set, updating mesh dimensions or material slots if necessary.
+
+---
+
 ### Skill Storage vs. Project Repository Architecture
 - **Skill Scope (`skills/procedural-model-creation-pipeline/`)**: Stores reusable procedural knowledge, automation scripts (`scripts/`), and golden benchmark templates (`assets/benchmark_workshop.glb`). It does not store all multi-megabyte project assets to prevent bloated skill packages.
 - **Repository Scope**: The project repository stores the full asset collection:
