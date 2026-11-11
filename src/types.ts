@@ -148,6 +148,16 @@ export interface FairEvent {
   description: string;
 }
 
+export interface VegetationElement {
+  id: string;
+  type: string;
+  x: number;
+  z: number;
+  scale: number;
+  rotation: number;
+  zone?: string;
+}
+
 export interface CityPlan {
   metadata: {
     city: string;
@@ -166,6 +176,7 @@ export interface CityPlan {
   civicLandmarks: CivicLandmark[];
   streetNetwork: StreetNetwork;
   parcels: Parcel[];
+  vegetation?: VegetationElement[];
   citizens: Citizen[];
   bellHours: Record<string, BellHourInfo>;
   fairEvents: FairEvent[];

@@ -693,15 +693,55 @@ export class ThreeIsometricRenderer {
     // 9. Place Medieval Oak Trees along roads and outer green verge
     const treeTemplate = this.models.get('tree_oak');
     if (treeTemplate) {
-      for (let t = 0; t < 90; t++) {
-        const tree = treeTemplate.clone();
-        const ang = Math.random() * Math.PI * 2;
-        const dist = 165 + Math.random() * 95;
-        tree.position.set(Math.cos(ang) * dist, 0, Math.sin(ang) * dist);
-        const s = 0.8 + Math.random() * 0.6;
-        tree.scale.set(s, s, s);
-        tree.rotation.y = Math.random() * Math.PI * 2;
-        this.scene.add(tree);
+      if (plan.vegetation && plan.vegetation.length > 0) {
+        for (let i = 0; i < plan.vegetation.length; i++) {
+          const v = plan.vegetation[i];
+          const tree = treeTemplate.clone();
+          tree.position.set(v.x, 0, v.z);
+          const s = v.scale ?? 1.0;
+          tree.scale.set(s, s, s);
+          tree.rotation.y = ((v.rotation ?? 0) * Math.PI) / 180;
+          this.scene.add(tree);
+        }
+        console.log(`[ThreeRenderer] Placed ${plan.vegetation.length} clearance-verified historical trees.`);
+      } else {
+        // Fallback: strict spatial clearance check
+        const placedTrees: { x: number; z: number }[] = [];
+        for (let t = 0; t < 120; t++) {
+          const ang = Math.random() * Math.PI * 2;
+          const dist = 165 + Math.random() * 95;
+          const tx = Math.cos(ang) * dist;
+          const tz = Math.sin(ang) * dist;
+
+          // Check against parcels
+          let collides = false;
+          for (let p = 0; p < plan.parcels.length; p++) {
+            const parcel = plan.parcels[p];
+            const bRad = Math.hypot(parcel.width, parcel.depth) * 0.5;
+            if (Math.hypot(tx - parcel.x, tz - parcel.z) < bRad + 5.5) {
+              collides = true;
+              break;
+            }
+          }
+          if (collides) continue;
+
+          // Check against other trees
+          for (let k = 0; k < placedTrees.length; k++) {
+            if (Math.hypot(tx - placedTrees[k].x, tz - placedTrees[k].z) < 5.5) {
+              collides = true;
+              break;
+            }
+          }
+          if (collides) continue;
+
+          placedTrees.push({ x: tx, z: tz });
+          const tree = treeTemplate.clone();
+          tree.position.set(tx, 0, tz);
+          const s = 0.8 + Math.random() * 0.5;
+          tree.scale.set(s, s, s);
+          tree.rotation.y = Math.random() * Math.PI * 2;
+          this.scene.add(tree);
+        }
       }
     }
 

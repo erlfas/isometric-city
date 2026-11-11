@@ -405,7 +405,10 @@ def generate_lublin_city_plan():
             return False
 
         # SAT collision check against all landmarks and existing buildings
-        corners = get_obb_corners(px, pz, width, depth, orientation, margin=0.25)
+        margin = 1.8 if district == "krakow_suburb" else 1.2
+        if is_shed:
+            margin = 0.8
+        corners = get_obb_corners(px, pz, width, depth, orientation, margin=margin)
         for existing in placed_obb_corners:
             if obb_overlap(corners, existing):
                 return False
@@ -511,7 +514,16 @@ def generate_lublin_city_plan():
         parcel_index += 1
         return True
 
-    def generate_street_row(x1, z1, x2, z2, offset_dist, facing_side, district, street_name, step=7.0, w=7.2, d=11.0, add_courtyard=True):
+    def generate_street_row(x1, z1, x2, z2, offset_dist, facing_side, district, street_name, step=None, w=None, d=None, add_courtyard=True):
+        if district == "krakow_suburb":
+            if step is None: step = 13.5
+            if w is None: w = 8.5
+            if d is None: d = 12.0
+        else:
+            if step is None: step = 10.4
+            if w is None: w = 7.4
+            if d is None: d = 11.0
+
         dx = x2 - x1
         dz = z2 - z1
         length = math.hypot(dx, dz)
@@ -527,11 +539,12 @@ def generate_lublin_city_plan():
             pz = z1 + tz * cur_dist + nz * offset_dist
             if try_create_parcel(px, pz, w, d, facing_angle, district, street_name):
                 added += 1
-                if add_courtyard and len(parcels) < TARGET_PARCEL_COUNT and random.random() < 0.70:
-                    shed_offset = offset_dist + d * 0.5 + 4.0
+                if add_courtyard and len(parcels) < TARGET_PARCEL_COUNT and random.random() < 0.65:
+                    shed_dist = d * 0.5 + 4.5
+                    shed_offset = offset_dist + (shed_dist if offset_dist >= 0 else -shed_dist)
                     spx = x1 + tx * cur_dist + nx * shed_offset
                     spz = z1 + tz * cur_dist + nz * shed_offset
-                    try_create_parcel(spx, spz, 5.0, 6.0, facing_angle, district, f"{street_name} (Podwórze)", is_shed=True)
+                    try_create_parcel(spx, spz, 4.8, 5.8, facing_angle, district, f"{street_name} (Podwórze)", is_shed=True)
             cur_dist += step
         return added
 
@@ -541,84 +554,204 @@ def generate_lublin_city_plan():
     # 2. Rynek (Market Square) Primary Frontages & Courtyards
     # North pierzeja (Z = 34, facing South towards plaza: 180 deg)
     # South pierzeja (Z = -34, facing North towards plaza: 0 deg)
-    for x in [-32, -24, -16, -8, 8, 16, 24, 32]:
+    for x in [-30, -20, -10, 10, 20, 30]:
         try_create_parcel(x, 34, 7.5, 11.5, 180, "market_square", "Rynek (Północna Pierzeja)")
         try_create_parcel(x, -34, 7.5, 11.5, 0, "market_square", "Rynek (Południowa Pierzeja)")
-        try_create_parcel(x, 47, 7.2, 10.5, 180, "market_square", "Zaułek Rynkowy Północny")
-        try_create_parcel(x, 57, 5.2, 6.2, 180, "market_square", "Zaułek Rynkowy Północny (Oficyna)", is_shed=True)
-        try_create_parcel(x, -47, 7.2, 10.5, 0, "market_square", "Zaułek Rynkowy Południowy")
-        try_create_parcel(x, -57, 5.2, 6.2, 0, "market_square", "Zaułek Rynkowy Południowy (Oficyna)", is_shed=True)
+        try_create_parcel(x, 50, 7.2, 10.5, 180, "market_square", "Zaułek Rynkowy Północny")
+        try_create_parcel(x, 63, 5.0, 6.0, 180, "market_square", "Zaułek Rynkowy Północny (Oficyna)", is_shed=True)
+        try_create_parcel(x, -50, 7.2, 10.5, 0, "market_square", "Zaułek Rynkowy Południowy")
+        try_create_parcel(x, -63, 5.0, 6.0, 0, "market_square", "Zaułek Rynkowy Południowy (Oficyna)", is_shed=True)
 
     # West pierzeja (X = -44, facing East: 90 deg)
     # East pierzeja (X = 44, facing West: 270 deg)
-    for z in [-20, -12, -4, 4, 12, 20]:
+    for z in [-20, -10, 0, 10, 20]:
         try_create_parcel(-44, z, 7.5, 11.5, 90, "market_square", "Rynek (Zachodnia Pierzeja)")
         try_create_parcel(44, z, 7.5, 11.5, 270, "market_square", "Rynek (Wschodnia Pierzeja)")
-        try_create_parcel(-56, z, 7.2, 10.5, 90, "market_square", "Zaułek Rynkowy Zachodni")
-        try_create_parcel(56, z, 7.2, 10.5, 270, "market_square", "Zaułek Rynkowy Wschodni")
+        try_create_parcel(-58, z, 7.2, 10.5, 90, "market_square", "Zaułek Rynkowy Zachodni")
+        try_create_parcel(58, z, 7.2, 10.5, 270, "market_square", "Zaułek Rynkowy Wschodni")
 
     # 3. Bramowa Quarter (Kraków Gate to Rynek Arterial & Parallel Alleys)
-    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1), (28, 1), (-28, -1)]:
-        generate_street_row(-150, -75, -46, -24, off, side, "bramowa_quarter", "Ulica Bramowa", step=7.0)
-    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1)]:
-        generate_street_row(-140, -50, -50, -5, off, side, "bramowa_quarter", "Ulica Szewska", step=7.0)
-        generate_street_row(-130, -30, -60, 15, off, side, "bramowa_quarter", "Ulica Kozia", step=7.0)
-        generate_street_row(-110, -10, -50, 25, off, side, "bramowa_quarter", "Ulica Olejna", step=7.0)
+    for off, side in [(8.0, 1), (-8.0, -1), (23.0, 1), (-23.0, -1)]:
+        generate_street_row(-150, -75, -46, -24, off, side, "bramowa_quarter", "Ulica Bramowa")
+    for off, side in [(8.0, 1), (-8.0, -1), (22.0, 1), (-22.0, -1)]:
+        generate_street_row(-140, -50, -50, -5, off, side, "bramowa_quarter", "Ulica Szewska")
+        generate_street_row(-130, -30, -60, 15, off, side, "bramowa_quarter", "Ulica Kozia")
+        generate_street_row(-110, -10, -50, 25, off, side, "bramowa_quarter", "Ulica Olejna")
 
     # 4. Grodzka & Fara Quarters (Rynek to Grodzka Gate & Parish Square)
-    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1), (28, 1), (-28, -1)]:
-        generate_street_row(46, 18, 180, 20, off, side, "grodzka_quarter", "Ulica Grodzka", step=7.0)
-    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1)]:
-        generate_street_row(70, 32, 160, 35, off, side, "grodzka_quarter", "Zaułek Ku Farze", step=7.0)
-        generate_street_row(95, 5, 165, 8, off, side, "fara_quarter", "Plac Po Farze Południowy", step=7.0)
+    for off, side in [(8.0, 1), (-8.0, -1), (23.0, 1), (-23.0, -1)]:
+        generate_street_row(46, 18, 180, 20, off, side, "grodzka_quarter", "Ulica Grodzka")
+    for off, side in [(8.0, 1), (-8.0, -1), (22.0, 1), (-22.0, -1)]:
+        generate_street_row(70, 32, 160, 35, off, side, "grodzka_quarter", "Zaułek Ku Farze")
+        generate_street_row(95, 5, 165, 8, off, side, "fara_quarter", "Plac Po Farze Południowy")
 
     # 5. Złota & Archidiakońska Quarters (South Old Town)
-    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1), (28, 1), (-28, -1)]:
-        generate_street_row(15, -34, 140, -52, off, side, "fara_quarter", "Ulica Złota / Archidiakońska", step=7.0)
-    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1)]:
-        generate_street_row(-20, -70, 70, -90, off, side, "fara_quarter", "Ulica Bernardyńska", step=7.0)
-        generate_street_row(-115, -115, 130, -75, off, side, "south_wall", "Podwale Południowe", step=7.0)
-        generate_street_row(-30, -135, 70, -140, off, side, "south_wall", "Sady Podmurne", step=7.0)
+    for off, side in [(8.0, 1), (-8.0, -1), (23.0, 1), (-23.0, -1)]:
+        generate_street_row(15, -34, 140, -52, off, side, "fara_quarter", "Ulica Złota / Archidiakońska")
+    for off, side in [(8.0, 1), (-8.0, -1), (22.0, 1), (-22.0, -1)]:
+        generate_street_row(-20, -70, 70, -90, off, side, "fara_quarter", "Ulica Bernardyńska")
+        generate_street_row(-115, -115, 130, -75, off, side, "south_wall", "Podwale Południowe")
+        generate_street_row(-30, -135, 70, -140, off, side, "south_wall", "Sady Podmurne")
 
     # 6. Dominikańska & Jezuicka Quarters
-    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1), (28, 1)]:
-        generate_street_row(-40, -45, -85, -125, off, side, "dominican_quarter", "Ulica Dominikańska", step=7.0)
-    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1)]:
-        generate_street_row(-135, -95, -70, -135, off, side, "dominican_quarter", "Ulica Jezuicka", step=7.0)
+    for off, side in [(8.0, 1), (-8.0, -1), (23.0, 1), (-23.0, -1)]:
+        generate_street_row(-40, -45, -85, -125, off, side, "dominican_quarter", "Ulica Dominikańska")
+    for off, side in [(8.0, 1), (-8.0, -1), (22.0, 1), (-22.0, -1)]:
+        generate_street_row(-135, -95, -70, -135, off, side, "dominican_quarter", "Ulica Jezuicka")
 
     # 7. North Wall & Rybna & Kowalska Quarters
-    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1), (28, 1), (-28, -1)]:
-        generate_street_row(-30, 36, 75, 68, off, side, "north_wall", "Ulica Rybna", step=7.0)
-    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1)]:
-        generate_street_row(-75, 50, 115, 85, off, side, "north_wall", "Ulica Kowalska", step=7.0)
-        generate_street_row(-40, 70, 60, 95, off, side, "north_wall", "Ulica Nowa / Krawiecka", step=7.0)
-        generate_street_row(-100, 55, 150, 65, off, side, "north_wall", "Podwale Północne", step=7.0)
+    for off, side in [(8.0, 1), (-8.0, -1), (23.0, 1), (-23.0, -1)]:
+        generate_street_row(-30, 36, 75, 68, off, side, "north_wall", "Ulica Rybna")
+    for off, side in [(8.0, 1), (-8.0, -1), (22.0, 1), (-22.0, -1)]:
+        generate_street_row(-75, 50, 115, 85, off, side, "north_wall", "Ulica Kowalska")
+        generate_street_row(-40, 70, 60, 95, off, side, "north_wall", "Ulica Nowa / Krawiecka")
+        generate_street_row(-100, 55, 150, 65, off, side, "north_wall", "Podwale Północne")
 
     # 8. Castle Hill Bailey (Podzamcze & Courtyard)
-    for off, side in [(7.5, 1), (-7.5, -1), (18, 1), (-18, -1)]:
-        generate_street_row(215, 40, 290, 52, off, side, "castle_hill", "Podzamcze Dolne", step=7.0)
-        generate_street_row(245, 88, 310, 120, off, side, "castle_hill", "Dziedziniec Zamkowy", step=7.0)
-        generate_street_row(225, 65, 275, 125, off, side, "castle_hill", "Stok Zamkowy Północny", step=7.0)
-        generate_street_row(210, 15, 295, 30, off, side, "castle_hill", "Ogrody Podzamcza", step=7.0)
+    for off, side in [(8.0, 1), (-8.0, -1), (22.0, 1), (-22.0, -1)]:
+        generate_street_row(215, 40, 290, 52, off, side, "castle_hill", "Podzamcze Dolne")
+        generate_street_row(245, 88, 310, 120, off, side, "castle_hill", "Dziedziniec Zamkowy")
+        generate_street_row(225, 65, 275, 125, off, side, "castle_hill", "Stok Zamkowy Północny")
+        generate_street_row(210, 15, 295, 30, off, side, "castle_hill", "Ogrody Podzamcza")
 
     # 9. Kraków Suburb (Spacious unwalled trade quarter)
-    for off, side in [(8, 1), (-8, -1), (19, 1), (-19, -1), (30, 1), (-30, -1), (41, 1), (-41, -1), (52, 1), (-52, -1), (63, 1), (-63, -1), (74, 1), (-74, -1)]:
-        generate_street_row(-170, -85, -330, -145, off, side, "krakow_suburb", "Trakt Krakowski", step=7.0)
-    for off, side in [(8, 1), (-8, -1), (19, 1), (-19, -1), (30, 1), (-30, -1), (41, 1), (-41, -1), (52, 1), (-52, -1)]:
-        generate_street_row(-170, -40, -325, -45, off, side, "krakow_suburb", "Ulica Panny Marii", step=7.0)
-        generate_street_row(-180, -10, -320, 25, off, side, "krakow_suburb", "Ulica Wieniawska", step=7.0)
-        generate_street_row(-165, 35, -310, 55, off, side, "krakow_suburb", "Błonia Czechówki", step=7.0)
-    for off, side in [(8, 1), (-8, -1), (19, 1), (-19, -1), (30, 1), (-30, -1), (41, 1), (-41, -1), (52, 1), (-52, -1)]:
-        generate_street_row(-170, -120, -325, -180, off, side, "krakow_suburb", "Droga Nadwodna", step=7.0)
-        generate_street_row(-195, -35, -255, -170, off, side, "krakow_suburb", "Zaułek Przedmiejski", step=7.0)
-        generate_street_row(-240, -20, -315, -165, off, side, "krakow_suburb", "Droga Polna", step=7.0)
-        generate_street_row(-185, -150, -320, -215, off, side, "krakow_suburb", "Zaułek Łąkowy", step=7.0)
-        generate_street_row(-280, -30, -335, -190, off, side, "krakow_suburb", "Folwark Przedmiejski", step=7.0)
-        generate_street_row(-210, -180, -330, -230, off, side, "krakow_suburb", "Bystrzyca Pastwiska", step=7.0)
+    for off, side in [(9.0, 1), (-9.0, -1), (28.0, 1), (-28.0, -1), (48.0, 1), (-48.0, -1), (68.0, 1), (-68.0, -1)]:
+        generate_street_row(-170, -85, -330, -145, off, side, "krakow_suburb", "Trakt Krakowski")
+    for off, side in [(9.0, 1), (-9.0, -1), (28.0, 1), (-28.0, -1), (48.0, 1), (-48.0, -1)]:
+        generate_street_row(-170, -40, -325, -45, off, side, "krakow_suburb", "Ulica Panny Marii")
+        generate_street_row(-180, -10, -320, 25, off, side, "krakow_suburb", "Ulica Wieniawska")
+        generate_street_row(-165, 35, -310, 55, off, side, "krakow_suburb", "Błonia Czechówki")
+    for off, side in [(9.0, 1), (-9.0, -1), (28.0, 1), (-28.0, -1), (48.0, 1), (-48.0, -1)]:
+        generate_street_row(-170, -120, -325, -180, off, side, "krakow_suburb", "Droga Nadwodna")
+        generate_street_row(-195, -35, -255, -170, off, side, "krakow_suburb", "Zaułek Przedmiejski")
+        generate_street_row(-240, -20, -315, -165, off, side, "krakow_suburb", "Droga Polna")
+        generate_street_row(-185, -150, -320, -215, off, side, "krakow_suburb", "Zaułek Łąkowy")
+        generate_street_row(-280, -30, -335, -190, off, side, "krakow_suburb", "Folwark Przedmiejski")
+        generate_street_row(-210, -180, -330, -230, off, side, "krakow_suburb", "Bystrzyca Pastwiska")
 
     print(f"[CityPlanGenerator] Generated {len(parcels)} distinct parcel nodes.")
 
-    # 3. Living Autonomous Citizens (~1,500 citizens across ~400 households)
+    # 3. Dedicated Medieval Greenery & Tree Placement (Strict Clearance Check)
+    vegetation = []
+
+    def dist_point_to_segment(px, pz, x1, z1, x2, z2):
+        dx, dz = x2 - x1, z2 - z1
+        seg_len_sq = dx * dx + dz * dz
+        if seg_len_sq == 0:
+            return math.hypot(px - x1, pz - z1)
+        t = max(0.0, min(1.0, ((px - x1) * dx + (pz - z1) * dz) / seg_len_sq))
+        proj_x = x1 + t * dx
+        proj_z = z1 + t * dz
+        return math.hypot(px - proj_x, pz - proj_z)
+
+    node_coords = {n["id"]: (n["x"], n["z"]) for n in street_nodes}
+    street_segments = []
+    for a_id, b_id in street_edges:
+        if a_id in node_coords and b_id in node_coords:
+            street_segments.append((node_coords[a_id][0], node_coords[a_id][1], node_coords[b_id][0], node_coords[b_id][1]))
+
+    wall_segments = []
+    for i in range(len(wall_points)):
+        p1 = wall_points[i]
+        p2 = wall_points[(i + 1) % len(wall_points)]
+        wall_segments.append((p1["x"], p1["z"], p2["x"], p2["z"]))
+
+    def is_tree_valid(tx, tz, tree_radius=3.8):
+        # 1. Building clearance: distance to parcel center >= building half-diagonal + tree_radius + buffer
+        for p in parcels:
+            b_radius = math.hypot(p["width"], p["depth"]) * 0.5
+            dist = math.hypot(tx - p["x"], tz - p["z"])
+            if dist < b_radius + tree_radius + 2.0:
+                return False
+
+        # 2. Civic landmarks clearance
+        for lmark in civic_landmarks:
+            l_radius = math.hypot(lmark["width"], lmark["depth"]) * 0.5
+            dist = math.hypot(tx - lmark["x"], tz - lmark["z"])
+            if dist < l_radius + tree_radius + 2.5:
+                return False
+
+        for elm in castle_elements:
+            if "x" in elm and "z" in elm:
+                ew = elm.get("width", 14)
+                ed = elm.get("depth", 14)
+                c_radius = math.hypot(ew, ed) * 0.5
+                if math.hypot(tx - elm["x"], tz - elm["z"]) < c_radius + tree_radius + 2.5:
+                    return False
+
+        # 3. Streets clearance (keep roads clear for carts)
+        for x1, z1, x2, z2 in street_segments:
+            if dist_point_to_segment(tx, tz, x1, z1, x2, z2) < tree_radius + 2.5:
+                return False
+
+        # 4. Defensive wall clearance
+        for x1, z1, x2, z2 in wall_segments:
+            if dist_point_to_segment(tx, tz, x1, z1, x2, z2) < tree_radius + 3.0:
+                return False
+
+        # 5. Tree-to-tree spacing
+        for v in vegetation:
+            if math.hypot(tx - v["x"], tz - v["z"]) < 5.8:
+                return False
+
+        return True
+
+    def try_add_tree(tx, tz, zone_name):
+        if is_tree_valid(tx, tz):
+            scale = round(random.uniform(0.85, 1.35), 2)
+            rot = round(random.uniform(0, 360), 1)
+            vegetation.append({
+                "id": f"tree_{len(vegetation) + 1:03d}",
+                "type": "tree_oak",
+                "x": round(tx, 2),
+                "z": round(tz, 2),
+                "scale": scale,
+                "rotation": rot,
+                "zone": zone_name
+            })
+            return True
+        return False
+
+    # Zone 1: Sady Podmurne (Southern Wall Orchards)
+    for x in range(-55, 75, 12):
+        for z in range(-150, -125, 10):
+            try_add_tree(x + random.uniform(-2, 2), z + random.uniform(-2, 2), "sady_podmurne")
+
+    # Zone 2: Ogrody Podzamcza (Castle Hill Terraces & Slopes)
+    for x in range(200, 275, 14):
+        for z in range(15, 55, 12):
+            try_add_tree(x + random.uniform(-2, 2), z + random.uniform(-2, 2), "ogrody_podzamcza")
+    for x in range(230, 290, 15):
+        for z in range(125, 155, 12):
+            try_add_tree(x + random.uniform(-2, 2), z + random.uniform(-2, 2), "ogrody_podzamcza")
+
+    # Zone 3: Błonia Czechówki (Riverside Meadows North of Kraków Suburb)
+    for x in range(-330, -165, 16):
+        for z in range(35, 85, 14):
+            try_add_tree(x + random.uniform(-3, 3), z + random.uniform(-3, 3), "blonia_czechowki")
+
+    # Zone 4: Bystrzyca Pastwiska (Southern Grazing Commons)
+    for x in range(-330, -170, 16):
+        for z in range(-240, -185, 14):
+            try_add_tree(x + random.uniform(-3, 3), z + random.uniform(-3, 3), "bystrzyca_pastwiska")
+
+    # Zone 5: Suburban Backyard Gardens & Road Verges
+    for _ in range(140):
+        sx = random.uniform(-325, -175)
+        sz = random.uniform(-180, 20)
+        try_add_tree(sx, sz, "suburban_gardens")
+
+    # Zone 6: Outer Green Verge & Promontory Glacis
+    for _ in range(70):
+        ang = random.uniform(0, math.pi * 2)
+        dist = random.uniform(170, 260)
+        rx = math.cos(ang) * dist
+        rz = math.sin(ang) * dist
+        try_add_tree(rx, rz, "outer_verge")
+
+    print(f"[CityPlanGenerator] Placed {len(vegetation)} verified trees with 0 building/street collisions.")
+
+    # 4. Living Autonomous Citizens (~1,500 citizens across households)
     TARGET_CITIZEN_COUNT = 1500
     citizens = []
 
@@ -802,6 +935,7 @@ def generate_lublin_city_plan():
             "edges": street_edges
         },
         "parcels": parcels,
+        "vegetation": vegetation,
         "citizens": citizens,
         "bellHours": BELL_HOURS,
         "fairEvents": fair_events,
