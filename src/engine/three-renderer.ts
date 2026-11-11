@@ -3,6 +3,32 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { CityPlan, Citizen } from '../types';
 import { TextureLibrary } from './texture-library';
 
+interface LightPreset {
+  sun: number; sunI: number;          // directional key light
+  sky: number; ground: number; hemiI: number; // hemisphere fill (sky above, ground bounce below)
+  amb: number; ambI: number;          // small flat ambient
+  bg: number;                         // clear colour
+}
+
+/**
+ * Lighting presets (concept_art/medieval_isometric_art_style_guide.md, section 3).
+ *
+ * three.js lights are physical here: diffuse = albedo / PI * irradiance. For noon:
+ *   fill on a vertical wall F = hemiI * (sky + ground) / 2 + ambI       ~= 1.55
+ *   sun on the lit wall face   = sunI * cos(theta); the view-locked sun
+ *   (updateCameraTransform: 45 deg up, 15 deg past screen-left) gives cos ~= 0.35 ~= 1.25
+ * so a sunlit wall shows its texture near its painted value ((F + sun) / PI ~= 0.9) and
+ * the shaded side sits at F / (F + sun) ~= 0.55 - the guide's 45-55%. Most fill comes
+ * from the hemisphere (directional: tops lighter than undersides); flat ambient is
+ * kept low because it washes out texture contrast.
+ */
+const LIGHT_PRESETS: Record<'dawn' | 'noon' | 'dusk' | 'night', LightPreset> = {
+  dawn: { sun: 0xffb07a, sunI: 2.5, sky: 0xffd9b8, ground: 0x5a4a40, hemiI: 1.9, amb: 0x5c4238, ambI: 0.3, bg: 0x735348 },
+  noon: { sun: 0xfff8e7, sunI: 3.6, sky: 0xfff4e2, ground: 0x6b6250, hemiI: 2.35, amb: 0xdde3ea, ambI: 0.3, bg: 0x3a4f63 },
+  dusk: { sun: 0xff8a55, sunI: 2.3, sky: 0xe9b39a, ground: 0x4a3a40, hemiI: 1.6, amb: 0x382c44, ambI: 0.3, bg: 0x483244 },
+  night: { sun: 0x6f8fc4, sunI: 0.9, sky: 0x40507a, ground: 0x15161e, hemiI: 0.9, amb: 0x181e28, ambI: 0.3, bg: 0x0a1018 },
+};
+
 export class ThreeIsometricRenderer {
   public scene: THREE.Scene;
   public camera: THREE.OrthographicCamera;
@@ -70,9 +96,13 @@ export class ThreeIsometricRenderer {
     const maxDpr = isMobile ? 1.5 : 2.0;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxDpr));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.25;
+    // Crisp shadows per the style guide (PCFSoft is removed in this three.js and fell back anyway).
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    // Linear: the light rig (LIGHT_PRESETS) is balanced so lit walls show textures near
+    // their painted value, so no curve is needed. ACES desaturated brick toward grey-pink;
+    // Neutral's black-level offset crushed the blue channel of dark brick (measured).
+    this.renderer.toneMapping = THREE.LinearToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
 
     // Mobile WebGL context preservation
     this.canvas.addEventListener('webglcontextlost', (e) => {
@@ -84,16 +114,16 @@ export class ThreeIsometricRenderer {
       this.render();
     });
 
-    // Atmospheric lighting
-    this.hemiLight = new THREE.HemisphereLight(0xfff8ee, 0x5a5448, 0.75);
+    // Atmospheric lighting (values come from LIGHT_PRESETS via updateDayNightLighting)
+    this.hemiLight = new THREE.HemisphereLight();
     this.scene.add(this.hemiLight);
 
-    this.ambientLight = new THREE.AmbientLight(0xcfd8dc, 0.5);
+    this.ambientLight = new THREE.AmbientLight();
     this.scene.add(this.ambientLight);
 
     // Directional sunlight casting crisp isometric diagonal shadows
-    const shadowRes = isMobile ? 1024 : 2048;
-    this.dirLight = new THREE.DirectionalLight(0xfffaed, 1.5);
+    const shadowRes = isMobile ? 1024 : 4096;
+    this.dirLight = new THREE.DirectionalLight();
     this.dirLight.position.set(-80, 130, -70);
     this.dirLight.castShadow = true;
     this.dirLight.shadow.mapSize.width = shadowRes;
@@ -108,6 +138,7 @@ export class ThreeIsometricRenderer {
     this.dirLight.shadow.bias = -0.0003;
     this.scene.add(this.dirLight);
     this.scene.add(this.dirLight.target);
+    this.applyLightPreset(LIGHT_PRESETS.noon);
 
     // Create ground terrain with cobblestone / dirt textures
     this.groundPlane = this.createGroundTerrain();
@@ -985,8 +1016,24 @@ export class ThreeIsometricRenderer {
     this.camera.position.set(camX, camY, camZ);
     this.camera.lookAt(this.currentPos);
 
-    // Update sunlight position relative to camera target
-    this.dirLight.position.set(this.currentPos.x + 80, this.currentPos.y + 140, this.currentPos.z + 60);
+    // Sun is fixed RELATIVE TO THE VIEW (style guide: every view shares one light angle,
+    // key light top-left at 45 deg). It used to sit at a fixed world offset only ~8 deg
+    // from behind the camera, which lit every visible face alike and hid all shadows.
+    // Here: from screen-left, swung SUN_SWING toward the far side, SUN_ELEVATION up, so
+    // left-facing walls are lit, right-facing walls shaded, shadows fall to the right.
+    const SUN_SWING = THREE.MathUtils.degToRad(15);
+    const SUN_ELEVATION = THREE.MathUtils.degToRad(45);
+    const SUN_DIST = 150;
+    const leftX = -Math.cos(yaw), leftZ = Math.sin(yaw);     // screen-left on the ground
+    const farX = -Math.sin(yaw), farZ = -Math.cos(yaw);      // away from the camera
+    const hx = leftX * Math.cos(SUN_SWING) + farX * Math.sin(SUN_SWING);
+    const hz = leftZ * Math.cos(SUN_SWING) + farZ * Math.sin(SUN_SWING);
+    const horiz = Math.cos(SUN_ELEVATION) * SUN_DIST;
+    this.dirLight.position.set(
+      this.currentPos.x + hx * horiz,
+      this.currentPos.y + Math.sin(SUN_ELEVATION) * SUN_DIST,
+      this.currentPos.z + hz * horiz
+    );
     this.dirLight.target.position.copy(this.currentPos);
   }
 
@@ -1041,32 +1088,26 @@ export class ThreeIsometricRenderer {
   }
 
   public updateDayNightLighting(hour: number): void {
-    // Dynamic sun position and warm color grading
-    if (hour >= 5 && hour < 8) {
-      // Dawn
-      this.dirLight.color.setHex(0xffaa66);
-      this.dirLight.intensity = 0.9;
-      this.ambientLight.color.setHex(0x5c4238);
-      this.scene.background = new THREE.Color(0x735348);
-    } else if (hour >= 8 && hour < 17) {
-      // High Fair Noon: bright golden sun with crisp shadows
-      this.dirLight.color.setHex(0xfffaed);
-      this.dirLight.intensity = 1.45;
-      this.ambientLight.color.setHex(0xdde3ea);
-      this.scene.background = new THREE.Color(0x3a4f63);
-    } else if (hour >= 17 && hour < 21) {
-      // Dusk
-      this.dirLight.color.setHex(0xff7744);
-      this.dirLight.intensity = 0.85;
-      this.ambientLight.color.setHex(0x382c44);
-      this.scene.background = new THREE.Color(0x483244);
-    } else {
-      // Night Curfew: deep blue moonlight
-      this.dirLight.color.setHex(0x5577aa);
-      this.dirLight.intensity = 0.35;
-      this.ambientLight.color.setHex(0x181e28);
-      this.scene.background = new THREE.Color(0x0a1018);
-    }
+    const preset =
+      hour >= 5 && hour < 8 ? LIGHT_PRESETS.dawn
+      : hour >= 8 && hour < 17 ? LIGHT_PRESETS.noon
+      : hour >= 17 && hour < 21 ? LIGHT_PRESETS.dusk
+      : LIGHT_PRESETS.night;
+    if (preset !== this.activePreset) this.applyLightPreset(preset);
+  }
+
+  private activePreset: LightPreset | null = null;
+
+  private applyLightPreset(p: LightPreset): void {
+    this.activePreset = p;
+    this.dirLight.color.setHex(p.sun);
+    this.dirLight.intensity = p.sunI;
+    this.hemiLight.color.setHex(p.sky);
+    this.hemiLight.groundColor.setHex(p.ground);
+    this.hemiLight.intensity = p.hemiI;
+    this.ambientLight.color.setHex(p.amb);
+    this.ambientLight.intensity = p.ambI;
+    this.scene.background = new THREE.Color(p.bg);
   }
 
   public triggerSpeechBubble(citizenId: string, text: string, x: number, z: number): void {
