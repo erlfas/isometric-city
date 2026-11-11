@@ -1,0 +1,192 @@
+{
+  "awning_blue": {
+    "albedo": "awning_blue_albedo.jpg",
+    "normal": "awning_blue_normal.jpg",
+    "tile_m": [
+      1.0,
+      1.0
+    ],
+    "roughness": 0.9,
+    "source": "procedural"
+  },
+  "awning_red": {
+    "albedo": "awning_red_albedo.jpg",
+    "normal": "awning_red_normal.jpg",
+    "tile_m": [
+      1.0,
+      1.0
+    ],
+    "roughness": 0.9,
+    "source": "procedural"
+  },
+  "awning_yellow": {
+    "albedo": "awning_yellow_albedo.jpg",
+    "normal": "awning_yellow_normal.jpg",
+    "tile_m": [
+      1.0,
+      1.0
+    ],
+    "roughness": 0.9,
+    "source": "procedural"
+  },
+  "brick_gothic_a": {
+    "albedo": "brick_gothic_a_albedo.jpg",
+    "normal": "brick_gothic_a_normal.jpg",
+    "tile_m": [
+      2.4,
+      2.4
+    ],
+    "roughness": 0.88,
+    "source": "image-generated"
+  },
+  "brick_gothic_b": {
+    "albedo": "brick_gothic_b_albedo.jpg",
+    "normal": "brick_gothic_b_normal.jpg",
+    "tile_m": [
+      1.8,
+      1.8
+    ],
+    "roughness": 0.88,
+    "source": "image-generated"
+  },
+  "cobblestone": {
+    "albedo": "cobblestone_albedo.jpg",
+    "normal": "cobblestone_normal.jpg",
+    "tile_m": [
+      3.0,
+      3.0
+    ],
+    "roughness": 0.9,
+    "source": "procedural"
+  },
+  "copper_patina": {
+    "albedo": "copper_patina_albedo.jpg",
+    "normal": "copper_patina_normal.jpg",
+    "tile_m": [
+      2.0,
+      2.0
+    ],
+    "roughness": 0.55,
+    "source": "procedural"
+  },
+  "dirt_road": {
+    "albedo": "dirt_road_albedo.jpg",
+    "normal": "dirt_road_normal.jpg",
+    "tile_m": [
+      4.0,
+      4.0
+    ],
+    "roughness": 0.97,
+    "source": "procedural"
+  },
+  "fieldstone": {
+    "albedo": "fieldstone_albedo.jpg",
+    "normal": "fieldstone_normal.jpg",
+    "tile_m": [
+      3.0,
+      2.799
+    ],
+    "roughness": 0.92,
+    "source": "image-generated"
+  },
+  "foliage": {
+    "albedo": "foliage_albedo.jpg",
+    "normal": "foliage_normal.jpg",
+    "tile_m": [
+      2.0,
+      2.0
+    ],
+    "roughness": 0.9,
+    "source": "procedural"
+  },
+  "grass": {
+    "albedo": "grass_albedo.jpg",
+    "normal": "grass_normal.jpg",
+    "tile_m": [
+      6.0,
+      6.0
+    ],
+    "roughness": 0.97,
+    "source": "procedural"
+  },
+  "limestone_ashlar": {
+    "albedo": "limestone_ashlar_albedo.jpg",
+    "normal": "limestone_ashlar_normal.jpg",
+    "tile_m": [
+      3.0,
+      3.0
+    ],
+    "roughness": 0.85,
+    "source": "procedural"
+  },
+  "log_wall": {
+    "albedo": "log_wall_albedo.jpg",
+    "normal": "log_wall_normal.jpg",
+    "tile_m": [
+      2.0,
+      1.508
+    ],
+    "roughness": 0.9,
+    "source": "image-generated"
+  },
+  "plank_board": {
+    "albedo": "plank_board_albedo.jpg",
+    "normal": "plank_board_normal.jpg",
+    "tile_m": [
+      2.0,
+      2.0
+    ],
+    "roughness": 0.88,
+    "source": "procedural"
+  },
+  "plaster_lime": {
+    "albedo": "plaster_lime_albedo.jpg",
+    "normal": "plaster_lime_normal.jpg",
+    "tile_m": [
+      3.0,
+      3.0
+    ],
+    "roughness": 0.95,
+    "source": "procedural"
+  },
+  "roof_tile_red": {
+    "albedo": "roof_tile_red_albedo.jpg",
+    "normal": "roof_tile_red_normal.jpg",
+    "tile_m": [
+      4.75,
+      3.9
+    ],
+    "roughness": 0.75,
+    "source": "image-generated"
+  },
+  "thatch": {
+    "albedo": "thatch_albedo.jpg",
+    "normal": "thatch_normal.jpg",
+    "tile_m": [
+      2.0,
+      2.0
+    ],
+    "roughness": 0.97,
+    "source": "image-generated"
+  },
+  "timber_beam": {
+    "albedo": "timber_beam_albedo.jpg",
+    "normal": "timber_beam_normal.jpg",
+    "tile_m": [
+      1.0,
+      1.0
+    ],
+    "roughness": 0.85,
+    "source": "procedural"
+  },
+  "wood_shingle": {
+    "albedo": "wood_shingle_albedo.jpg",
+    "normal": "wood_shingle_normal.jpg",
+    "tile_m": [
+      2.1,
+      1.498
+    ],
+    "roughness": 0.92,
+    "source": "image-generated"
+  }
+}

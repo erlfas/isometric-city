@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Original AI-generated texture sources (large; processed outputs live in public/textures)
+texture_sources/
+
+# Python bytecode
+__pycache__/
