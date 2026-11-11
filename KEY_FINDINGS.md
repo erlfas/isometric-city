@@ -317,3 +317,54 @@ Inspection of the 580-parcel city revealed two major flaws causing the city to l
    - **Plaster (`PlasterCream`, `PlasterWhite`)**: $\Delta\text{Lightness} \pm 0.04$ (chalk limewash warmth).
 3. **Subtle Scale & Height Modulation**:
    A deterministic height jitter ($Z \pm 5\%$) and width/depth parcel adaptation break repetitive horizontal rooflines across city blocks while preserving street alignment and preventing parcel overlaps.
+
+---
+
+## 15. Procedural 3D Character Pipeline & Historical Individualization: From Geometric Placeholders to Living Citizens
+
+### The "Geometric Cylinder" Placeholder Failure Mode
+In the baseline simulation, the 1,500 simulated citizens were represented by rudimentary geometric primitives (`THREE.CylinderGeometry` for the body, `THREE.SphereGeometry` for the head, and `THREE.ConeGeometry` for the hat). 
+- **Visual Disconnect**: While the city architecture had evolved into high-fidelity Gothic brick, timber framing, and authentic outdoor craft stations, the citizens remained untextured primitive cones and cylinders.
+- **Lost Economic Atmosphere**: Guild workers—such as the baker with flour apron and bread peel, the carpenter with block plane and felling axe, or the tanner with rawhide apron and fleshing knife—were indistinguishable from guards or patricians except for a basic color tint on their cylinder body.
+- **Static Heading**: Citizens walked along streets without facing their movement heading, sliding laterally or backwards through market alleys.
+
+### The Unified Turnaround & Procedural Bmesh Solution
+
+1. **Orthographic 3-View Turnaround Sheets on Unified 16:9 Canvases**:
+   - Rather than generating disconnected individual angles (which causes outfit drift and proportions hallucination), a single 16:9 prompt produces Front, Side Profile, and Rear views side-by-side on neutral beige parchment backgrounds.
+   - Captured 14 distinct medieval archetypes:
+     - `char_baker`: Flour-dusted apron, linen barett cap, 1.8m bread peel shovel, crusty sourdough loaf.
+     - `char_tanner`: Dark water-resistant oiled rawhide apron, tied linen coif, high water boots, curved 2-handed iron fleshing knife.
+     - `char_carpenter`: Canvas work smock, leather tool belt with iron square and mallet, wooden block plane, broad carpenter felling axe.
+     - `char_blacksmith`: Cowhide smithing apron, tied coif, heat-resistant gauntlets, cross-peen hammer & tongs with hot orange billet.
+     - `char_brewer`: Brick-red cotte, stained bib apron, chaperon with liripipe, polished copper mash paddle & wooden tasting tankard.
+     - `char_potter`: Clay-spattered tunic, cloth headband, bare forearms, wooden shaping rib & terracotta amphora.
+     - `char_weaver`: Mi-parti madder red / indigo blue cotte, liripipe hood, threaded hardwood shuttle & tailor shears.
+     - `char_stonemason`: White linen coif, stone-dusted smock, split leather apron, iron chisel & round beechwood mallet.
+     - `char_woodcutter`: Dark charcoal hooded cowl, forester gauntlets, felling wedges at belt, heavy broad felling axe.
+     - `char_friar`: Dominican white habit, dark brown scapular, knotted rope cincture, wooden garden hoe & wicker herb basket with sage/lavender.
+     - `char_guard`: Steel kettle hat helmet, chainmail coif, dark red heraldic tabard with golden gate crest, 2.2m steel polearm halberd & arming sword.
+     - `char_merchant`: Floor-length royal blue houppelande with beaver fur trim, padded chaperon with cockade, poulaines turnshoes, wax-sealed charter scroll.
+     - `char_farmer`: Wide-brimmed straw hat, loose linen shirt, rope belt, curved harvest scythe with bent wooden snath.
+     - `char_townswoman`: Forest green kirtle gown, white linen front apron, folded wimple & veil, keys at belt, wicker market basket with bread and root vegetables.
+
+2. **Headless Blender Procedural Construction (`build_characters.py`)**:
+   - Created reusable bmesh geometry macro builders (`build_humanoid_base`, `add_apron`, `add_coif_or_hood`, `add_cylinder`, `add_oriented_cylinder`).
+   - Standardized on $1.75\text{m}$ overall scale and a $1:6.5$ RTS readability ratio.
+   - Ultra-low polygon budget: $140 - 200$ polygons ($280 - 450$ triangles) per character model ($\sim 25\text{ KB}$ per `.glb`).
+   - Single-draw-call GLB export directly into `public/models/characters/` and `public/models/`.
+
+3. **Engine Dynamic Dispatch & Deterministic Anti-Cloning Engine**:
+   - In `src/engine/three-renderer.ts`, `getCitizenArchetype()` maps citizen `trade`, `guildRank`, and `wealthClass` to the matching 3D character GLB asset.
+   - **Deterministic Seeded Jitter**: Using `hashString(c.id)`, individual citizens receive subtle stature scaling jitter:
+     $$\text{heightScale} = 1.0 + ((\text{seed} \bmod 13) - 6) \times 0.012 \quad (0.93\times - 1.07\times)$$
+     $$\text{girthScale} = 1.0 + (((\text{seed} \times 7) \bmod 13) - 6) \times 0.012 \quad (0.93\times - 1.07\times)$$
+     This ensures multiple bakers, carpenters, or guards do not look like carbon clones while preserving historical realism.
+   - **Dynamic Locomotion & Heading**:
+     - Moving citizens calculate target angle $\theta = \text{atan2}(dx, dz)$ and smoothly rotate toward their heading:
+       $$\Delta\theta = \text{normalizeAngle}(\theta_{\text{target}} - \theta_{\text{current}})$$
+       $$\theta_{\text{current}} += \Delta\theta \cdot \min(1.0, dt \times 12.0)$$
+     - Synchronized walking bob: $Y_{\text{bob}} = |\sin(\text{walkCycle})| \times 0.07\text{m}$.
+     - Stride sway: $R_Z = \sin(\text{walkCycle}) \times 0.035\text{ rad}$.
+     - Idle workstation breathing: stationary craftspeople at workshops exhibit subtle breathing/working oscillations based on their individual seed offset.
+
