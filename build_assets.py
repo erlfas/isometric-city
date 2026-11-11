@@ -110,7 +110,39 @@ def get_materials():
         "wood_end_grain": create_mat("WoodEndGrain", (0.75, 0.65, 0.46), roughness=0.7),
         "soot_black": create_mat("SootBlack", (0.08, 0.08, 0.08), roughness=0.95),
         "glass_dark": create_mat("GlassDark", (0.10, 0.14, 0.18), roughness=0.2),
+        # Texture-family splits (Phase 3): same colours as the flat originals so models
+        # look unchanged until the runtime binds textures by material name.
+        "timber_log": create_mat("TimberLog", (0.24, 0.16, 0.10)),
+        "timber_log_weathered": create_mat("TimberLogWeathered", (0.36, 0.32, 0.28)),
+        "stone_fieldstone": create_mat("StoneFieldstone", (0.72, 0.68, 0.58)),
     }
+
+
+# Per-model material substitutions, applied at export. They split shared flat-colour
+# materials into the texture families of docs/material_board:
+#   Limestone  -> StoneFieldstone  on vernacular plinths/foundations (rubble masonry);
+#                 castle, gates, towers, church, town hall and quarry keep ashlar.
+#   TimberDark -> TimberLog        where the slot is the horizontal log body.
+FIELDSTONE = {"Limestone": "StoneFieldstone"}
+MODEL_MATERIAL_OVERRIDES = {
+    "house_timber_log": {"Limestone": "StoneFieldstone", "TimberDark": "TimberLog"},
+    "house_tanner": {"TimberWeathered": "TimberLogWeathered", **FIELDSTONE},
+    "house_half_timber": FIELDSTONE,
+    "shed_timber": FIELDSTONE,
+    "town_well": FIELDSTONE,
+    "house_baker": FIELDSTONE,
+    "house_brewer": FIELDSTONE,
+    "blacksmith_workshop": FIELDSTONE,
+    "house_potter": FIELDSTONE,
+    "house_weaver": FIELDSTONE,
+    "watermill": FIELDSTONE,
+    "windmill": FIELDSTONE,
+    "market_cart": FIELDSTONE,
+}
+
+# Materials whose texture grain must follow the part's length (beams, braces, posts)
+# rather than the world-up wall projection.
+UV_ALONG_LENGTH = {"TimberDark"}
 
 def add_box(bm, cx, cy, cz, w, d, h, mat_idx=0):
     w2, d2, h2 = w * 0.5, d * 0.5, h * 0.5
@@ -384,7 +416,60 @@ def add_prop_flour_sacks(bm, positions, mat_sack=0):
         add_box(bm, x, y, z + 0.81, 0.32, 0.28, 0.08, mat_idx=mat_sack)
 
 
+def apply_material_overrides(obj, name):
+    for old, new in MODEL_MATERIAL_OVERRIDES.get(name, {}).items():
+        new_mat = bpy.data.materials.get(new)
+        for i, m in enumerate(obj.data.materials):
+            if m is not None and m.name == old:
+                obj.data.materials[i] = new_mat
+
+
+def add_world_uvs(obj):
+    """UVs in metres (1 UV unit = 1 m); the runtime sets texture.repeat = 1 / tile_m.
+
+    Per face, by its normal n:
+      - near-horizontal faces (ground, tops, decks): planar X/Y.
+      - everything else: u along the face's horizontal tangent t = Z x n,
+        v along b = n x t, which is world-up on walls and up-slope on roofs.
+        So brick courses and log rows stay horizontal and roof textures put the
+        ridge at the top of the image, consistent across all buildings.
+      - UV_ALONG_LENGTH materials: u along the face's longest edge, so wood grain
+        follows diagonal braces and posts.
+    Blender's glTF exporter writes v' = 1 - v; with three.js textures at flipY = false
+    that keeps +v = image up.
+    """
+    mesh = obj.data
+    uv = mesh.uv_layers.new(name="UVMap").data
+    up = Vector((0.0, 0.0, 1.0))
+    mat_names = [m.name if m else "" for m in mesh.materials]
+    verts = mesh.vertices
+    for poly in mesh.polygons:
+        n = poly.normal
+        mname = mat_names[poly.material_index] if poly.material_index < len(mat_names) else ""
+        if mname in UV_ALONG_LENGTH:
+            vids = list(poly.vertices)
+            best, t = -1.0, None
+            for i in range(len(vids)):
+                e = verts[vids[(i + 1) % len(vids)]].co - verts[vids[i]].co
+                e = e - n * e.dot(n)                      # keep it in the face plane
+                if e.length > best:
+                    best, t = e.length, e
+            t = t.normalized() if best > 1e-6 else Vector((1.0, 0.0, 0.0))
+            b = n.cross(t).normalized()
+        elif abs(n.z) > 0.95:
+            t, b = Vector((1.0, 0.0, 0.0)), Vector((0.0, 1.0 if n.z > 0 else -1.0, 0.0))
+        else:
+            t = up.cross(n)
+            t = t.normalized() if t.length > 1e-6 else Vector((1.0, 0.0, 0.0))
+            b = n.cross(t).normalized()
+        for li in poly.loop_indices:
+            co = verts[mesh.loops[li].vertex_index].co
+            uv[li].uv = (co.dot(t), co.dot(b))
+
+
 def export_object(obj, name):
+    apply_material_overrides(obj, name)
+    add_world_uvs(obj)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     filepath = os.path.join(OUTPUT_DIR, f"{name}.glb")
     bpy.ops.object.select_all(action='DESELECT')
