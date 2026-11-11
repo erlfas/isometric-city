@@ -267,3 +267,53 @@ When designing reusable agent skills (such as `procedural-model-creation-pipelin
       ├── worker_[id]_turnaround.jpg  # 3-view turnaround sheet
   ```
 - **Backward Compatibility:** Existing single-view assets are preserved or mirrored so historical documentation and automated scripts retain unbroken URI references.
+
+---
+
+## 13. Procedural Reference-to-3D Reconstruction & The Camera-Facing Flank Rule
+
+### Root Causes of the Reference vs. Model Discrepancy
+When comparing early procedural 3D models (e.g. `house_baker`) with reference photos (`reference_photos/baker_house/`), extreme visual divergence occurred:
+1. **Axis-Aligned Bounding-Box Simplification**: The initial generator generated a single cube body and a wedge roof with flat quads, omitting all specific craft stations (beehive ovens, tanning vats, flumes, drying racks).
+2. **Missing Guild Identity Signage & Clutter**: Guild signs, flour chutes, bread counters, firewood cords, and flour sacks were completely missing.
+3. **Flank Visibility Occlusion**: In an isometric projection where the camera is stationed at $(+X, -Y, +Z)$ gazing toward $(0, 0, 0)$, the front face ($-Y$) and the right flank ($+X$) are directly in the player's primary view cone, while the rear face ($+Y$) and left flank ($-X$) are hidden. Models with workshops built on the rear face concealed their craft machinery from the player.
+
+### The Camera-Facing Flank Alignment Rule
+To guarantee that procedural models faithfully represent their 2D concept art in isometric viewports:
+- **Primary Operational Machinery**: Waterwheels, drying racks, tanning vats, kiln chimneys, and malt louvers must be placed explicitly along the **$+X$ flank** or the **$-Y$ forecourt**.
+- **Customer Facing Elements**: Shop counters, display windows, folded wooden shutters, and hanging guild emblems (such as the gilded pretzel or copper kettle) must project along the **$-Y$ street facade**.
+- **Delivery & Service Infrastructure**: Hoist arms, pulleys, and firewood ricks should occupy the visible front corner or $+X$ flank.
+
+### Surface Relief via Stepped Geometry vs. Flat Shaders
+In low-poly WebGL engines without high-resolution normal maps, flat roof quads look flat and synthetic:
+- **Stepped Pantile Courses (`add_pantile_roof`)**: Generating stepped geometric tile tiers catches real directional sunlight and creates sharp ambient shadow relief under directional sun lighting.
+- **Recessed Plaster Infill**: Inset plaster faces ($3\text{cm}$ behind dark structural timber beams) generate natural self-shadowing along wall frames without needing custom normal map textures.
+- **Orthonormal Vector Math (`add_timber_beam`)**: Calculating cross-products between beam vectors and arbitrary reference axes allows programmatic generation of diagonal jetty braces, St. Andrew's cross braces (*krzyże św. Andrzeja*), and flume supports at arbitrary 3D angles.
+
+---
+
+## 14. Solving the "Cloned City" Syndrome: Typology Priority & Deterministic HSL Material Jitter
+
+### The Two Underlying Causes of Visual Monotony
+Inspection of the 580-parcel city revealed two major flaws causing the city to look repetitive:
+1. **District Fallback Overshadowing**:
+   - In `src/engine/three-renderer.ts`, the evaluation of `p.district === 'market_square'` and `p.district === 'krakow_suburb'` occurred *before* granular building typology checks (`bType.includes(...)`).
+   - Consequently, all 277 suburban parcels and 69 market square parcels bypassed specific architectural definitions (such as `thatched_plebeian_wattle_daub`, `two_family_timber_longhouse`, `cooper_yard_dwelling`, and `kamienica_patrician_*`), defaulting to a crude alternating binary (`i % 2 === 0 ? log : half_timber`).
+2. **Shared Three.js Material References**:
+   - Three.js `clone()` shallow-copies material references. Even when distinct building models were instantiated, all 580 buildings shared identical `MeshStandardMaterial` instances. Every roof tile across the city had the exact same hex color `#B55338`, and every timber beam shared `#4A3B2C`.
+
+### The Mathematical & Architectural Solution
+1. **Architectural Typology Priority Matching**:
+   The parcel assignment pipeline was restructured into a strict hierarchical decision tree:
+   - *Tier 1: Utility & Tool Sheds*: `p.isShed || bType.startsWith('shed_')` $\rightarrow$ `shed_timber`.
+   - *Tier 2: Specialized Craft Workshops & Production Complexes*: Explicit dispatch for `baker`, `blacksmith`, `brewer`, `potter`, `tanner`, `weaver`, `watermill`, `windmill`, `quarry`, `logging_camp`, and `river_harbor`.
+   - *Tier 3: Authentic Typological Matching*: `kamienica_patrician_*`, `merchant_arched_storefront_brick` $\rightarrow$ `house_patrician_brick`; `fachwerk_jettied_*`, `artisan_half_timber_*` $\rightarrow$ `house_half_timber`; `thatched_plebeian_*`, `timber_longhouse_*`, `cooper_yard_*` $\rightarrow$ `house_timber_log`.
+   - *Tier 4: Contextual District Harmonization*: Fallbacks that maintain urban character without binary repetition.
+2. **Deterministic HSL Material Jitter**:
+   Using a seeded parcel hash (`hashString(p.id)`), materials are deep-cloned per instance and modulated within historically grounded bounds:
+   - **Roof Tiles (`RoofTileRed`)**: $\Delta\text{Hue} \pm 0.025$ (shifting from warm terracotta to deep burnt brick red), $\Delta\text{Sat} \pm 0.08$, $\Delta\text{Lightness} \pm 0.06$.
+   - **Thatch (`RoofThatch`)**: $\Delta\text{Hue} \pm 0.02$, $\Delta\text{Lightness} \pm 0.06$ (golden fresh straw vs. weathered grey-brown thatch).
+   - **Timber (`TimberDark`, `TimberPlank`)**: $\Delta\text{Lightness} \pm 0.04$ (linseed/tar treated vs. sun-bleached grey oak).
+   - **Plaster (`PlasterCream`, `PlasterWhite`)**: $\Delta\text{Lightness} \pm 0.04$ (chalk limewash warmth).
+3. **Subtle Scale & Height Modulation**:
+   A deterministic height jitter ($Z \pm 5\%$) and width/depth parcel adaptation break repetitive horizontal rooflines across city blocks while preserving street alignment and preventing parcel overlaps.
