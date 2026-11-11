@@ -473,6 +473,18 @@ export class ThreeIsometricRenderer {
     const loggingTmpl = this.models.get('logging_camp');
     const harborTmpl = this.models.get('river_harbor');
 
+    // Helper for deterministic hashing
+    const hashString = (str: string): number => {
+      let hash = 0;
+      for (let k = 0; k < str.length; k++) {
+        hash = (hash << 5) - hash + str.charCodeAt(k);
+        hash |= 0;
+      }
+      return Math.abs(hash);
+    };
+
+    const hsl = { h: 0, s: 0, l: 0 };
+
     for (let i = 0; i < plan.parcels.length; i++) {
       const p = plan.parcels[i];
       let tmpl: THREE.Group | undefined;
@@ -481,12 +493,16 @@ export class ThreeIsometricRenderer {
 
       const craftId = (p as any).craft?.id || '';
       const bType = p.buildingType || '';
+      const hash = hashString(p.id || `parcel_${i}`);
 
-      if (p.isShed && shedTmpl) {
+      // 1. Storage & utility sheds
+      if ((p.isShed || bType.startsWith('shed_')) && shedTmpl) {
         tmpl = shedTmpl;
-        scaleX = Math.min(1.05, Math.max(0.85, p.width / 5.2));
-        scaleZ = Math.min(1.05, Math.max(0.85, p.depth / 6.2));
-      } else if (craftId === 'baker' || bType.includes('baker')) {
+        scaleX = Math.min(1.15, Math.max(0.85, p.width / 5.2));
+        scaleZ = Math.min(1.15, Math.max(0.85, p.depth / 6.2));
+      }
+      // 2. Specific Craft Guild Workshops & Industrial Facilities
+      else if (craftId === 'baker' || bType.includes('baker')) {
         tmpl = bakerTmpl || halfTimberTmpl;
       } else if (craftId === 'tanner' || bType.includes('tanner')) {
         tmpl = tannerTmpl || logTmpl;
@@ -502,34 +518,153 @@ export class ThreeIsometricRenderer {
         tmpl = watermillTmpl || logTmpl;
       } else if (bType.includes('windmill')) {
         tmpl = windmillTmpl || logTmpl;
-      } else if (bType.includes('quarry')) {
+      } else if (bType.includes('quarry') || craftId === 'mason') {
         tmpl = quarryTmpl || brickTmpl;
-      } else if (bType.includes('sawmill') || bType.includes('logging')) {
+      } else if (bType.includes('sawmill') || bType.includes('logging') || (craftId === 'carpenter' && p.district === 'krakow_suburb' && (hash % 4 === 0))) {
         tmpl = loggingTmpl || logTmpl;
       } else if (bType.includes('harbor')) {
         tmpl = harborTmpl || halfTimberTmpl;
-      } else if (p.district === 'market_square') {
-        tmpl = (i % 2 === 0 ? brickTmpl : halfTimberTmpl) || brickTmpl;
-      } else if (p.district === 'krakow_suburb') {
-        tmpl = (i % 2 === 0 ? logTmpl : halfTimberTmpl) || logTmpl;
-      } else if (bType.includes('patrician') || bType.includes('brick')) {
+      }
+      // 3. Patrician Kamienice & Stone/Brick Architecture (Old Town, Rynek, Grodzka)
+      else if (
+        bType.includes('patrician') ||
+        bType.includes('kamienica') ||
+        bType.includes('brick') ||
+        bType.includes('stone_arches') ||
+        craftId === 'goldsmith'
+      ) {
         tmpl = brickTmpl;
-      } else if (bType.includes('log') || bType.includes('timber') || bType.includes('thatched') || bType.includes('loess')) {
-        tmpl = logTmpl;
-      } else {
+      }
+      // 4. Urban Half-Timber & Jettied Fachwerk (Middle-Class Artisans)
+      else if (
+        bType.includes('fachwerk') ||
+        bType.includes('half_timber') ||
+        bType.includes('jettied') ||
+        bType.includes('narrow_gable') ||
+        bType.includes('furrier') ||
+        bType.includes('shoemaker') ||
+        craftId === 'shoemaker' ||
+        craftId === 'furrier' ||
+        craftId === 'candlemaker' ||
+        craftId === 'roper' ||
+        craftId === 'butcher'
+      ) {
         tmpl = halfTimberTmpl;
+      }
+      // 5. Rustic Vernacular Timber & Thatched Cottages
+      else if (
+        bType.includes('log') ||
+        bType.includes('timber') ||
+        bType.includes('thatched') ||
+        bType.includes('cruck') ||
+        bType.includes('longhouse') ||
+        bType.includes('cottage') ||
+        bType.includes('loess') ||
+        bType.includes('cooper') ||
+        craftId === 'cooper' ||
+        craftId === 'wheelwright' ||
+        craftId === 'carpenter'
+      ) {
+        tmpl = logTmpl;
+      }
+      // 6. District Harmonious Context Fallbacks
+      else if (p.district === 'market_square') {
+        tmpl = (hash % 4 === 0 ? halfTimberTmpl : brickTmpl) || brickTmpl;
+      } else if (p.district === 'krakow_suburb') {
+        tmpl = (hash % 3 === 0 ? halfTimberTmpl : logTmpl) || logTmpl;
+      } else {
+        tmpl = (hash % 2 === 0 ? halfTimberTmpl : logTmpl) || halfTimberTmpl;
       }
 
       if (!tmpl) tmpl = halfTimberTmpl || brickTmpl || logTmpl;
-      scaleX = Math.min(1.05, Math.max(0.85, p.width / 8.5));
-      scaleZ = Math.min(1.05, Math.max(0.85, p.depth / 12.0));
+
+      if (!p.isShed && !bType.startsWith('shed_')) {
+        scaleX = Math.min(1.15, Math.max(0.85, p.width / 8.5));
+        scaleZ = Math.min(1.15, Math.max(0.85, p.depth / 12.0));
+      }
 
       if (tmpl) {
-        const house = tmpl.clone();
+        const house = tmpl.clone(true);
+        const scaleY = 0.95 + ((hash % 11) / 10) * 0.10; // 0.95 to 1.05 height variation
+
         house.position.set(p.x, p.elevation * 0.3, p.z);
         house.rotation.y = (p.orientation * Math.PI) / 180;
-        house.scale.set(scaleX, 1.0, scaleZ);
+        house.scale.set(scaleX, scaleY, scaleZ);
         house.userData = { parcelId: p.id };
+
+        // Subtle deterministic HSL color variation on materials for organic historical realism
+        const rand1 = ((hash % 31) / 30) * 2 - 1;
+        const rand2 = (((hash >> 3) % 31) / 30) * 2 - 1;
+        const rand3 = (((hash >> 6) % 31) / 30) * 2 - 1;
+
+        house.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            const applyJitter = (mat: THREE.Material): THREE.Material => {
+              if (!(mat as THREE.MeshStandardMaterial).isMeshStandardMaterial) return mat;
+              const stdMat = (mat as THREE.MeshStandardMaterial).clone();
+              const mName = stdMat.name || '';
+
+              if (mName.includes('RoofTileRed')) {
+                // Pantiles: shift between warm terracotta orange and deep burnt tile red
+                stdMat.color.getHSL(hsl);
+                stdMat.color.setHSL(
+                  hsl.h + rand1 * 0.025,
+                  Math.max(0.2, Math.min(1.0, hsl.s + rand2 * 0.08)),
+                  Math.max(0.12, Math.min(0.65, hsl.l + rand3 * 0.06))
+                );
+              } else if (mName.includes('RoofThatch')) {
+                // Thatch: golden dry straw vs weathered grey-brown thatch
+                stdMat.color.getHSL(hsl);
+                stdMat.color.setHSL(
+                  hsl.h + rand1 * 0.02,
+                  Math.max(0.15, Math.min(1.0, hsl.s + rand2 * 0.07)),
+                  Math.max(0.2, Math.min(0.68, hsl.l + rand3 * 0.06))
+                );
+              } else if (mName.includes('RoofShingle')) {
+                // Wood shingle: grey weathered vs tar-treated
+                stdMat.color.getHSL(hsl);
+                stdMat.color.setHSL(
+                  hsl.h,
+                  hsl.s,
+                  Math.max(0.15, Math.min(0.55, hsl.l + rand1 * 0.06))
+                );
+              } else if (mName.includes('Plaster')) {
+                // Limewash: warm chalk vs fresh white
+                stdMat.color.getHSL(hsl);
+                stdMat.color.setHSL(
+                  hsl.h + rand1 * 0.012,
+                  hsl.s,
+                  Math.max(0.72, Math.min(0.96, hsl.l + rand2 * 0.04))
+                );
+              } else if (mName.includes('Timber')) {
+                // Oak timber: linseed/pitch treated vs weathered
+                stdMat.color.getHSL(hsl);
+                stdMat.color.setHSL(
+                  hsl.h,
+                  hsl.s,
+                  Math.max(0.08, Math.min(0.42, hsl.l + rand1 * 0.04))
+                );
+              } else if (mName.includes('Brick')) {
+                // Brick masonry kiln batches
+                stdMat.color.getHSL(hsl);
+                stdMat.color.setHSL(
+                  hsl.h + rand1 * 0.02,
+                  Math.max(0.2, Math.min(0.9, hsl.s + rand2 * 0.05)),
+                  Math.max(0.15, Math.min(0.55, hsl.l + rand3 * 0.04))
+                );
+              }
+              return stdMat;
+            };
+
+            if (Array.isArray(mesh.material)) {
+              mesh.material = mesh.material.map(applyJitter);
+            } else if (mesh.material) {
+              mesh.material = applyJitter(mesh.material as THREE.Material);
+            }
+          }
+        });
+
         this.scene.add(house);
       }
     }
