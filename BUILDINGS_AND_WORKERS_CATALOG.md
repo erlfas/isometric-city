@@ -355,6 +355,8 @@ All 18 worker archetypes are modeled at $1.75\text{m}$ scale with distinct 14th-
 
 #### `worker_blacksmith_master`
 - **Associated Building:** `bldg_blacksmith_workshop`
+- **Associated 3D Model:** [`public/models/char_blacksmith.glb`](file:///home/antigravity/erlfas/isometric-city/public/models/char_blacksmith.glb)
+- **Reference Turnaround:** [`reference_photos/workers/worker_blacksmith_turnaround.jpg`](file:///home/antigravity/erlfas/isometric-city/reference_photos/workers/worker_blacksmith_turnaround.jpg)
 - **Attire:** Dark brown leather apron (`#2a1e14`) over an unbleached linen tunic (`#DFDBD2`), charcoal hose (`#26262B`), off-white linen coif tied under the chin, heavy heat-resistant leather gloves.
 - **Props:** Right hand: Iron cross-peen hammer; Left hand: Forged blacksmith tongs holding an orange-hot iron billet.
 - **Station Offset:** $(X: +2.8\text{m}, Z: -1.2\text{m})$ relative to workshop origin (facing anvil).
@@ -363,8 +365,20 @@ All 18 worker archetypes are modeled at $1.75\text{m}$ scale with distinct 14th-
   - $3.2\text{s} - 4.5\text{s}$: Lifts billet, inspects alignment against light.
   - $4.5\text{s} - 5.7\text{s}$: Plunges iron into water trough with steam puff trigger.
 
+#### `worker_carpenter_master`
+- **Associated Building:** `bldg_logging_camp_sawmill`
+- **Associated 3D Model:** [`public/models/char_carpenter.glb`](file:///home/antigravity/erlfas/isometric-city/public/models/char_carpenter.glb)
+- **Reference Turnaround:** [`reference_photos/workers/worker_carpenter_turnaround.jpg`](file:///home/antigravity/erlfas/isometric-city/reference_photos/workers/worker_carpenter_turnaround.jpg)
+- **Attire:** Coarse canvas work smock over earthy brown tunic, leather tool belt with iron square and mallet, dark work boots, felt cap.
+- **Props:** Left hand: Wooden block plane; Right hand: Broad carpenter felling axe.
+- **Station Offset:** Beside timber staging trestles.
+- **Animation Cycle (4.5s):**
+  - Rhythmic planing stroke along timber beam, checking surface smoothness with fingertips.
+
 #### `worker_farmer_scyther`
 - **Associated Building:** `bldg_rural_thatched_log_cabin` / Wheat Fields
+- **Associated 3D Model:** [`public/models/char_farmer.glb`](file:///home/antigravity/erlfas/isometric-city/public/models/char_farmer.glb)
+- **Reference Turnaround:** [`reference_photos/workers/worker_farmer_turnaround.jpg`](file:///home/antigravity/erlfas/isometric-city/reference_photos/workers/worker_farmer_turnaround.jpg)
 - **Attire:** Wide-brimmed woven straw hat (`#9E8656`), loose natural linen shirt with unbuttoned collar, rolled-up trousers, bare feet or simple rawhide moccasins.
 - **Props:** Two-handed bent ash snath with curved steel harvest scythe blade.
 - **Station Offset:** Located along the wheat field swaths outside Kraków Gate.
@@ -373,6 +387,8 @@ All 18 worker archetypes are modeled at $1.75\text{m}$ scale with distinct 14th-
 
 #### `worker_monk_gardener`
 - **Associated Building:** `bldg_monastery_cloister`
+- **Associated 3D Model:** [`public/models/char_friar.glb`](file:///home/antigravity/erlfas/isometric-city/public/models/char_friar.glb)
+- **Reference Turnaround:** [`reference_photos/workers/worker_monk_turnaround.jpg`](file:///home/antigravity/erlfas/isometric-city/reference_photos/workers/worker_monk_turnaround.jpg)
 - **Attire:** Dominican rough woolen habit (white tunic under dark brown hooded scapular), knotted white rope cincture cord at waist, leather sandals.
 - **Props:** Right hand: Small wooden hand-hoe; Left hand: Wicker harvest basket.
 - **Station Offset:** Inside the cloister garden beside the sage and lavender raised beds.

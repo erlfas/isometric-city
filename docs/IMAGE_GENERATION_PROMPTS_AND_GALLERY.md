@@ -21,6 +21,17 @@
    - [Master Blacksmith Turnaround](#master-blacksmith-turnaround)
    - [Artisan Baker Turnaround](#artisan-baker-turnaround)
    - [Master Tanner Turnaround](#master-tanner-turnaround)
+   - [Master Carpenter & Joiner Turnaround](#master-carpenter--joiner-turnaround)
+   - [Master Brewer & Cooper Turnaround](#master-brewer--cooper-turnaround)
+   - [Master Potter Turnaround](#master-potter-turnaround)
+   - [Master Weaver Turnaround](#master-weaver-turnaround)
+   - [City Halberdier & Gate Guard Turnaround](#city-halberdier--gate-guard-turnaround)
+   - [Dominican Friar Herb Gardener Turnaround](#dominican-friar-herb-gardener-turnaround)
+   - [Peasant Farmer & Scyther Turnaround](#peasant-farmer--scyther-turnaround)
+   - [Master Stonemason Turnaround](#master-stonemason-turnaround)
+   - [Patrician Merchant & Councilman Turnaround](#patrician-merchant--councilman-turnaround)
+   - [Burgher Townswoman & Market Trader Turnaround](#burgher-townswoman--market-trader-turnaround)
+   - [Forest Woodcutter Turnaround](#forest-woodcutter-turnaround)
 4. [Macro City District & Regional Concept Art](#4-macro-city-district--regional-concept-art-concept_art)
    - [Artisan and Brewery District](#artisan-and-brewery-district)
    - [Brick Monastery with a Cloister Garden](#brick-monastery-with-a-cloister-garden)
@@ -687,15 +698,26 @@ These panoramic concept artworks define the regional geography, atmospheric ligh
 | 9 | `reference_photos/potter_workshop/front.jpg` | Workshop Reference (Primary) | `public/models/potter_workshop.glb` | `worker_potter` (throwing clay amphora) |
 | 10 | `reference_photos/weaver_workshop/front.jpg` | Workshop Reference (Primary) | `public/models/weaver_workshop.glb` | `worker_weaver` (operating loom & dyeing) |
 | 11 | `reference_photos/watermill/front.jpg` | Workshop Reference (Primary) | `public/models/watermill.glb` | `worker_miller` & flour porters |
-| 12 | `reference_photos/workers/worker_blacksmith_turnaround.jpg` | Character 3-View Turnaround | `public/models/worker_blacksmith.glb` | Master Blacksmith (leather apron, tongs, hammer) |
-| 13 | `reference_photos/workers/worker_baker_turnaround.jpg` | Character 3-View Turnaround | `public/models/worker_baker.glb` | Artisan Baker (flour-dusted apron, bread peel) |
-| 14 | `reference_photos/workers/worker_tanner_turnaround.jpg` | Character 3-View Turnaround | `public/models/worker_tanner.glb` | Master Tanner (oiled apron, fleshing drawknife) |
-| 15 | `concept_art/artisan and brewery district.jpg` | District Concept Art | Multiple Craft Workshops | Artisans, potters, brewers |
-| 16 | `concept_art/brick_monastery_with_a_cloister_garden.jpg` | Civic/Religious Concept Art | `public/models/monastery_cloister.glb` | Monks, gardeners, herbalists |
-| 17 | `concept_art/fortified_castle_courtyard.jpg` | Fortification Concept Art | `public/models/castle_donjon.glb` | Castellan, guards, knights |
-| 18 | `concept_art/fortified_river_crossing_with_a_watermill.jpg` | Regional Concept Art | `public/models/watermill.glb`, `gate_grodzka.glb` | Millers, carters, gate bailiffs |
-| 19 | `concept_art/hillside iron mine and smelting camp.jpg` | Industrial Concept Art | `public/models/blacksmith_workshop.glb` | Miners, smelters, charcoal burners |
-| 20 | `concept_art/riverside_harbor.jpg` | Commercial Concept Art | `public/models/river_harbor.glb` | Harbor master, stevedores |
-| 21 | `concept_art/rural_farming_village.jpg` | Regional Concept Art | `public/models/windmill.glb`, `house_timber_log.glb` | Farmers, scythers, windmiller |
-| 22 | `concept_art/stone_quarry_and_logging_camp.jpg` | Industrial Concept Art | `public/models/stone_quarry.glb`, `logging_camp.glb` | Quarrymen, hewers, pit sawyers |
-| 23 | `concept_art/tournament fairground outside the city walls.jpg` | Military Concept Art | `public/models/curtain_wall.glb`, `curtain_tower.glb` | Knights, heralds, spectators |
+| 12 | `reference_photos/workers/worker_blacksmith_turnaround.jpg` | Character 3-View Turnaround | `public/models/char_blacksmith.glb` | Master Blacksmith (leather apron, tongs, hammer) |
+| 13 | `reference_photos/workers/worker_baker_turnaround.jpg` | Character 3-View Turnaround | `public/models/char_baker.glb` | Artisan Baker (flour-dusted apron, bread peel) |
+| 14 | `reference_photos/workers/worker_tanner_turnaround.jpg` | Character 3-View Turnaround | `public/models/char_tanner.glb` | Master Tanner (oiled apron, fleshing drawknife) |
+| 15 | `reference_photos/workers/worker_carpenter_turnaround.jpg` | Character 3-View Turnaround | `public/models/char_carpenter.glb` | Master Carpenter (canvas smock, block plane, axe) |
+| 16 | `reference_photos/workers/worker_brewer_turnaround.jpg` | Character 3-View Turnaround | `public/models/char_brewer.glb` | Master Brewer (red cotte, copper paddle, tankard) |
+| 17 | `reference_photos/workers/worker_potter_turnaround.jpg` | Character 3-View Turnaround | `public/models/char_potter.glb` | Master Potter (clay smock, shaping rib, jug) |
+| 18 | `reference_photos/workers/worker_weaver_turnaround.jpg` | Character 3-View Turnaround | `public/models/char_weaver.glb` | Master Weaver (mi-parti cotte, shuttle, shears) |
+| 19 | `reference_photos/workers/worker_guard_turnaround.jpg` | Character 3-View Turnaround | `public/models/char_guard.glb` | Town Guard (sallet helmet, tabard, halberd) |
+| 20 | `reference_photos/workers/worker_monk_turnaround.jpg` | Character 3-View Turnaround | `public/models/char_friar.glb` | Dominican Friar (monastic habit, hoe, herb basket) |
+| 21 | `reference_photos/workers/worker_farmer_turnaround.jpg` | Character 3-View Turnaround | `public/models/char_farmer.glb` | Peasant Farmer (straw hat, linen shirt, scythe) |
+| 22 | `reference_photos/workers/worker_stonemason_turnaround.jpg` | Character 3-View Turnaround | `public/models/char_stonemason.glb` | Stone Mason (stone smock, leather apron, mallet, chisel) |
+| 23 | `reference_photos/workers/worker_patrician_turnaround.jpg` | Character 3-View Turnaround | `public/models/char_merchant.glb` | Patrician Merchant (houppelande, fur, sealed scroll) |
+| 24 | `reference_photos/workers/worker_townswoman_turnaround.jpg` | Character 3-View Turnaround | `public/models/char_townswoman.glb` | Burgher Townswoman (green kirtle, wimple, market basket) |
+| 25 | `reference_photos/workers/worker_woodcutter_turnaround.jpg` | Character 3-View Turnaround | `public/models/char_woodcutter.glb` | Forest Woodcutter (cowl hood, felling wedges, axe) |
+| 26 | `concept_art/artisan and brewery district.jpg` | District Concept Art | Multiple Craft Workshops | Artisans, potters, brewers |
+| 27 | `concept_art/brick_monastery_with_a_cloister_garden.jpg` | Civic/Religious Concept Art | `public/models/monastery_cloister.glb` | Monks, gardeners, herbalists |
+| 28 | `concept_art/fortified_castle_courtyard.jpg` | Fortification Concept Art | `public/models/castle_donjon.glb` | Castellan, guards, knights |
+| 29 | `concept_art/fortified_river_crossing_with_a_watermill.jpg` | Regional Concept Art | `public/models/watermill.glb`, `gate_grodzka.glb` | Millers, carters, gate bailiffs |
+| 30 | `concept_art/hillside iron mine and smelting camp.jpg` | Industrial Concept Art | `public/models/blacksmith_workshop.glb` | Miners, smelters, charcoal burners |
+| 31 | `concept_art/riverside_harbor.jpg` | Commercial Concept Art | `public/models/river_harbor.glb` | Harbor master, stevedores |
+| 32 | `concept_art/rural_farming_village.jpg` | Regional Concept Art | `public/models/windmill.glb`, `house_timber_log.glb` | Farmers, scythers, windmiller |
+| 33 | `concept_art/stone_quarry_and_logging_camp.jpg` | Industrial Concept Art | `public/models/stone_quarry.glb`, `logging_camp.glb` | Quarrymen, hewers, pit sawyers |
+| 34 | `concept_art/tournament fairground outside the city walls.jpg` | Military Concept Art | `public/models/curtain_wall.glb`, `curtain_tower.glb` | Knights, heralds, spectators |
