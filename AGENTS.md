@@ -1,0 +1,49 @@
+# AGENTS.md — Lublin Anno Domini 1392
+
+This guide provides high-signal navigation pointers and commands for coding agents working in this repository.
+
+---
+
+## 1. Quick Start & Environment
+
+- **Initial Setup**: Run `./scripts/setup_environment.sh` (installs `node_modules` and verifies Blender 3.6 LTS).
+- **Typecheck**: `npm run check` (runs `tsc --noEmit` without bundling).
+- **Build**: `npm run build` (typechecks and bundles Vite client).
+- **Blender Binary Path**: `/home/antigravity/blender/blender` (or `~/.local/bin/blender`).
+  - *Never* run unbounded `find /` across the filesystem.
+
+---
+
+## 2. Core Pipelines & Code Generators
+
+| Task | Script / Entry Point | Output / Target | Command |
+|---|---|---|---|
+| **Building Models** | [`build_assets.py`](build_assets.py) | `public/models/*.glb` (31 models) | `/home/antigravity/blender/blender --background --python build_assets.py` |
+| **Character Models** | [`build_characters.py`](build_characters.py) | `public/models/characters/*.glb` (14 models) | `/home/antigravity/blender/blender --background --python build_characters.py` |
+| **Urban Parcellation** | [`generate_city_plan.py`](generate_city_plan.py) | `city_plan.json` (580 parcels, 0 overlaps) | `python3 generate_city_plan.py` |
+
+---
+
+## 3. Directory Navigation Map
+
+- **3D Runtime Engine**:
+  - [`src/engine/three-renderer.ts`](src/engine/three-renderer.ts): Three.js orthographic renderer, dynamic parcel dispatch, citizen archetype instancing, shadows.
+  - [`src/engine/simulation.ts`](src/engine/simulation.ts): 1,500-citizen clockwork schedule, spatial hash grid.
+  - [`src/types.ts`](src/types.ts): TypeScript interfaces for `Parcel`, `Citizen`, `CityPlan`.
+- **Reference Photos & Artwork**:
+  - `reference_photos/<building_id>/`: Architectural 3-view sets (`front.jpg`, `side.jpg`, `back.jpg`).
+  - `reference_photos/workers/`: 14 character 3-view turnaround model sheets (`*_turnaround.jpg`).
+  - `concept_art/`: Panoramic district concept paintings and style guide.
+- **Specifications & Post-Mortem Documentation**:
+  - [`BUILDINGS_AND_WORKERS_CATALOG.md`](BUILDINGS_AND_WORKERS_CATALOG.md): Master building & worker specification.
+  - [`KEY_FINDINGS.md`](KEY_FINDINGS.md): Critical post-mortem findings (Sections 1–15).
+  - [`docs/IMAGE_GENERATION_PROMPTS_AND_GALLERY.md`](docs/IMAGE_GENERATION_PROMPTS_AND_GALLERY.md): Exact prompts and visual gallery.
+  - [`skills/`](skills/): Reusable procedural pipeline skills (`blender-procedural-asset-pipeline`, `blender-procedural-character-pipeline`, `procedural-model-creation-pipeline`).
+
+---
+
+## 4. Engineering Conventions
+
+- **glTF / Three.js Coordinates**: Blender models must be exported with `export_yup=True` (+Y is up in Three.js).
+- **Humanoid Character Proportions**: Standardized at $1.75\text{m}$ overall height with a $1:6.5$ RTS strategy game readability ratio. Triangle budget: $140 - 220$ polygons per character.
+- **File Transfers**: Use Python `shutil.copyfile()` for atomic copying across workspace and artifact paths.
