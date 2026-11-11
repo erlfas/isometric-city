@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { CityPlan, Citizen } from '../types';
+import { TextureLibrary } from './texture-library';
 
 export class ThreeIsometricRenderer {
   public scene: THREE.Scene;
@@ -25,6 +26,7 @@ export class ThreeIsometricRenderer {
   // Loaded GLTF model templates
   public models: Map<string, THREE.Group> = new Map();
   public isLoaded: boolean = false;
+  public textures = new TextureLibrary();
 
   private groundPlane: THREE.Mesh;
   private citizenMeshes: Map<string, THREE.Group> = new Map();
@@ -123,20 +125,24 @@ export class ThreeIsometricRenderer {
     this.groundCanvas.height = 2048;
     const ctx = this.groundCanvas.getContext('2d')!;
 
-    // Base meadow grass & loess earth color
-    ctx.fillStyle = '#475d2e';
+    // The canvas is a SPLAT MASK once textures load (applyGroundTextures):
+    //   R = cobblestone weight, B = dirt weight, G = large-scale tone (0.5 = neutral).
+    // Until then it is shown directly as the ground colour, so it must also look sane.
+    ctx.fillStyle = 'rgb(0,128,0)';
     ctx.fillRect(0, 0, 2048, 2048);
 
-    // Initial noise
+    // Large-scale tone variation: breaks up texture repetition across the meadow.
+    ctx.filter = 'blur(6px)';
     for (let i = 0; i < 4000; i++) {
       const rx = Math.random() * 2048;
       const ry = Math.random() * 2048;
-      const r = Math.random() * 12 + 4;
-      ctx.fillStyle = Math.random() < 0.5 ? '#3f5328' : '#526935';
+      const r = Math.random() * 14 + 6;
+      ctx.fillStyle = Math.random() < 0.5 ? 'rgb(0,104,0)' : 'rgb(0,152,0)';
       ctx.beginPath();
       ctx.arc(rx, ry, r, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.filter = 'none';
 
     this.groundTex = new THREE.CanvasTexture(this.groundCanvas);
     this.groundTex.wrapS = THREE.ClampToEdgeWrapping;
@@ -157,6 +163,53 @@ export class ThreeIsometricRenderer {
     return mesh;
   }
 
+  /**
+   * Turn the ground into a texture splat: tiled grass / dirt / cobblestone in world
+   * metres, blended by the canvas mask (R cobble, B dirt, G large-scale tone).
+   */
+  private applyGroundTextures(): void {
+    const grass = this.textures.getAlbedo('grass');
+    const dirt = this.textures.getAlbedo('dirt_road');
+    const cobble = this.textures.getAlbedo('cobblestone');
+    if (!grass || !dirt || !cobble) return;
+    const tile = (id: string) => (this.textures.getTile(id) ?? [4, 4])[0];
+
+    const mat = this.groundPlane.material as THREE.MeshStandardMaterial;
+    mat.customProgramCacheKey = () => 'ground-splat-v1';
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.groundGrass = { value: grass };
+      shader.uniforms.groundDirt = { value: dirt };
+      shader.uniforms.groundCobble = { value: cobble };
+      shader.uniforms.groundTiles = { value: new THREE.Vector3(tile('grass'), tile('dirt_road'), tile('cobblestone')) };
+
+      shader.vertexShader = 'varying vec2 vGroundXZ;\n' + shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\n  vGroundXZ = (modelMatrix * vec4(transformed, 1.0)).xz;'
+      );
+      shader.fragmentShader =
+        'varying vec2 vGroundXZ;\nuniform sampler2D groundGrass;\nuniform sampler2D groundDirt;\n' +
+        'uniform sampler2D groundCobble;\nuniform vec3 groundTiles;\n' +
+        shader.fragmentShader.replace(
+          '#include <map_fragment>',
+          `
+  vec4 gMask = texture2D( map, vMapUv );
+  vec3 gGrass = texture2D( groundGrass, vGroundXZ / groundTiles.x ).rgb;
+  // second, rotated and larger grass sample hides the 6 m repeat at city zoom
+  vec2 gRot = mat2( 0.8, -0.6, 0.6, 0.8 ) * vGroundXZ / ( groundTiles.x * 3.7 );
+  gGrass = mix( gGrass, texture2D( groundGrass, gRot ).rgb, 0.35 );
+  vec3 gDirt = texture2D( groundDirt, vGroundXZ / groundTiles.y ).rgb;
+  vec3 gCobble = texture2D( groundCobble, vGroundXZ / groundTiles.z ).rgb;
+  float wCobble = gMask.r;
+  float wDirt = gMask.b * ( 1.0 - wCobble );
+  vec3 gCol = mix( mix( gGrass, gDirt, wDirt ), gCobble, wCobble );
+  gCol *= 0.78 + 0.44 * gMask.g;
+  diffuseColor.rgb *= gCol;
+`
+        );
+    };
+    mat.needsUpdate = true;
+  }
+
   private updateGroundWithPlan(plan: CityPlan): void {
     if (!this.groundCanvas || !this.groundTex) return;
     const ctx = this.groundCanvas.getContext('2d')!;
@@ -165,10 +218,15 @@ export class ThreeIsometricRenderer {
     const toCanvasX = (wx: number) => ((wx + 350) / 700) * 2048;
     const toCanvasY = (wz: number) => ((wz + 275) / 550) * 2048;
 
-    // 1. Draw Lublin Promontory Old Town loess hill plateau
+    // Splat-mask painting: each layer ADDS to its own channel ('lighter'), so cobble (R),
+    // dirt (B) and tone (G) stay independent. Blur gives soft, painterly transitions.
+    ctx.globalCompositeOperation = 'lighter';
+
+    // 1. Lublin Promontory Old Town loess plateau: trodden earth showing through grass
     if (plan.defense && plan.defense.perimeterPoints.length > 0) {
       ctx.save();
-      ctx.fillStyle = '#5c5240';
+      ctx.filter = 'blur(10px)';
+      ctx.fillStyle = 'rgb(0,0,110)';
       ctx.beginPath();
       const first = plan.defense.perimeterPoints[0];
       ctx.moveTo(toCanvasX(first.x), toCanvasY(first.z));
@@ -181,17 +239,20 @@ export class ThreeIsometricRenderer {
       ctx.restore();
     }
 
-    // 2. Draw Castle Hill bailey plateau
+    // 2. Castle Hill bailey plateau
     ctx.save();
-    ctx.fillStyle = '#5c5240';
+    ctx.filter = 'blur(10px)';
+    ctx.fillStyle = 'rgb(0,0,110)';
     ctx.beginPath();
     ctx.ellipse(toCanvasX(275), toCanvasY(90), 160, 130, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
-    // 3. Draw Czechówka & Bystrzyca river valley slopes (greener loess ravines)
+    // 3. Czechówka & Bystrzyca river valley slopes: lusher, darker meadow (tone down)
     ctx.save();
-    ctx.strokeStyle = '#374b24';
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.filter = 'blur(12px)';
+    ctx.strokeStyle = 'rgb(0,90,0)';
     ctx.lineWidth = 45;
     ctx.beginPath();
     ctx.moveTo(toCanvasX(-340), toCanvasY(45));
@@ -199,14 +260,15 @@ export class ThreeIsometricRenderer {
     ctx.stroke();
     ctx.restore();
 
-    // 4. Draw Street Network Corridors from plan (cobblestone paving)
+    // 4. Street network: dirt verges with a cobbled carriageway
     if (plan.streetNetwork && plan.streetNetwork.nodes && plan.streetNetwork.edges) {
       const nodeMap = new Map<string, { x: number; z: number }>();
       plan.streetNetwork.nodes.forEach(n => nodeMap.set(n.id, { x: n.x, z: n.z }));
 
-      // Outer wide road border
+      // Outer wide road border (dirt)
       ctx.save();
-      ctx.strokeStyle = '#524838';
+      ctx.filter = 'blur(3px)';
+      ctx.strokeStyle = 'rgb(0,0,255)';
       ctx.lineWidth = 26;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
@@ -222,41 +284,26 @@ export class ThreeIsometricRenderer {
       ctx.stroke();
 
       // Inner cobblestone street track
-      ctx.strokeStyle = '#6c6251';
+      ctx.filter = 'blur(2px)';
+      ctx.strokeStyle = 'rgb(255,0,0)';
       ctx.lineWidth = 18;
       ctx.stroke();
       ctx.restore();
     }
 
-    // 5. Draw Rynek (Market Square) Flagstone Plaza
+    // 5. Rynek (Market Square): fully cobbled plaza
     const rx1 = toCanvasX(-42);
     const rz1 = toCanvasY(-32);
     const rx2 = toCanvasX(42);
     const rz2 = toCanvasY(32);
-    const rw = rx2 - rx1;
-    const rh = rz2 - rz1;
 
     ctx.save();
-    ctx.fillStyle = '#6f6655';
-    ctx.fillRect(rx1, rz1, rw, rh);
-
-    // Stone flagstone grid on Rynek
-    ctx.strokeStyle = '#574f41';
-    ctx.lineWidth = 1.5;
-    for (let x = rx1; x <= rx2; x += 18) {
-      ctx.beginPath();
-      ctx.moveTo(x, rz1);
-      ctx.lineTo(x, rz2);
-      ctx.stroke();
-    }
-    for (let y = rz1; y <= rz2; y += 18) {
-      ctx.beginPath();
-      ctx.moveTo(rx1, y);
-      ctx.lineTo(rx2, y);
-      ctx.stroke();
-    }
+    ctx.filter = 'blur(2px)';
+    ctx.fillStyle = 'rgb(255,0,0)';
+    ctx.fillRect(rx1, rz1, rx2 - rx1, rz2 - rz1);
     ctx.restore();
 
+    ctx.globalCompositeOperation = 'source-over';
     this.groundTex.needsUpdate = true;
   }
 
@@ -310,6 +357,19 @@ export class ThreeIsometricRenderer {
       'char_townswoman'
     ];
 
+    try {
+      await this.textures.load(this.renderer);
+      this.applyGroundTextures();
+    } catch (err) {
+      // Flat colours still render; textures are an enhancement. The ground canvas is a
+      // splat mask (pure R/G/B), so fall back to a plain meadow colour instead.
+      console.warn('[ThreeRenderer] Texture library failed to load, using flat materials:', err);
+      const gm = this.groundPlane.material as THREE.MeshStandardMaterial;
+      gm.map = null;
+      gm.color.set(0x475d2e);
+      gm.needsUpdate = true;
+    }
+
     console.log('[ThreeRenderer] Loading 45 Blender-authored GLB assets (buildings and characters)...');
 
     for (const name of modelNames) {
@@ -321,6 +381,7 @@ export class ThreeIsometricRenderer {
             child.receiveShadow = true;
           }
         });
+        if (!name.startsWith('char_')) this.textures.applyToTemplate(gltf.scene);
         this.models.set(name, gltf.scene);
       } catch (err) {
         console.warn(`[ThreeRenderer] Failed loading /models/${name}.glb:`, err);
@@ -483,11 +544,19 @@ export class ThreeIsometricRenderer {
         const segLen = Math.hypot(dx, dz);
         const angle = Math.atan2(dx, dz);
 
-        const wall = wallTemplate.clone();
-        wall.position.set(midX, 0, midZ);
-        wall.rotation.y = angle + Math.PI / 2;
-        wall.scale.set(segLen / 16.0, 1.0, 1.0);
-        this.scene.add(wall);
+        // Tile 16 m wall modules along the segment instead of stretching one module:
+        // stretching smeared the brick texture (UVs are in metres) and the crenellations.
+        const MODULE = 16.0;
+        const count = Math.max(1, Math.round(segLen / MODULE));
+        const fit = segLen / (count * MODULE); // close to 1
+        for (let k = 0; k < count; k++) {
+          const t = (k + 0.5) / count - 0.5;
+          const wall = wallTemplate.clone();
+          wall.position.set(midX + dx * t, 0, midZ + dz * t);
+          wall.rotation.y = angle + Math.PI / 2;
+          wall.scale.set(fit, 1.0, 1.0);
+          this.scene.add(wall);
+        }
       }
     }
 
@@ -636,6 +705,9 @@ export class ThreeIsometricRenderer {
           if ((child as THREE.Mesh).isMesh) {
             const mesh = child as THREE.Mesh;
             const applyJitter = (mat: THREE.Material): THREE.Material => {
+              // Textured families: shared cached variant (brick a/b + tint) per parcel hash.
+              const textured = this.textures.variant(mat, hash);
+              if (textured) return textured;
               if (!(mat as THREE.MeshStandardMaterial).isMeshStandardMaterial) return mat;
               const stdMat = (mat as THREE.MeshStandardMaterial).clone();
               const mName = stdMat.name || '';
