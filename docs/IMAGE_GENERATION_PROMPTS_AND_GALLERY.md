@@ -311,7 +311,225 @@ These multi-view character turnaround model sheets provide exact orthographic si
 
 ---
 
-## 4. Macro City District & Regional Concept Art (`concept_art/`)
+### Master Carpenter & Joiner Turnaround
+
+![Master Carpenter 3-View Turnaround](../reference_photos/workers/worker_carpenter_turnaround.jpg)
+
+- **File Path:** [`reference_photos/workers/worker_carpenter_turnaround.jpg`](../reference_photos/workers/worker_carpenter_turnaround.jpg)
+- **Associated 3D Model:** [`public/models/char_carpenter.glb`](../public/models/char_carpenter.glb)
+- **Aspect Ratio:** `16:9`
+- **Views Included:** Front View, Profile Side View, Rear View
+- **Generation Prompt:**
+  ```text
+  Orthographic 3-view character model sheet showing front view, side profile view, and rear view side-by-side, 14th-century medieval master carpenter and joiner, wearing sturdy canvas work smock over earthy brown tunic, leather tool belt with iron square and mallet hanging, leather boots, holding a wooden block plane and broad carpenter felling axe, felt cap on head, neutral solid beige parchment background, crisp silhouette, studio lighting, late 1990s PC strategy game sprite reference, no UI
+  ```
+- **Costume & Equipment Details:**
+  - Coarse canvas work apron over earthy homespun woolen tunic.
+  - Heavy leather belt with hanging round wooden mallet and iron framing square.
+  - Held craft tools: wooden block hand plane in left hand, broad-bladed carpenter felling axe in right hand.
+  - Felt cap and durable leather work boots.
+
+---
+
+### Master Brewer & Cooper Turnaround
+
+![Master Brewer 3-View Turnaround](../reference_photos/workers/worker_brewer_turnaround.jpg)
+
+- **File Path:** [`reference_photos/workers/worker_brewer_turnaround.jpg`](../reference_photos/workers/worker_brewer_turnaround.jpg)
+- **Associated 3D Model:** [`public/models/char_brewer.glb`](../public/models/char_brewer.glb)
+- **Aspect Ratio:** `16:9`
+- **Views Included:** Front View, Profile Side View, Rear View
+- **Generation Prompt:**
+  ```text
+  Orthographic 3-view character model sheet showing front view, side profile view, and rear view side-by-side, 14th-century medieval master brewer, wearing stained dark leather bib apron over brick-red woolen cotte, rolled linen sleeves, sturdy work boots, holding a long polished copper mash paddle and wooden tasting tankard, velvet-trimmed chaperon hat on head, neutral solid beige parchment background, crisp silhouette, studio lighting, late 1990s PC strategy game sprite reference, no UI
+  ```
+- **Costume & Equipment Details:**
+  - Deep brick-red woolen cotte with rolled natural linen sleeves.
+  - Dark stained leather bib apron with brass buckles and crossed rear straps.
+  - Velvet-trimmed chaperon hat with liripipe draped over the left shoulder.
+  - Held craft tools: long polished copper mash paddle and turned wooden ale tankard.
+
+---
+
+### Master Potter Turnaround
+
+![Master Potter 3-View Turnaround](../reference_photos/workers/worker_potter_turnaround.jpg)
+
+- **File Path:** [`reference_photos/workers/worker_potter_turnaround.jpg`](../reference_photos/workers/worker_potter_turnaround.jpg)
+- **Associated 3D Model:** [`public/models/char_potter.glb`](../public/models/char_potter.glb)
+- **Aspect Ratio:** `16:9`
+- **Views Included:** Front View, Profile Side View, Rear View
+- **Generation Prompt:**
+  ```text
+  Orthographic 3-view character model sheet showing front view, side profile view, and rear view side-by-side, 14th-century medieval master potter, wearing coarse linen tunic spattered with grey and terracotta clay, earthy ochre trousers, tied cloth headband on head, rolled sleeves, bare forearms with clay splatters, holding a wooden pottery shaping rib and a freshly thrown terracotta jug, neutral solid beige parchment background, crisp silhouette, studio lighting, late 1990s PC strategy game sprite reference, no UI
+  ```
+- **Costume & Equipment Details:**
+  - Linen tunic and apron heavily spattered with damp river clay and fired terracotta powder.
+  - Earthy ochre trousers and rawhide turnshoes.
+  - Knotted cloth headband keeping curls clear of the kick-wheel.
+  - Held craft tools: flat wooden shaping rib and freshly thrown double-handled clay amphora.
+
+---
+
+### Master Weaver Turnaround
+
+![Master Weaver 3-View Turnaround](../reference_photos/workers/worker_weaver_turnaround.jpg)
+
+- **File Path:** [`reference_photos/workers/worker_weaver_turnaround.jpg`](../reference_photos/workers/worker_weaver_turnaround.jpg)
+- **Associated 3D Model:** [`public/models/char_weaver.glb`](../public/models/char_weaver.glb)
+- **Aspect Ratio:** `16:9`
+- **Views Included:** Front View, Profile Side View, Rear View
+- **Generation Prompt:**
+  ```text
+  Orthographic 3-view character model sheet showing front view, side profile view, and rear view side-by-side, 14th-century medieval master weaver and clothier, wearing deep madder red and indigo blue burgher cotte tunic, dark chausses, leather turnshoes, burgundy woolen hood with hanging liripipe tail, holding a polished hardwood weaving shuttle threaded with white yarn and large tailor shears, neutral solid beige parchment background, crisp silhouette, studio lighting, late 1990s PC strategy game sprite reference, no UI
+  ```
+- **Costume & Equipment Details:**
+  - Fashionable mi-parti dyed woolen cotte (madder red right half, indigo blue left half).
+  - Burgundy woolen hood with long liripipe tail draping down the back.
+  - Embroidered cloth belt with coin pouch.
+  - Held craft tools: carved polished hardwood shuttle with wound yarn spool and iron shears.
+
+---
+
+### City Halberdier & Gate Guard Turnaround
+
+![City Guard 3-View Turnaround](../reference_photos/workers/worker_guard_turnaround.jpg)
+
+- **File Path:** [`reference_photos/workers/worker_guard_turnaround.jpg`](../reference_photos/workers/worker_guard_turnaround.jpg)
+- **Associated 3D Model:** [`public/models/char_guard.glb`](../public/models/char_guard.glb)
+- **Aspect Ratio:** `16:9`
+- **Views Included:** Front View, Profile Side View, Rear View
+- **Generation Prompt:**
+  ```text
+  Orthographic 3-view character model sheet showing front view, side profile view, and rear view side-by-side, 14th-century medieval city guard and halberdier, wearing quilted padded gambeson under a dark red city coat of arms tabard, chainmail coif with polished steel kettle hat sallet helmet, leather armguards and sturdy boots, holding a tall 2.2-meter steel polearm halberd with forged axe blade and spear spike, short arming sword in scabbard at hip, neutral solid beige parchment background, crisp silhouette, studio lighting, late 1990s PC strategy game sprite reference, no UI
+  ```
+- **Costume & Equipment Details:**
+  - Dark red heraldic tabard emblazoned with golden city castle gate crest.
+  - Quilted protective gambeson undergarment and chainmail aventail.
+  - Polished steel kettle hat helmet with broad deflected rim.
+  - Held craft tools: 2.2m steel polearm halberd with crescent axe blade and top spear spike; arming sword at hip.
+
+---
+
+### Dominican Friar Herb Gardener Turnaround
+
+![Dominican Friar 3-View Turnaround](../reference_photos/workers/worker_monk_turnaround.jpg)
+
+- **File Path:** [`reference_photos/workers/worker_monk_turnaround.jpg`](../reference_photos/workers/worker_monk_turnaround.jpg)
+- **Associated 3D Model:** [`public/models/char_friar.glb`](../public/models/char_friar.glb)
+- **Aspect Ratio:** `16:9`
+- **Views Included:** Front View, Profile Side View, Rear View
+- **Generation Prompt:**
+  ```text
+  Orthographic 3-view character model sheet showing front view, side profile view, and rear view side-by-side, 14th-century Dominican friar and monastery herb gardener, wearing cream unbleached wool habit tunic under dark brown woolen hooded scapular, knotted white rope cincture cord around waist with wooden rosary beads, leather sandals, tonsured hairstyle, holding a wooden garden hoe and a small wicker herb gathering basket filled with sage and lavender, neutral solid beige parchment background, crisp silhouette, studio lighting, late 1990s PC strategy game sprite reference, no UI
+  ```
+- **Costume & Equipment Details:**
+  - Authentic Order of Preachers habit: undyed cream wool tunic and dark brown scapular.
+  - Knotted white rope cincture cord with carved wooden rosary beads and crucifix.
+  - Tonsured ring hairstyle and leather sandals.
+  - Held craft tools: wooden weeding hoe and round wicker basket filled with fresh sage and lavender.
+
+---
+
+### Peasant Farmer & Scyther Turnaround
+
+![Peasant Farmer 3-View Turnaround](../reference_photos/workers/worker_farmer_turnaround.jpg)
+
+- **File Path:** [`reference_photos/workers/worker_farmer_turnaround.jpg`](../reference_photos/workers/worker_farmer_turnaround.jpg)
+- **Associated 3D Model:** [`public/models/char_farmer.glb`](../public/models/char_farmer.glb)
+- **Aspect Ratio:** `16:9`
+- **Views Included:** Front View, Profile Side View, Rear View
+- **Generation Prompt:**
+  ```text
+  Orthographic 3-view character model sheet showing front view, side profile view, and rear view side-by-side, 14th-century medieval peasant farmer and scyther, wearing loose homespun natural undyed linen shirt, rolled-up earthy trousers, wide-brimmed woven straw sun hat, simple rawhide moccasin shoes, holding a long two-handed curved steel harvest scythe with bent wooden snath, small whetstone pouch at rope belt, neutral solid beige parchment background, crisp silhouette, studio lighting, late 1990s PC strategy game sprite reference, no UI
+  ```
+- **Costume & Equipment Details:**
+  - Loose homespun linen work shirt with open collar and rope belt.
+  - Wide-brimmed sun-bleached woven straw harvest hat.
+  - Rawhide turnshoes and wooden whetstone horn scabbard.
+  - Held craft tools: 1.8m curved harvest scythe with two offset wooden snath handgrips.
+
+---
+
+### Master Stonemason Turnaround
+
+![Master Stonemason 3-View Turnaround](../reference_photos/workers/worker_stonemason_turnaround.jpg)
+
+- **File Path:** [`reference_photos/workers/worker_stonemason_turnaround.jpg`](../reference_photos/workers/worker_stonemason_turnaround.jpg)
+- **Associated 3D Model:** [`public/models/char_stonemason.glb`](../public/models/char_stonemason.glb)
+- **Aspect Ratio:** `16:9`
+- **Views Included:** Front View, Profile Side View, Rear View
+- **Generation Prompt:**
+  ```text
+  Orthographic 3-view character model sheet showing front view, side profile view, and rear view side-by-side, 14th-century medieval master stone mason and stonecutter, wearing heavy linen smock dusted with white stone powder, split leather knee-length apron, dark hose, thick leather work gloves, tied white linen coif, holding an iron pointed stonecutter chisel and heavy wooden mallet, neutral solid beige parchment background, crisp silhouette, studio lighting, late 1990s PC strategy game sprite reference, no UI
+  ```
+- **Costume & Equipment Details:**
+  - Linen smock and split leather apron dusted with pale limestone ashlar powder.
+  - Tied linen coif and thick heavy gauntlets.
+  - Sturdy double-soled work boots.
+  - Held craft tools: round beechwood stonecutter's mallet and pointed forged iron chisel.
+
+---
+
+### Patrician Merchant & Councilman Turnaround
+
+![Patrician Merchant 3-View Turnaround](../reference_photos/workers/worker_patrician_turnaround.jpg)
+
+- **File Path:** [`reference_photos/workers/worker_patrician_turnaround.jpg`](../reference_photos/workers/worker_patrician_turnaround.jpg)
+- **Associated 3D Model:** [`public/models/char_merchant.glb`](../public/models/char_merchant.glb)
+- **Aspect Ratio:** `16:9`
+- **Views Included:** Front View, Profile Side View, Rear View
+- **Generation Prompt:**
+  ```text
+  Orthographic 3-view character model sheet showing front view, side profile view, and rear view side-by-side, 14th-century medieval patrician merchant and city councilman, wearing luxurious royal blue woolen houppelande robe with brown beaver fur collar trim and wide sleeves, fine scarlet belt with gold buckle and embossed leather coin purse, pointed leather poulaines shoes, padded burgundy chaperon hat with cockade broach, holding an official parchment ledger scroll with red wax seal, neutral solid beige parchment background, crisp silhouette, studio lighting, late 1990s PC strategy game sprite reference, no UI
+  ```
+- **Costume & Equipment Details:**
+  - Floor-length royal blue houppelande gown with wide dagged sleeves and beaver fur trim.
+  - Padded burgundy velvet chaperon hat with gold cockade.
+  - Pointed leather poulaines turnshoes.
+  - Held craft tools: royal charter trade ledger scroll with hanging red wax seal.
+
+---
+
+### Burgher Townswoman & Market Trader Turnaround
+
+![Burgher Townswoman 3-View Turnaround](../reference_photos/workers/worker_townswoman_turnaround.jpg)
+
+- **File Path:** [`reference_photos/workers/worker_townswoman_turnaround.jpg`](../reference_photos/workers/worker_townswoman_turnaround.jpg)
+- **Associated 3D Model:** [`public/models/char_townswoman.glb`](../public/models/char_townswoman.glb)
+- **Aspect Ratio:** `16:9`
+- **Views Included:** Front View, Profile Side View, Rear View
+- **Generation Prompt:**
+  ```text
+  Orthographic 3-view character model sheet showing front view, side profile view, and rear view side-by-side, 14th-century medieval burgher townswoman and market trader, wearing warm forest green woolen kirtle gown over cream linen underdress, crisp white linen apron with neat folds, folded white linen wimple and veil covering hair, leather turnshoes, holding a woven wicker market basket filled with fresh root vegetables and round sourdough bread, key ring hanging from cloth belt, neutral solid beige parchment background, crisp silhouette, studio lighting, late 1990s PC strategy game sprite reference, no UI
+  ```
+- **Costume & Equipment Details:**
+  - Forest green woolen kirtle gown with cream linen chemise cuffs.
+  - Folded white linen wimple, barbette, and veil.
+  - Iron key ring and household coin pouch hanging from woven sash.
+  - Held craft tools: double-handled wicker market basket loaded with fresh parsnips, onions, carrots, and crusty bread.
+
+---
+
+### Forest Woodcutter Turnaround
+
+![Woodcutter 3-View Turnaround](../reference_photos/workers/worker_woodcutter_turnaround.jpg)
+
+- **File Path:** [`reference_photos/workers/worker_woodcutter_turnaround.jpg`](../reference_photos/workers/worker_woodcutter_turnaround.jpg)
+- **Associated 3D Model:** [`public/models/char_woodcutter.glb`](../public/models/char_woodcutter.glb)
+- **Aspect Ratio:** `16:9`
+- **Views Included:** Front View, Profile Side View, Rear View
+- **Generation Prompt:**
+  ```text
+  Orthographic 3-view character model sheet showing front view, side profile view, and rear view side-by-side, 14th-century medieval forest woodcutter, wearing dark charcoal-brown woolen hood covering neck and shoulders, sturdy coarse grey smock with rolled sleeves, heavy leather forester gauntlets, tall mud-spattered work boots, holding a heavy double-bitted iron felling axe rested on ground, felling wedges and woodman's belt pouch at waist, neutral solid beige parchment background, crisp silhouette, studio lighting, late 1990s PC strategy game sprite reference, no UI
+  ```
+- **Costume & Equipment Details:**
+  - Weathered grey woolen tunic and charcoal cowl hood covering shoulders.
+  - Heavy leather woodcutter's belt holding split oak felling wedges.
+  - Mud-caked high forest boots.
+  - Held craft tools: heavy forged iron broad felling axe with long curved ash haft.
+
+---
 
 These panoramic concept artworks define the regional geography, atmospheric lighting, and architectural hierarchy of Lublin Anno Domini 1392.
 

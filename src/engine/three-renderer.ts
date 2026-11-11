@@ -293,10 +293,24 @@ export class ThreeIsometricRenderer {
       'gate_krakow',
       'gate_grodzka',
       'monastery_cloister',
-      'archery_yard'
+      'archery_yard',
+      'char_baker',
+      'char_tanner',
+      'char_carpenter',
+      'char_blacksmith',
+      'char_brewer',
+      'char_potter',
+      'char_weaver',
+      'char_stonemason',
+      'char_woodcutter',
+      'char_friar',
+      'char_guard',
+      'char_merchant',
+      'char_farmer',
+      'char_townswoman'
     ];
 
-    console.log('[ThreeRenderer] Loading 31 Blender-authored GLB assets...');
+    console.log('[ThreeRenderer] Loading 45 Blender-authored GLB assets (buildings and characters)...');
 
     for (const name of modelNames) {
       try {
@@ -748,55 +762,78 @@ export class ThreeIsometricRenderer {
     console.log('[ThreeRenderer] Full medieval city populated successfully with 0 building overlaps!');
   }
 
+  private getCitizenArchetype(c: Citizen): string {
+    const trade = (c.trade || '').toLowerCase();
+    const rank = (c.guildRank || '').toLowerCase();
+    const wealth = c.wealthClass || '';
+
+    if (trade.includes('baker')) return 'char_baker';
+    if (trade.includes('tanner') || trade.includes('shoemaker') || trade.includes('furrier') || trade.includes('butcher')) return 'char_tanner';
+    if (trade.includes('carpenter') || trade.includes('joiner') || trade.includes('wheelwright')) return 'char_carpenter';
+    if (trade.includes('blacksmith') || trade.includes('armorer') || trade.includes('goldsmith')) return 'char_blacksmith';
+    if (trade.includes('brewer') || trade.includes('cooper') || trade.includes('wine')) return 'char_brewer';
+    if (trade.includes('potter')) return 'char_potter';
+    if (trade.includes('weaver') || trade.includes('tailor') || trade.includes('roper')) return 'char_weaver';
+    if (trade.includes('stone') || trade.includes('mason') || trade.includes('quarry')) return 'char_stonemason';
+    if (trade.includes('wood') || trade.includes('sawyer') || trade.includes('forester') || trade.includes('lumber')) return 'char_woodcutter';
+    if (trade.includes('friar') || trade.includes('vicar') || trade.includes('priest') || trade.includes('monk') || trade.includes('cleric')) return 'char_friar';
+    if (trade.includes('halberd') || trade.includes('guard') || trade.includes('watch') || trade.includes('soldier') || trade.includes('crossbow')) return 'char_guard';
+    if (wealth === 'patrician' || trade.includes('merchant') || trade.includes('factor') || trade.includes('burgomaster') || rank.includes('merchant')) return 'char_merchant';
+    if (c.gender === 'female') return 'char_townswoman';
+    if (wealth === 'plebeian' || trade.includes('farmer') || trade.includes('peasant') || trade.includes('scythe')) return 'char_farmer';
+
+    return 'char_carpenter';
+  }
+
   public updateCitizens(citizens: Citizen[], _dt: number): void {
-    // Maintain 3D citizen group objects
+    const nowSec = performance.now() * 0.001;
+
+    // Maintain 3D citizen group objects with authentic models & individual variation
     for (let i = 0; i < citizens.length; i++) {
       const c = citizens[i];
       let group = this.citizenMeshes.get(c.id);
+      const archetypeName = this.getCitizenArchetype(c);
 
-      if (!group) {
-        // Create 3D citizen figure
-        group = new THREE.Group();
-
-        // Tunic color based on status
-        let color = 0x8d6e63;
-        if (c.trade.includes('Halberd') || c.trade.includes('Watch')) color = 0xc62828; // Guard red
-        else if (c.trade.includes('Friar')) color = 0x4e342e; // Monk
-        else if (c.wealthClass === 'patrician') color = 0x1565c0; // Patrician blue
-        else if (c.guildRank === 'foreign_merchant') color = 0x2e7d32; // Merchant green
-
-        // Body
-        const bodyGeo = new THREE.CylinderGeometry(0.25, 0.35, 1.3, 8);
-        const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.8 });
-        const body = new THREE.Mesh(bodyGeo, bodyMat);
-        body.position.y = 0.65;
-        body.castShadow = true;
-        group.add(body);
-
-        // Head
-        const headGeo = new THREE.SphereGeometry(0.2, 8, 8);
-        const headMat = new THREE.MeshStandardMaterial({ color: 0xffcc80, roughness: 0.6 });
-        const head = new THREE.Mesh(headGeo, headMat);
-        head.position.y = 1.45;
-        group.add(head);
-
-        // Hat / Hood
-        const hatGeo = new THREE.ConeGeometry(0.26, 0.28, 8);
-        const hatMat = new THREE.MeshStandardMaterial({ color: 0x212121, roughness: 0.9 });
-        const hat = new THREE.Mesh(hatGeo, hatMat);
-        hat.position.y = 1.62;
-        group.add(hat);
-
-        // Halberd for guards
-        if (c.trade.includes('Halberd')) {
-          const halGeo = new THREE.CylinderGeometry(0.02, 0.02, 2.2, 6);
-          const halMat = new THREE.MeshStandardMaterial({ color: 0x90a4ae, metalness: 0.8 });
-          const hal = new THREE.Mesh(halGeo, halMat);
-          hal.position.set(0.25, 1.1, 0);
-          group.add(hal);
+      // Check if we need to spawn or upgrade placeholder to 3D archetype model
+      if (!group || (this.isLoaded && group.userData?.modelType !== archetypeName && this.models.has(archetypeName))) {
+        if (group) {
+          this.scene.remove(group);
         }
 
-        group.userData = { citizenId: c.id };
+        group = new THREE.Group();
+        const template = this.models.get(archetypeName);
+
+        // Deterministic hash seed from citizen ID for individual variation
+        let seed = 0;
+        for (let j = 0; j < c.id.length; j++) {
+          seed = (seed * 31 + c.id.charCodeAt(j)) >>> 0;
+        }
+
+        if (template) {
+          const clone = template.clone(true);
+          // Individual variation jitter: height and width scaling
+          const heightJitter = 1.0 + ((seed % 13) - 6) * 0.012; // 0.93x - 1.07x
+          const girthJitter = 1.0 + (((seed * 7) % 13) - 6) * 0.012; // 0.93x - 1.07x
+          clone.scale.set(girthJitter, heightJitter, girthJitter);
+
+          clone.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+              child.castShadow = true;
+              child.receiveShadow = true;
+            }
+          });
+          group.add(clone);
+        } else {
+          // Fallback while loading
+          const color = c.gender === 'female' ? 0x2e7d32 : 0x8d6e63;
+          const bodyGeo = new THREE.CylinderGeometry(0.22, 0.30, 1.2, 8);
+          const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.8 });
+          const body = new THREE.Mesh(bodyGeo, bodyMat);
+          body.position.y = 0.6;
+          group.add(body);
+        }
+
+        group.userData = { citizenId: c.id, modelType: archetypeName, seed };
         this.scene.add(group);
         this.citizenMeshes.set(c.id, group);
       }
@@ -804,11 +841,34 @@ export class ThreeIsometricRenderer {
       // Update position
       const cx = c.currentX ?? 0;
       const cz = c.currentZ ?? 0;
-      group.position.set(cx, 0, cz);
+      group.position.x = cx;
+      group.position.z = cz;
 
-      // Walking bob
+      // Dynamic facing rotation and locomotion animation
       if (c.isMoving) {
-        group.position.y = Math.abs(Math.sin((c.animFrame ?? 0) * Math.PI)) * 0.12;
+        const tx = c.targetX ?? cx;
+        const tz = c.targetZ ?? cz;
+        const dx = tx - cx;
+        const dz = tz - cz;
+        if (Math.abs(dx) > 0.01 || Math.abs(dz) > 0.01) {
+          const targetAngle = Math.atan2(dx, dz);
+          // Smoothly rotate towards heading
+          let diff = targetAngle - group.rotation.y;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          group.rotation.y += diff * Math.min(1.0, _dt * 12.0);
+        }
+
+        // Walking bob and stride sway
+        const walkCycle = (c.animFrame ?? 0) * Math.PI;
+        group.position.y = Math.abs(Math.sin(walkCycle)) * 0.07;
+        group.rotation.z = Math.sin(walkCycle) * 0.035;
+      } else {
+        // Idle breathing / working animation at workshop
+        const seedOffset = (group.userData?.seed || 0) % 100;
+        const idlePulse = Math.sin(nowSec * 2.2 + seedOffset);
+        group.position.y = idlePulse * 0.015;
+        group.rotation.z = 0;
       }
     }
   }
