@@ -13,6 +13,9 @@ export class UIController {
   private inspectorPanel!: HTMLElement;
   private inspectorContent!: HTMLElement;
   private eventTickerEl!: HTMLElement;
+  private mobilePlayBtn: HTMLElement | null = null;
+  private mobileSheet: HTMLElement | null = null;
+  public onFollowToggle?: (c: Citizen | null) => void;
 
   constructor(sim: SimulationEngine, camera: IsometricCamera) {
     this.sim = sim;
@@ -25,27 +28,38 @@ export class UIController {
     this.clockEl = document.getElementById('hud-time')!;
     this.bellNameEl = document.getElementById('hud-bell-name')!;
     this.playPauseBtn = document.getElementById('btn-play-pause')!;
+    this.mobilePlayBtn = document.getElementById('btn-mobile-play');
+    this.mobileSheet = document.getElementById('mobile-sheet');
     this.inspectorPanel = document.getElementById('inspector-panel')!;
     this.inspectorContent = document.getElementById('inspector-content')!;
     this.eventTickerEl = document.getElementById('event-ticker-text')!;
   }
 
   private setupEventListeners(): void {
-    // Play / Pause
-    this.playPauseBtn.addEventListener('click', () => {
+    // Play / Pause (Desktop & Mobile buttons)
+    const togglePlayHandler = () => {
       const isPaused = this.sim.togglePause();
       this.playPauseBtn.textContent = isPaused ? '▶ Resume' : '⏸ Pause';
       this.playPauseBtn.classList.toggle('active', !isPaused);
-    });
+      if (this.mobilePlayBtn) {
+        this.mobilePlayBtn.textContent = isPaused ? '▶' : '⏸';
+        this.mobilePlayBtn.classList.toggle('active', !isPaused);
+      }
+    };
+    this.playPauseBtn.addEventListener('click', togglePlayHandler);
+    this.mobilePlayBtn?.addEventListener('click', togglePlayHandler);
 
-    // Speed buttons
+    // Speed buttons (Both Desktop header & Mobile bottom sheet)
     document.querySelectorAll('[data-speed]').forEach((btn) => {
       btn.addEventListener('click', (e) => {
-        document.querySelectorAll('[data-speed]').forEach(b => b.classList.remove('active'));
         const el = e.currentTarget as HTMLElement;
-        el.classList.add('active');
-        const spd = parseFloat(el.getAttribute('data-speed') || '5');
+        const spdVal = el.getAttribute('data-speed');
+        document.querySelectorAll('[data-speed]').forEach((b) => {
+          b.classList.toggle('active', b.getAttribute('data-speed') === spdVal);
+        });
+        const spd = parseFloat(spdVal || '5');
         this.sim.setSpeed(spd);
+        this.closeMobileSheet();
       });
     });
 
@@ -54,6 +68,7 @@ export class UIController {
       btn.addEventListener('click', (e) => {
         const hour = parseFloat((e.currentTarget as HTMLElement).getAttribute('data-jump-hour') || '9');
         this.sim.setTime(hour);
+        this.closeMobileSheet();
       });
     });
 
@@ -99,9 +114,58 @@ export class UIController {
     });
 
     // Toll Bell Manually
-    document.getElementById('btn-toll-bell')?.addEventListener('click', () => {
+    const tollBellHandler = () => {
       this.sim.tollCivicBellManually();
+      this.closeMobileSheet();
+    };
+    document.getElementById('btn-toll-bell')?.addEventListener('click', tollBellHandler);
+    document.getElementById('btn-mobile-toll-bell')?.addEventListener('click', tollBellHandler);
+
+    // Mobile sheet openers
+    const sheetTitle = document.getElementById('sheet-title');
+    const secSpeed = document.getElementById('sheet-section-speed');
+    const secTime = document.getElementById('sheet-section-time');
+    const secLayers = document.getElementById('sheet-section-layers');
+
+    document.getElementById('btn-open-menu')?.addEventListener('click', () => {
+      if (this.mobileSheet) {
+        if (sheetTitle) sheetTitle.textContent = '⏱️ Time & Speed Controls';
+        if (secSpeed) secSpeed.style.display = 'flex';
+        if (secTime) secTime.style.display = 'flex';
+        if (secLayers) secLayers.style.display = 'none';
+        this.mobileSheet.classList.add('open');
+      }
     });
+
+    document.getElementById('btn-open-layers')?.addEventListener('click', () => {
+      if (this.mobileSheet) {
+        if (sheetTitle) sheetTitle.textContent = '🗺️ Visualization Overlays';
+        if (secSpeed) secSpeed.style.display = 'none';
+        if (secTime) secTime.style.display = 'none';
+        if (secLayers) secLayers.style.display = 'flex';
+        this.mobileSheet.classList.add('open');
+      }
+    });
+
+    document.getElementById('btn-close-sheet')?.addEventListener('click', () => {
+      this.closeMobileSheet();
+    });
+    document.getElementById('sheet-backdrop')?.addEventListener('click', () => {
+      this.closeMobileSheet();
+    });
+
+    // Fullscreen toggle for smartphones
+    document.getElementById('btn-fullscreen')?.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.().catch(() => {});
+      } else {
+        document.exitFullscreen?.().catch(() => {});
+      }
+    });
+  }
+
+  public closeMobileSheet(): void {
+    this.mobileSheet?.classList.remove('open');
   }
 
   private updateCompass(): void {
@@ -216,9 +280,11 @@ export class UIController {
     document.getElementById('btn-follow-citizen')?.addEventListener('click', () => {
       if (this.camera.followingEntityId === c.id) {
         this.camera.stopFollowing();
+        this.onFollowToggle?.(null);
         this.inspectCitizen(c);
       } else {
         this.camera.follow(c.id, c.currentX ?? 0, c.currentZ ?? 0);
+        this.onFollowToggle?.(c);
         this.inspectCitizen(c);
       }
     });
@@ -240,6 +306,7 @@ export class UIController {
     this.sim.selectedParcel = p;
     this.sim.selectedCitizen = null;
     this.camera.stopFollowing();
+    this.onFollowToggle?.(null);
 
     const aging = p.aging;
     const sagMm = Math.round(aging.ridgeSag * 1000);
@@ -323,5 +390,6 @@ export class UIController {
     this.sim.selectedCitizen = null;
     this.sim.selectedParcel = null;
     this.camera.stopFollowing();
+    this.onFollowToggle?.(null);
   }
 }

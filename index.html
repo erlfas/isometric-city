@@ -2,11 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#12100e" />
     <title>Lublin Anno Domini 1392 • Royal Fair Simulation</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -22,7 +26,10 @@
         <div class="brand-section">
           <div class="royal-crest" title="Royal Crest of King Władysław II Jagiełło">🦅</div>
           <div class="title-group">
-            <h1>Lublin Anno Domini 1392</h1>
+            <h1 class="brand-title">
+              <span class="full-title">Lublin Anno Domini 1392</span>
+              <span class="mobile-title">Lublin 1392</span>
+            </h1>
             <div class="subtitle">Royal Fair of the Assumption • Continental Trade Crossroads</div>
           </div>
         </div>
@@ -33,7 +40,8 @@
             <span id="hud-bell-name">Tercja (Terce: Fair Opening)</span>
           </div>
 
-          <div class="btn-group">
+          <!-- Desktop button groups -->
+          <div class="btn-group desktop-only">
             <button id="btn-play-pause" class="active" title="Toggle Simulation Time">⏸ Pause</button>
             <button data-speed="1" title="Realtime 1 Sim Min = 1 Sec">1x</button>
             <button data-speed="5" class="active" title="Standard 5x Speed">5x</button>
@@ -41,20 +49,29 @@
             <button data-speed="60" title="Fast Day Cycle">60x</button>
           </div>
 
-          <div class="time-jumps">
+          <div class="time-jumps desktop-only">
             <button data-jump-hour="5" title="Jump to Matins (Dawn 05:00)">🌅 Dawn</button>
             <button data-jump-hour="12" title="Jump to Sext (High Fair Noon 12:00)">☀️ High Fair</button>
             <button data-jump-hour="18" title="Jump to Vespers (Dusk 18:00)">🌆 Dusk</button>
             <button data-jump-hour="21" title="Jump to Compline (Curfew 21:00)">🌙 Curfew</button>
           </div>
 
-          <button id="btn-toll-bell" class="gold-btn" title="Toll Collegiate Church Bells">🔔 Toll Bell</button>
-          <button id="btn-audio-mute" title="Toggle Medieval Soundscapes">🔊 Sound</button>
+          <button id="btn-toll-bell" class="gold-btn desktop-only" title="Toll Collegiate Church Bells">🔔 Toll Bell</button>
+          <button id="btn-audio-mute" class="desktop-only" title="Toggle Medieval Soundscapes">🔊 Sound</button>
+
+          <!-- Mobile quick header actions -->
+          <div class="mobile-actions">
+            <button id="btn-mobile-play" class="icon-btn active" title="Play / Pause">⏸</button>
+            <button id="btn-mobile-audio" class="icon-btn" title="Toggle Sound">🔊</button>
+            <button id="btn-open-menu" class="icon-btn gold-btn" title="Time & Speed Controls">⏱️</button>
+            <button id="btn-open-layers" class="icon-btn" title="Visualization Layers">🗺️</button>
+            <button id="btn-fullscreen" class="icon-btn" title="Toggle Fullscreen">⛶</button>
+          </div>
         </div>
       </header>
 
-      <!-- View & Heatmap Modes Toolbar -->
-      <nav id="view-toolbar">
+      <!-- View & Heatmap Modes Toolbar (Desktop) -->
+      <nav id="view-toolbar" class="desktop-only">
         <span class="toolbar-label">Visualization:</span>
         <button data-mode="none" class="active">🏰 3D City View</button>
         <button data-mode="wealth">💰 Wealth Hierarchy</button>
@@ -63,28 +80,34 @@
         <button data-mode="defense">🛡️ City Defenses & Patrols</button>
       </nav>
 
-      <!-- Camera & Navigation Controls (Bottom-Left) -->
+      <!-- Camera & Navigation Controls (Bottom-Left / Mobile Floating) -->
       <aside id="nav-panel">
         <div class="nav-row">
-          <span class="toolbar-label">Camera:</span>
+          <span class="toolbar-label desktop-only">Camera:</span>
           <button id="btn-rotate-ccw" title="Rotate Counter-Clockwise">↺ 90°</button>
           <button id="btn-rotate-cw" title="Rotate Clockwise">↻ 90°</button>
           <div class="compass-box" id="compass-heading">SW (Kraków Rd)</div>
           <button id="btn-zoom-in" title="Zoom In">+</button>
           <button id="btn-zoom-out" title="Zoom Out">−</button>
+          <button id="btn-recenter" title="Recenter on Rynek">🎯</button>
         </div>
-        <div class="nav-row">
-          <span class="toolbar-label">Landmarks:</span>
-          <button data-landmark="rynek" title="Central Market Square & Old Town Hall">Rynek</button>
-          <button data-landmark="krakow_gate" title="Kraków Gate & Barbican">Kraków Gate</button>
-          <button data-landmark="grodzka_gate" title="Grodzka Gate & Bridge">Grodzka Gate</button>
-          <button data-landmark="castle" title="Castle Hill, Donjon Keep & Chapel">Castle Hill</button>
-          <button data-landmark="workshop" title="Player Workshop (Kraków Suburb)">Workshop</button>
+        <div class="nav-row landmark-row">
+          <span class="toolbar-label desktop-only">Landmarks:</span>
+          <div class="landmarks-scroll">
+            <button data-landmark="rynek" title="Central Market Square & Old Town Hall">Rynek</button>
+            <button data-landmark="krakow_gate" title="Kraków Gate & Barbican">Kraków Gate</button>
+            <button data-landmark="grodzka_gate" title="Grodzka Gate & Bridge">Grodzka Gate</button>
+            <button data-landmark="castle" title="Castle Hill, Donjon Keep & Chapel">Castle Hill</button>
+            <button data-landmark="workshop" title="Player Workshop (Kraków Suburb)">Workshop</button>
+          </div>
         </div>
       </aside>
 
-      <!-- Inspector Drawer (Right Side) -->
+      <!-- Inspector Drawer (Right Side / Mobile Bottom Sheet) -->
       <aside id="inspector-panel">
+        <div class="sheet-handle-bar mobile-only">
+          <div class="sheet-handle"></div>
+        </div>
         <div class="inspector-top-bar">
           <h2>Registry & Chronicle</h2>
           <button id="btn-close-inspector" class="close-btn" title="Close Panel">✕</button>
@@ -93,6 +116,61 @@
           <!-- Dynamically populated by inspector.ts -->
         </div>
       </aside>
+
+      <!-- Mobile Control Bottom Sheet (Time, Speed, Layers) -->
+      <div id="mobile-sheet" class="mobile-sheet">
+        <div class="sheet-backdrop" id="sheet-backdrop"></div>
+        <div class="sheet-card">
+          <div class="sheet-handle-bar">
+            <div class="sheet-handle"></div>
+          </div>
+          <div class="sheet-header">
+            <h3 id="sheet-title">Simulation Controls</h3>
+            <button id="btn-close-sheet" class="close-btn" title="Close Controls">✕</button>
+          </div>
+          <div class="sheet-content">
+            <!-- Speed controls -->
+            <div class="sheet-section" id="sheet-section-speed">
+              <div class="section-title">⏱️ Simulation Speed</div>
+              <div class="sheet-btn-row">
+                <button data-speed="1" title="Realtime 1 Sim Min = 1 Sec">1x</button>
+                <button data-speed="5" class="active" title="Standard 5x Speed">5x</button>
+                <button data-speed="20" title="Brisk 20x Speed">20x</button>
+                <button data-speed="60" title="Fast Day Cycle">60x</button>
+              </div>
+            </div>
+
+            <!-- Time jumps -->
+            <div class="sheet-section" id="sheet-section-time">
+              <div class="section-title">🌅 Time of Day</div>
+              <div class="sheet-btn-grid">
+                <button data-jump-hour="5">🌅 Dawn (05:00)</button>
+                <button data-jump-hour="12">☀️ High Fair (12:00)</button>
+                <button data-jump-hour="18">🌆 Dusk (18:00)</button>
+                <button data-jump-hour="21">🌙 Curfew (21:00)</button>
+              </div>
+              <button id="btn-mobile-toll-bell" class="gold-btn mobile-full-btn" style="margin-top: 8px;">🔔 Toll Collegiate Church Bells</button>
+            </div>
+
+            <!-- Visualization layers -->
+            <div class="sheet-section" id="sheet-section-layers">
+              <div class="section-title">🗺️ Visualization Overlays</div>
+              <div class="sheet-btn-grid">
+                <button data-mode="none" class="active">🏰 3D City View</button>
+                <button data-mode="wealth">💰 Wealth Hierarchy</button>
+                <button data-mode="aging">🏚️ Structural Aging & Sag</button>
+                <button data-mode="traffic">🚶 Foot Traffic Density</button>
+                <button data-mode="defense">🛡️ City Defenses & Patrols</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Touch Help Banner (Shown briefly on mobile start) -->
+      <div id="touch-hint" class="touch-hint mobile-only">
+        <span>👆 1-finger: pan • ✌️ 2-finger: pinch zoom / twist rotate • tap: inspect</span>
+      </div>
 
       <!-- Bottom Event Ticker / Chronicle -->
       <footer id="event-ticker">

@@ -32,6 +32,12 @@ export class ThreeIsometricRenderer {
   // Speech bubbles data
   public activeBubbles: { id: string; text: string; x: number; y: number; z: number; timer: number }[] = [];
   public hoveredCitizen: Citizen | null = null;
+  public followingCitizen: Citizen | null = null;
+
+  // Raycasting for touch & click picking
+  private raycaster = new THREE.Raycaster();
+  private groundPlaneMath = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  private ndcVec = new THREE.Vector2();
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -56,11 +62,25 @@ export class ThreeIsometricRenderer {
       powerPreference: 'high-performance'
     });
     this.renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    
+    // Dynamic mobile DPR clamping to prevent mobile GPU thermal throttling
+    const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.innerWidth < 768;
+    const maxDpr = isMobile ? 1.5 : 2.0;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxDpr));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.25;
+
+    // Mobile WebGL context preservation
+    this.canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      console.warn('[WebGL] Context lost on mobile device.');
+    });
+    this.canvas.addEventListener('webglcontextrestored', () => {
+      console.info('[WebGL] Context restored.');
+      this.render();
+    });
 
     // Atmospheric lighting
     this.hemiLight = new THREE.HemisphereLight(0xfff8ee, 0x5a5448, 0.75);
@@ -69,12 +89,13 @@ export class ThreeIsometricRenderer {
     this.ambientLight = new THREE.AmbientLight(0xcfd8dc, 0.5);
     this.scene.add(this.ambientLight);
 
-    // Directional sunlight casting crisp isometric diagonal shadows (matching reference images)
+    // Directional sunlight casting crisp isometric diagonal shadows
+    const shadowRes = isMobile ? 1024 : 2048;
     this.dirLight = new THREE.DirectionalLight(0xfffaed, 1.5);
     this.dirLight.position.set(-80, 130, -70);
     this.dirLight.castShadow = true;
-    this.dirLight.shadow.mapSize.width = 2048;
-    this.dirLight.shadow.mapSize.height = 2048;
+    this.dirLight.shadow.mapSize.width = shadowRes;
+    this.dirLight.shadow.mapSize.height = shadowRes;
     this.dirLight.shadow.camera.near = 10;
     this.dirLight.shadow.camera.far = 400;
     const d = 140;
@@ -753,6 +774,12 @@ export class ThreeIsometricRenderer {
   }
 
   public updateCamera(dt: number): void {
+    // Follow citizen if tracking is active
+    if (this.followingCitizen) {
+      this.targetPos.x = this.followingCitizen.currentX ?? this.targetPos.x;
+      this.targetPos.z = this.followingCitizen.currentZ ?? this.targetPos.z;
+    }
+
     // Smooth camera center lerping
     this.currentPos.lerp(this.targetPos, Math.min(1.0, dt * 8.0));
     this.zoom += (this.targetZoom - this.zoom) * Math.min(1.0, dt * 10.0);
@@ -804,7 +831,20 @@ export class ThreeIsometricRenderer {
     this.setRotationQuadrant(this.rotationQuadrant - 1);
   }
 
+  public rotateByAngle(deltaRad: number): void {
+    this.targetRotationAngle += deltaRad;
+    let norm = ((this.targetRotationAngle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    this.rotationQuadrant = Math.round(norm / (Math.PI / 2)) % 4;
+  }
+
+  public snapRotationToNearestQuadrant(): void {
+    let norm = ((this.targetRotationAngle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    this.rotationQuadrant = Math.round(norm / (Math.PI / 2)) % 4;
+    this.targetRotationAngle = this.rotationQuadrant * (Math.PI / 2);
+  }
+
   public panBy(dx: number, dy: number): void {
+    this.followingCitizen = null; // Break follow tracking on manual pan
     const invZoom = this.zoom / this.canvas.clientHeight;
     const yaw = this.currentRotationAngle;
     const cosY = Math.cos(yaw);
@@ -823,6 +863,7 @@ export class ThreeIsometricRenderer {
   }
 
   public jumpTo(x: number, z: number, zoomLevel?: number): void {
+    this.followingCitizen = null;
     this.targetPos.set(x, 0, z);
     if (zoomLevel) this.targetZoom = zoomLevel;
   }
@@ -887,11 +928,28 @@ export class ThreeIsometricRenderer {
     return { x, y };
   }
 
+  /**
+   * Unproject 2D screen coordinate to 3D world position on the ground plane (y = 0)
+   */
+  public screenToGround(screenX: number, screenY: number): THREE.Vector3 | null {
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+    this.ndcVec.x = ((screenX - rect.left) / rect.width) * 2 - 1;
+    this.ndcVec.y = -(((screenY - rect.top) / rect.height) * 2 - 1);
+    this.raycaster.setFromCamera(this.ndcVec, this.camera);
+    const intersection = new THREE.Vector3();
+    const hit = this.raycaster.ray.intersectPlane(this.groundPlaneMath, intersection);
+    return hit ? intersection : null;
+  }
+
   public render(): void {
     this.renderer.render(this.scene, this.camera);
   }
 
   public resize(width: number, height: number): void {
+    const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.innerWidth < 768;
+    const maxDpr = isMobile ? 1.5 : 2.0;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxDpr));
     this.renderer.setSize(width, height, false);
     this.updateCameraTransform();
   }

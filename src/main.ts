@@ -5,6 +5,7 @@ import { SimulationEngine } from './engine/simulation';
 import { ProceduralAudioEngine } from './engine/audio';
 import { UIController } from './ui/inspector';
 import { IsometricCamera } from './engine/camera';
+import { TouchGestureManager } from './engine/touch';
 
 async function bootstrap() {
   console.log('[Lublin 1392] Bootstrapping high-fidelity 3D medieval city simulation...');
@@ -46,6 +47,9 @@ async function bootstrap() {
   // Dummy fallback camera for UIController
   const dummyCamera = new IsometricCamera(window.innerWidth, window.innerHeight);
   const ui = new UIController(sim, dummyCamera);
+  ui.onFollowToggle = (c) => {
+    threeRenderer.followingCitizen = c;
+  };
 
   // Bell Toll notification binding
   sim.onBellToll = (bellName: string, hour: number) => {
@@ -59,16 +63,23 @@ async function bootstrap() {
     ui.showEventNotification(`📜 [Royal Fair Event] ${event.name}: ${event.description}`);
   };
 
-  // Audio Toggle
+  // Audio Toggle (Desktop & Mobile buttons)
   const audioBtn = document.getElementById('btn-audio-mute');
-  audioBtn?.addEventListener('click', () => {
+  const mobileAudioBtn = document.getElementById('btn-mobile-audio');
+  const toggleAudio = () => {
     audio.init();
     const isMuted = audio.toggleMute();
     if (audioBtn) {
       audioBtn.textContent = isMuted ? '🔇 Muted' : '🔊 Sound';
       audioBtn.classList.toggle('active', !isMuted);
     }
-  });
+    if (mobileAudioBtn) {
+      mobileAudioBtn.textContent = isMuted ? '🔇' : '🔊';
+      mobileAudioBtn.classList.toggle('active', !isMuted);
+    }
+  };
+  audioBtn?.addEventListener('click', toggleAudio);
+  mobileAudioBtn?.addEventListener('click', toggleAudio);
 
   // Cluster fair citizens in Market Square around stalls (matching reference images)
   for (let i = 0; i < Math.min(80, sim.citizens.length); i++) {
@@ -123,75 +134,119 @@ async function bootstrap() {
   window.addEventListener('resize', handleResize);
   handleResize();
 
-  // Mouse / Pointer Interaction for Camera Pan, Zoom, and Selection
-  let isDragging = false;
-  let dragStartX = 0;
-  let dragStartY = 0;
-  let totalDragDist = 0;
+  // -------------------------------------------------------------
+  // Touch Gestures & Pointer Interaction (Mobile + Desktop)
+  // -------------------------------------------------------------
+  const viewportContainer = document.getElementById('viewport-container') || webglCanvas;
 
-  window.addEventListener('mousedown', (e) => {
-    if ((e.target as HTMLElement).tagName !== 'CANVAS') return;
+  function handleSelection(screenX: number, screenY: number) {
     audio.init();
-    isDragging = true;
-    dragStartX = e.clientX;
-    dragStartY = e.clientY;
-    totalDragDist = 0;
-  });
+    const rect = webglCanvas.getBoundingClientRect();
+    const mouseX = screenX - rect.left;
+    const mouseY = screenY - rect.top;
 
-  window.addEventListener('mousemove', (e) => {
-    if (isDragging) {
-      const dx = e.clientX - dragStartX;
-      const dy = e.clientY - dragStartY;
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
-      totalDragDist += Math.hypot(dx, dy);
+    // 1. Check if tapped on a citizen (touch tolerance radius 36px)
+    let closestCit: any = null;
+    let closestDist = 36; // pixels
 
-      threeRenderer.panBy(-dx, -dy);
-    } else {
-      // Hover check for citizen prompt (matching image 3)
-      const rect = webglCanvas.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-
-      let closestCit: any = null;
-      let closestDist = 28; // pixels
-
-      for (let i = 0; i < sim.citizens.length; i++) {
-        const c = sim.citizens[i];
-        const sp = threeRenderer.worldToScreen(c.currentX ?? 0, 1.2, c.currentZ ?? 0);
-        const dist = Math.hypot(sp.x - mouseX, sp.y - mouseY);
-        if (dist < closestDist) {
-          closestDist = dist;
-          closestCit = c;
-        }
+    for (let i = 0; i < sim.citizens.length; i++) {
+      const c = sim.citizens[i];
+      const sp = threeRenderer.worldToScreen(c.currentX ?? 0, 1.2, c.currentZ ?? 0);
+      const dist = Math.hypot(sp.x - mouseX, sp.y - mouseY);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestCit = c;
       }
+    }
+
+    if (closestCit) {
       threeRenderer.hoveredCitizen = closestCit;
+      ui.inspectCitizen(closestCit);
+      if ('vibrate' in navigator) navigator.vibrate?.(15);
+      return;
     }
-  });
 
-  window.addEventListener('mouseup', () => {
-    if (!isDragging) return;
-    isDragging = false;
-
-    if (totalDragDist < 5.0) {
-      // Clicked on a character or building
-      if (threeRenderer.hoveredCitizen) {
-        ui.inspectCitizen(threeRenderer.hoveredCitizen);
-      } else {
-        // Check nearest parcel
-        const hitParcel = spatialGrid.findParcelAt(threeRenderer.targetPos.x, threeRenderer.targetPos.z);
-        if (hitParcel) {
-          ui.inspectParcel(hitParcel);
-        } else {
-          ui.closeInspector();
-        }
+    // 2. Raycast to 3D ground plane for parcel/building picking
+    const groundHit = threeRenderer.screenToGround(screenX, screenY);
+    if (groundHit) {
+      const hitParcel = spatialGrid.findParcelAt(groundHit.x, groundHit.z);
+      if (hitParcel) {
+        threeRenderer.hoveredCitizen = null;
+        ui.inspectParcel(hitParcel);
+        if ('vibrate' in navigator) navigator.vibrate?.(10);
+        return;
       }
     }
+
+    // 3. Tapped empty ground
+    ui.closeInspector();
+    threeRenderer.hoveredCitizen = null;
+  }
+
+  function handleDoubleTap(screenX: number, screenY: number) {
+    const groundHit = threeRenderer.screenToGround(screenX, screenY);
+    if (groundHit) {
+      // Smoothly focus on tapped ground point and zoom in
+      threeRenderer.jumpTo(groundHit.x, groundHit.z, Math.max(16.0, threeRenderer.targetZoom * 0.75));
+      if ('vibrate' in navigator) navigator.vibrate?.(25);
+    }
+  }
+
+  // Initialize unified TouchGestureManager for single/multi-touch and clicks
+  new TouchGestureManager(viewportContainer, {
+    onPan: (dx, dy) => {
+      threeRenderer.panBy(-dx, -dy);
+    },
+    onPinch: (factor) => {
+      threeRenderer.zoomBy(factor);
+    },
+    onRotateAngle: (deltaRad) => {
+      threeRenderer.rotateByAngle(deltaRad);
+      updateCompassUI();
+    },
+    onRotateStep: (dir) => {
+      if (dir > 0) threeRenderer.rotateClockwise();
+      else threeRenderer.rotateCounterClockwise();
+      updateCompassUI();
+      if ('vibrate' in navigator) navigator.vibrate?.(12);
+    },
+    onTap: (screenX, screenY) => {
+      handleSelection(screenX, screenY);
+    },
+    onDoubleTap: (screenX, screenY) => {
+      handleDoubleTap(screenX, screenY);
+    },
+    onInteractionStart: () => {
+      audio.init();
+    }
   });
 
-  // Wheel zoom
+  // Desktop hover check (only when using a mouse pointer)
+  window.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    const rect = webglCanvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    let closestCit: any = null;
+    let closestDist = 28; // pixels
+
+    for (let i = 0; i < sim.citizens.length; i++) {
+      const c = sim.citizens[i];
+      const sp = threeRenderer.worldToScreen(c.currentX ?? 0, 1.2, c.currentZ ?? 0);
+      const dist = Math.hypot(sp.x - mouseX, sp.y - mouseY);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestCit = c;
+      }
+    }
+    threeRenderer.hoveredCitizen = closestCit;
+  });
+
+  // Wheel zoom for mouse
   window.addEventListener('wheel', (e) => {
-    if ((e.target as HTMLElement).tagName !== 'CANVAS') return;
+    const target = e.target as HTMLElement;
+    if (target.tagName !== 'CANVAS' && target.id !== 'viewport-container') return;
     const factor = e.deltaY < 0 ? 0.9 : 1.11;
     threeRenderer.zoomBy(factor);
   }, { passive: true });
@@ -200,16 +255,24 @@ async function bootstrap() {
   document.getElementById('btn-rotate-cw')?.addEventListener('click', () => {
     threeRenderer.rotateClockwise();
     updateCompassUI();
+    if ('vibrate' in navigator) navigator.vibrate?.(10);
   });
   document.getElementById('btn-rotate-ccw')?.addEventListener('click', () => {
     threeRenderer.rotateCounterClockwise();
     updateCompassUI();
+    if ('vibrate' in navigator) navigator.vibrate?.(10);
   });
   document.getElementById('btn-zoom-in')?.addEventListener('click', () => {
     threeRenderer.zoomBy(0.8);
+    if ('vibrate' in navigator) navigator.vibrate?.(10);
   });
   document.getElementById('btn-zoom-out')?.addEventListener('click', () => {
     threeRenderer.zoomBy(1.25);
+    if ('vibrate' in navigator) navigator.vibrate?.(10);
+  });
+  document.getElementById('btn-recenter')?.addEventListener('click', () => {
+    threeRenderer.jumpTo(0, 0, 24);
+    if ('vibrate' in navigator) navigator.vibrate?.(15);
   });
 
   function updateCompassUI() {
@@ -227,6 +290,7 @@ async function bootstrap() {
       else if (landmark === 'grodzka_gate') threeRenderer.jumpTo(190, 20, 28);
       else if (landmark === 'castle') threeRenderer.jumpTo(275, 85, 32);
       else if (landmark === 'workshop') threeRenderer.jumpTo(-235, -120, 22);
+      if ('vibrate' in navigator) navigator.vibrate?.(12);
     });
   });
 
