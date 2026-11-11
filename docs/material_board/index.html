@@ -1,0 +1,252 @@
+<title>Lublin 1392 Material Board</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column of spec cards; each card = swatch left, spec right; stacks on phones. */
+:root {
+  --bg: #eceae4;
+  --surface: #f7f6f2;
+  --ink: #26241f;
+  --muted: #6b665b;
+  --line: #d3cfc4;
+  --accent: #8c3b2b;
+  --accent-ink: #ffffff;
+  --you: #2f5d50;
+  --me: #6b5a2e;
+  --code-bg: #e3e0d7;
+  --f-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Inter", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #1b1a17; --surface: #24221e; --ink: #ebe7dd; --muted: #a39d8f; --line: #3a3731;
+  --accent: #d0765f; --accent-ink: #1b1a17; --you: #7fb8a5; --me: #cdb46e; --code-bg: #2e2b26; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #1b1a17; --surface: #24221e; --ink: #ebe7dd; --muted: #a39d8f; --line: #3a3731;
+  --accent: #d0765f; --accent-ink: #1b1a17; --you: #7fb8a5; --me: #cdb46e; --code-bg: #2e2b26; color-scheme: dark; }
+
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1040px; margin: 0 auto; padding-block: 40px 80px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; line-height: 1.2; margin: 0; }
+h1 { font-size: 2rem; }
+h2 { font-size: 1.35rem; margin-top: 48px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 1.1rem; }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--muted); margin-top: 8px; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.meta { font-family: var(--f-mono); font-size: 12.5px; color: var(--muted); letter-spacing: .02em; }
+
+.signoff { margin-top: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 18px 20px; }
+.signoff ol { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 16px; }
+.tag { display: inline-block; font-family: var(--f-mono); font-size: 11.5px; font-weight: 500; letter-spacing: .06em;
+  text-transform: uppercase; padding: 2px 8px; border-radius: 3px; border: 1px solid currentColor; }
+.tag.you { color: var(--you); }
+.tag.me { color: var(--me); }
+
+.cards { display: flex; flex-direction: column; gap: 16px; margin-top: 20px; }
+.card { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 20px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 6px; padding: 16px; }
+.swatch { width: 100%; max-width: 100%; aspect-ratio: 3 / 2; object-fit: cover; border-radius: 3px; display: block; background: var(--code-bg); }
+.swatch-cap { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.spec { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 12px 0 0; font-size: 14px; }
+.spec dt { color: var(--muted); }
+.spec dd { margin: 0; min-width: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--f-mono); font-size: 12px; }
+.chip i { width: 14px; height: 14px; border-radius: 2px; border: 1px solid var(--line); display: inline-block; }
+code { font-family: var(--f-mono); font-size: 12.5px; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
+
+.prompt { margin-top: 14px; }
+.prompt-bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.prompt pre { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; font-family: var(--f-mono); font-size: 12.5px;
+  background: var(--code-bg); padding: 10px 12px; border-radius: 4px; max-height: 220px; overflow: auto; }
+button.copy { font: 500 12px var(--f-body); background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 3px;
+  padding: 5px 10px; cursor: pointer; }
+button.copy:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+.tablewrap { overflow-x: auto; margin-top: 16px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 560px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--f-display); font-weight: 500; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 680px) { .card { grid-template-columns: minmax(0, 1fr); } h1 { font-size: 1.6rem; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="stack">
+    <span class="meta">PHASE 1 · TEXTURE OVERHAUL · LUBLIN ANNO DOMINI 1392</span>
+    <h1>Material board</h1>
+    <p class="lede">Each texture family the city will use, with a swatch cropped from the concept paintings as the target look. Every swatch is a style reference only. The real textures will be flat-lit, seamless and drawn to real-world scale.</p>
+  </header>
+
+  <section class="signoff">
+    <h3>What you are signing off</h3>
+    <ol>
+      <li>The 16 families below and which existing materials each one replaces.</li>
+      <li>The real-world size of one texture tile, which fixes how big bricks, logs and shingles look next to a 1.75 m citizen.</li>
+      <li>The split: 7 hero textures you generate from the prompts, 9 textures I generate in code.</li>
+      <li>Two material splits in the Blender pipeline: <code>TimberDark</code> becomes log walls vs. structural beams, and <code>Limestone</code> becomes castle ashlar vs. rough fieldstone plinths.</li>
+    </ol>
+  </section>
+
+  <h2>How to generate the hero textures</h2>
+  <div class="stack" style="margin-top:14px">
+    <p>For each <span class="tag you">You generate</span> card: attach its swatch from <code>docs/material_board/swatches/</code> as the style reference image, paste the prompt, and make 2–3 variants.</p>
+    <p>Save them as PNG at the largest size your tool offers (at least 1024×1024) into <code>texture_sources/&lt;family&gt;/</code>, for example <code>texture_sources/brick_gothic/v1.png</code>.</p>
+    <p>You don't need to fix seams or colours. I'll pick the best variant, make it tile, match it to the palette, remove leftover baked lighting and derive the normal map.</p>
+  </div>
+  <div class="legend">
+    <span><span class="tag you">You generate</span> hero surface, image tool + prompt</span>
+    <span><span class="tag me">I generate</span> procedural, in code</span>
+  </div>
+
+  <h2>Texture families</h2>
+  <div class="cards" id="cards"></div>
+
+  <h2>Stays flat colour</h2>
+  <p style="margin-top:14px">These surfaces are small, shiny or meant to read as a solid accent, so they keep a flat colour and only get the lighting rebalance: <code>IronWrought</code>, <code>IronSteel</code>, <code>GoldSign</code>, <code>GoldPretzel</code>, <code>FireOrange</code>, <code>GlassDark</code>, <code>SootBlack</code>, <code>CoalBlack</code>, water and dye liquids, cloth bolts, goods, hides, bread and pottery.</p>
+
+  <h2>Technical spec</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Item</th><th>Decision</th></tr></thead>
+      <tbody>
+        <tr><td>Resolution</td><td>1024×1024 per map (desktop target, no phone constraint)</td></tr>
+        <tr><td>Maps per family</td><td>Colour (sRGB) + normal map. Roughness stays a per-material number.</td></tr>
+        <tr><td>Mapping</td><td>World-space box projection at export, so a brick is the same size on every building. Roof textures follow the slope; logs and beams follow their length.</td></tr>
+        <tr><td>Delivery</td><td>Shared files in <code>public/textures/</code>, loaded once at runtime and matched by material name. Not embedded in the 31 GLBs.</td></tr>
+        <tr><td>Variation</td><td>The existing per-house colour jitter keeps working as a tint over the texture, cached to about 8 variants per family.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const COMMON = "Seamless tileable texture. Perfectly flat orthographic straight-on view, no perspective. Even flat lighting: no cast shadows, no highlights, no vignette, no darkening toward the edges. Hand-painted texture art in the style of late-1990s pre-rendered isometric PC strategy games (match the attached reference for brushwork and level of detail). Crisp detail, muted earthy colours. The material fills the whole square frame edge to edge. No objects, no border, no text, no watermark.";
+
+const FAMILIES = [
+  { id: "brick_gothic", name: "Gothic brick", src: "you", swatch: "brick_gothic.png", tile: "2.0 × 2.0 m (20 courses)",
+    replaces: "BrickGothic, BrickDark (as a darker tint), BrickOven",
+    colors: ["#8C3B2B", "#A34836", "#6E2B1E", "#B8AD9A"],
+    note: "Most-used surface: town hall, church, monastery, gates, patrician houses, curtain walls.",
+    prompt: "Central European Gothic red brick wall in Gothic (monk) bond: two long stretchers then one short header in every course. Bricks about 28 × 9 cm with thin light grey-beige lime mortar joints. Exactly 20 horizontal brick courses from top to bottom of the image. Rich terracotta and fired-clay reds (#8C3B2B, #A34836, #6E2B1E) with occasional darker over-fired headers and slight weathering." },
+  { id: "roof_tile_red", name: "Clay roof tiles", src: "you", swatch: "roof_pantile.png", tile: "2.0 × 2.0 m (about 14 rows)",
+    replaces: "RoofTileRed",
+    colors: ["#B55338", "#99422B", "#7E3824"],
+    note: "Image orientation: the ridge is at the top, so rows run horizontally and tile ends point down the slope.",
+    prompt: "Medieval clay roof covered in monk-and-nun (mnich-mniszka) curved tiles, seen straight-on from above the roof slope: alternating convex and concave tiles form vertical ribs, overlapping in about 14 horizontal rows with the tile ends pointing down. Warm clay orange-red (#B55338, #99422B) with subtle tile-to-tile variation, a few darker tiles and faint lichen." },
+  { id: "log_wall", name: "Log wall", src: "you", swatch: "log_wall.png", tile: "2.0 × 2.0 m (8 logs)",
+    replaces: "TimberDark on log houses (new TimberLog), TimberWeathered on log buildings",
+    colors: ["#4A3B2C", "#5C4938", "#3A2E22", "#8C7B65"],
+    note: "Logs run horizontally. Must tile left-to-right without a visible log end.",
+    prompt: "Wall of horizontal hewn pine and oak logs stacked on top of each other, exactly 8 logs from top to bottom of the image, each log slightly rounded with axe-hewn grain, drying cracks and knots. Thin pale clay-and-moss chinking between the logs. Dark weathered wood (#4A3B2C, #5C4938). Logs continue past the left and right edges with no log ends visible." },
+  { id: "wood_shingle", name: "Wood shingle roof", src: "you", swatch: "wood_shingle.png", tile: "2.0 × 2.0 m (about 14 rows)",
+    replaces: "RoofShingle",
+    colors: ["#73685B", "#615445", "#857A6A"],
+    note: "Image orientation: ridge at the top.",
+    prompt: "Roof of overlapping split oak wood shingles (shakes) in staggered horizontal rows, about 14 rows from top to bottom of the image, seen straight-on from above the roof slope. Weathered grey-brown wood (#73685B, #615445) with some darker damp shingles and faint green moss in the gaps." },
+  { id: "thatch", name: "Straw thatch", src: "you", swatch: "thatch.png", tile: "2.0 × 2.0 m",
+    replaces: "RoofThatch",
+    colors: ["#9E8656", "#86744B", "#B09A68"],
+    note: "Straw runs down the slope (vertical in the image).",
+    prompt: "Straw thatch roof surface seen straight-on from above the slope: dense combed straw stems running vertically, layered in loose horizontal courses. Sun-bleached straw ochre (#9E8656) with greyer, weathered patches and darker damp streaks." },
+  { id: "fieldstone", name: "Fieldstone plinth", src: "you", swatch: "fieldstone.png", tile: "2.0 × 2.0 m",
+    replaces: "Limestone on house plinths and foundations (new StoneFieldstone)",
+    colors: ["#8A8579", "#A39C8C", "#6B665C"],
+    note: "Ground-floor plinths of timber houses, workshops, mills.",
+    prompt: "Rubble masonry wall of irregular, roughly coursed fieldstones and limestone, stones 15–40 cm across, set in recessed pale lime mortar. Mixed grey, buff and warm grey stones (#8A8579, #A39C8C, #6B665C)." },
+  { id: "cobblestone", name: "Cobblestone paving", src: "you", swatch: "cobblestone.png", tile: "3.0 × 3.0 m",
+    replaces: "Ground: market square, gate approaches, main streets",
+    colors: ["#8C8576", "#9C9586", "#7A6A53"],
+    note: "Top-down view (unlike the wall textures). Gaps packed with dusty earth.",
+    prompt: "Straight top-down view of medieval cobblestone paving: rounded river cobbles 12–20 cm across packed tightly, gaps filled with dusty brown earth. Grey-beige stones (#8C8576, #9C9586) with earth (#7A6A53)." },
+
+  { id: "limestone_ashlar", name: "Limestone ashlar", src: "me", swatch: "brick_wall_plinth.png", tile: "3.0 × 3.0 m (blocks 60 × 30 cm)",
+    replaces: "Limestone on castle, gates, towers, church and town-hall trim, quarry blocks",
+    colors: ["#C7C1B6", "#B8B09E", "#DFDBD2"],
+    note: "Regular block grid, which suits code. Reference: the pale plinth band under the brick." },
+  { id: "plaster_lime", name: "Lime plaster", src: "me", swatch: "half_timber.png", tile: "3.0 × 3.0 m",
+    replaces: "PlasterWhite, PlasterCream (as a tint)",
+    colors: ["#DFDBD2", "#C7C1B6", "#B5AC99"],
+    note: "Soft limewash mottling and hairline cracks. A grime gradient near the ground comes from the mapping, not the tile." },
+  { id: "timber_beam", name: "Structural timber", src: "me", swatch: "half_timber.png", tile: "1.0 m along the grain",
+    replaces: "TimberDark (beams, posts, braces, frames)",
+    colors: ["#4A3B2C", "#3A2E22", "#5C4938"],
+    note: "Grain follows the beam length." },
+  { id: "plank_board", name: "Plank boards", src: "me", swatch: "plank_board.png", tile: "2.0 × 2.0 m (boards 20 cm wide)",
+    replaces: "TimberPlank, TimberWeathered (board walls, windmill body), barrels, carts, stalls, wharf decks",
+    colors: ["#7A5A38", "#5C4938", "#6E6458"],
+    note: "Vertical boards with thin dark gaps and nail heads." },
+  { id: "dirt_road", name: "Dirt road", src: "me", swatch: "dirt_road.png", tile: "4.0 × 4.0 m",
+    replaces: "Ground: suburb lanes, yards, the canvas-drawn roads",
+    colors: ["#7A6A53", "#8C7B65", "#5E503F"],
+    note: "Blends into grass with a soft mask, per the style guide." },
+  { id: "grass", name: "Meadow grass", src: "me", swatch: "grass.png", tile: "6.0 × 6.0 m",
+    replaces: "Ground: base meadow (currently flat noise circles)",
+    colors: ["#556236", "#687342", "#414B29"],
+    note: "Olive and moss greens only, no bright emerald." },
+  { id: "foliage", name: "Tree foliage", src: "me", swatch: "foliage.png", tile: "2.0 × 2.0 m",
+    replaces: "FoliageGreen (oak canopy, gardens)",
+    colors: ["#3B4D24", "#55682F", "#6E853E"],
+    note: "Clumped leaf dabs with dark under-shading, like the painted oaks." },
+  { id: "copper_patina", name: "Copper patina", src: "me", swatch: null, tile: "2.0 × 2.0 m",
+    replaces: "CopperPatina (town-hall and church spires, gate helms)",
+    colors: ["#33756A", "#4E8F80", "#2A5A50"],
+    note: "Verdigris streaks running down. No concept-art swatch." },
+  { id: "awning_stripes", name: "Striped awnings", src: "me", swatch: null, tile: "1.0 m stripe repeat",
+    replaces: "AwningRedWhite, AwningBlueWhite, AwningYellowWhite (currently solid colour despite the names)",
+    colors: ["#D9332E", "#2E6BD1", "#E0B729", "#EDE6D6"],
+    note: "Canvas weave with alternating stripes, one texture per colour. No concept-art swatch." }
+];
+
+const cards = document.getElementById("cards");
+for (const f of FAMILIES) {
+  const el = document.createElement("article");
+  el.className = "card";
+  el.id = f.id;
+  const swatch = f.swatch
+    ? `<img class="swatch" src="swatches/${f.swatch}" alt="${f.name} reference crop from concept art" loading="lazy"><div class="swatch-cap">swatches/${f.swatch}</div>`
+    : `<div class="swatch" style="background:linear-gradient(135deg, ${f.colors.join(", ")})"></div><div class="swatch-cap">Palette only, no painting reference</div>`;
+  const chips = f.colors.map(c => `<span class="chip"><i style="background:${c}"></i>${c}</span>`).join("");
+  const prompt = f.prompt ? `
+    <div class="prompt">
+      <div class="prompt-bar"><span class="meta">PROMPT · attach swatches/${f.swatch}</span>
+        <button class="copy" type="button" id="copy-${f.id}" data-id="${f.id}">Copy prompt</button></div>
+      <pre id="prompt-${f.id}">${f.prompt}\n\n${COMMON}</pre>
+    </div>` : "";
+  el.innerHTML = `
+    <div>${swatch}</div>
+    <div style="min-width:0">
+      <div class="card-head"><h3>${f.name}</h3>
+        <span class="tag ${f.src}">${f.src === "you" ? "You generate" : "I generate"}</span>
+        <code>${f.id}</code></div>
+      <dl class="spec">
+        <dt>Replaces</dt><dd>${f.replaces}</dd>
+        <dt>One tile</dt><dd>${f.tile}</dd>
+        <dt>Palette</dt><dd class="chips">${chips}</dd>
+        <dt>Notes</dt><dd>${f.note}</dd>
+      </dl>${prompt}
+    </div>`;
+  cards.appendChild(el);
+}
+
+cards.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button.copy");
+  if (!btn) return;
+  const pre = document.getElementById("prompt-" + btn.dataset.id);
+  try {
+    await navigator.clipboard.writeText(pre.textContent);
+    btn.textContent = "Copied";
+  } catch {
+    const range = document.createRange(); range.selectNodeContents(pre);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    btn.textContent = "Selected, press Ctrl+C";
+  }
+  setTimeout(() => { btn.textContent = "Copy prompt"; }, 2000);
+});
+</script>
