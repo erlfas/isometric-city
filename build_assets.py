@@ -94,9 +94,7 @@ def get_materials():
         "flour_sack_cloth": create_mat("FlourSack", (0.78, 0.74, 0.64)),
         "hide_leather": create_mat("HideLeather", (0.62, 0.44, 0.28)),
         "iron_steel": create_mat("IronSteel", (0.55, 0.57, 0.60), roughness=0.3, metallic=0.8),
-        "copper_patina": create_mat("CopperPatina", (0.78, 0.48, 0.22), roughness=0.35, metallic=0.6),
         "gold_sign": create_mat("GoldSign", (0.95, 0.75, 0.14), roughness=0.25, metallic=0.5),
-        "pottery_terracotta": create_mat("PotteryTerracotta", (0.74, 0.38, 0.20), roughness=0.65),
         "water_clean": create_mat("WaterClean", (0.22, 0.38, 0.42), roughness=0.1),
         "dye_indigo": create_mat("DyeIndigo", (0.16, 0.26, 0.58), roughness=0.1),
         "dye_madder": create_mat("DyeMadder", (0.72, 0.16, 0.20), roughness=0.1),
@@ -155,27 +153,6 @@ def add_sloped_roof(bm, cx, cy, z_base, w, d, h, overhang=0.3, mat_idx=0):
     for f in [f_left, f_right, f_front, f_back]:
         f.material_index = mat_idx
 
-def add_cylinder(bm, cx, cy, cz, radius, height, segs=12, mat_idx=0):
-    h2 = height * 0.5
-    top_verts = []
-    bot_verts = []
-    for i in range(segs):
-        ang = (i / segs) * math.pi * 2
-        x = cx + math.cos(ang) * radius
-        y = cy + math.sin(ang) * radius
-        bot_verts.append(bm.verts.new(Vector((x, y, cz - h2))))
-        top_verts.append(bm.verts.new(Vector((x, y, cz + h2))))
-
-    for i in range(segs):
-        i_next = (i + 1) % segs
-        f = bm.faces.new([bot_verts[i], bot_verts[i_next], top_verts[i_next], top_verts[i]])
-        f.material_index = mat_idx
-
-    f_top = bm.faces.new(top_verts)
-    f_top.material_index = mat_idx
-    f_bot = bm.faces.new(list(reversed(bot_verts)))
-    f_bot.material_index = mat_idx
-
 def add_timber_beam(bm, p1, p2, width=0.18, depth=0.18, mat_idx=0):
     d_vec = p2 - p1
     length = d_vec.length
@@ -216,31 +193,6 @@ def add_cylinder(bm, cx, cy, cz, radius, height, segs=12, mat_idx=0):
         f.material_index = mat_idx
     bm.faces.new(top).material_index = mat_idx
     bm.faces.new(list(reversed(bot))).material_index = mat_idx
-
-def add_beehive_dome(bm, cx, cy, z_base, radius, height, segs_u=14, segs_v=6, mat_idx=0):
-    rings = []
-    for v in range(segs_v):
-        phi = (v / segs_v) * (math.pi * 0.5)
-        r = radius * math.cos(phi)
-        z = z_base + height * math.sin(phi)
-        ring_verts = []
-        for u in range(segs_u):
-            theta = (u / segs_u) * (math.pi * 2.0)
-            x = cx + r * math.cos(theta)
-            y = cy + r * math.sin(theta)
-            ring_verts.append(bm.verts.new(Vector((x, y, z))))
-        rings.append(ring_verts)
-    top_vert = bm.verts.new(Vector((cx, cy, z_base + height)))
-    for v in range(segs_v - 1):
-        r1, r2 = rings[v], rings[v + 1]
-        for u in range(segs_u):
-            nxt = (u + 1) % segs_u
-            f = bm.faces.new([r1[u], r1[nxt], r2[nxt], r2[u]])
-            f.material_index = mat_idx
-    for u in range(segs_u):
-        nxt = (u + 1) % segs_u
-        f = bm.faces.new([rings[-1][u], rings[-1][nxt], top_vert])
-        f.material_index = mat_idx
 
 def add_pantile_roof(bm, cx, cy, z_base, w, d, h, overhang=0.45, courses=8, mat_tile=0, mat_trim=1, mat_plaster=0):
     w2 = w * 0.5 + overhang

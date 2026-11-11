@@ -11,6 +11,9 @@ This guide provides high-signal navigation pointers and commands for coding agen
 - **Build**: `npm run build` (typechecks and bundles Vite client).
 - **Blender Binary Path**: `/home/antigravity/blender/blender` (or `~/.local/bin/blender`).
   - *Never* run unbounded `find /` across the filesystem.
+- **Windows workstation**: Blender 5.3 at `C:\Program Files\Blender Foundation\Blender 5.3\blender.exe` (verified to produce identical geometry/materials to the 3.6 builds).
+  - Build: `& "C:\Program Files\Blender Foundation\Blender 5.3\blender.exe" --background --factory-startup --python build_assets.py`
+  - No standalone Python; use Blender's bundled interpreter: `C:\Program Files\Blender Foundation\Blender 5.3\5.3\python\bin\python.exe`.
 
 ---
 
