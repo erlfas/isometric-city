@@ -22,6 +22,19 @@ import { hashId, mulberry32 } from './citizen-crowd';
  *   SCRIPT    a scripted leg off the grid: through a door, up or down a stair
  *   INSIDE    in a building: simulated, hidden
  *   SPOT      standing at a building's work / sell / guard spot, facing it
+ *
+ * Walking (M3) is steered, not replayed: each step a walker's velocity relaxes toward its
+ * next waypoint and is pushed by
+ *   - everyone near it (a 2 m neighbour grid) by predicted time to collision, power-law
+ *     falloff (Karamouzas et al. 2014), with a slight keep-right bias in head-on meetings
+ *     so opposing streams form lanes;
+ *   - walls closer than 1 m, along the distance field's gradient.
+ * The grid stays a hard constraint (slide along walls). A walker that makes no progress for
+ * STUCK_ASIDE s asks a standing person in its way to shuffle aside and briefly ignores
+ * others; after STUCK_REPLAN s it plans again from where it is.
+ * Household members leaving the same place for the same place walk together (the second
+ * keeps step at the first one's side). Gaits by urgency: stroll (wandering), slow patrol,
+ * brisk apprentices, run when late.
  */
 
 const STEP = 1 / 20;
@@ -34,6 +47,23 @@ const ROUTE_BUDGET = 40_000;    // A* expansions per frame
 const ROUTE_CACHE = 3000;
 const MARKET = { x0: -30, x1: 30, z0: -24, z1: 24 };
 const TRAVEL = new Set(['COMMUTING', 'RETURNING']);
+
+// Steering (speeds are the shown, sped-up ones: ~3 m/s walking, ~5.5 m/s running).
+const NB = 2;                   // neighbour grid cell, m
+const NB_R2 = 16;               // neighbours considered within 4 m
+const RELAX = 0.3;              // s to reach the desired velocity
+const RADIUS2 = 0.55;           // two body radii, m
+const TTC_K = 1.5;              // power-law strength
+const TTC_T0 = 1.2;             // s, exponential cutoff
+const TTC_MAX = 2.5;            // s, ignore collisions further ahead
+const KEEP_RIGHT = 2.5;         // m/s^2 lateral push in head-on meetings
+const WALL_K = 5;               // m/s^2 at the wall face
+const F_MAX = 30;               // m/s^2 cap on avoidance + wall push
+const STUCK_ASIDE = 1.5;        // s without progress: ask a standing blocker to step aside
+const STUCK_REPLAN = 3;         // s: plan again from here
+const GHOST = 1;                // s ignoring other people after STUCK_ASIDE
+const PAIR_JOIN = 20;           // m: a household member this close can walk along
+const STROLL = 0.72, PATROL = 0.8, BRISK = 1.08;
 
 const Phase = { IDLE: 0, ROUTE: 1, WALK: 2, SCRIPT: 3, INSIDE: 4, SPOT: 5 } as const;
 type Phase = (typeof Phase)[keyof typeof Phase];
@@ -71,6 +101,16 @@ interface Agent {
   early: boolean;
   /** Sim clock (hours since start, not wrapped) of the next wander. */
   nextWander: number;
+  /** Gait pace factor for this leg (stroll / patrol / brisk). */
+  gaitPace: number;
+  /** Real seconds without progress; seconds left ignoring others. */
+  stuck: number; ghost: number;
+  /** Re-plans on this trip; after two the leg may cross blocked cells (no grid route). */
+  replans: number; noClip: boolean;
+  /** Walking at the side of this agent (-1: alone); how many walk at ours. */
+  lead: number; followers: number;
+  /** Has walked at the leader's side on this trip. */
+  paired: boolean;
 }
 
 export interface NavStats {
@@ -79,6 +119,8 @@ export interface NavStats {
   routes: number; cacheHits: number; straight: number; failures: number;
   queue: number; avgExpanded: number; routeMsLastFrame: number;
   phases: Record<string, number>; running: number;
+  /** Walkers now: stuck (> STUCK_ASIDE), pairs walking together; totals since start. */
+  stuckNow: number; pairs: number; replans: number; asides: number; stepMs: number;
 }
 
 export class SimulationEngine {
@@ -122,7 +164,16 @@ export class SimulationEngine {
   private cache = new Map<string, Float32Array>();
   private marketSpots: Spot[] = [];
   private offGridDoors = 0;
-  private stat = { routes: 0, cacheHits: 0, straight: 0, failures: 0, expanded: 0, routeMs: 0 };
+  private stat = { routes: 0, cacheHits: 0, straight: 0, failures: 0, expanded: 0, routeMs: 0,
+    replans: 0, asides: 0, stepMs: 0 };
+  // Steering velocity (m/s, shown speed) per agent.
+  private vx: Float32Array; private vz: Float32Array;
+  // Neighbour grid: linked lists of agents per NB cell, rebuilt every step.
+  private nbW: number; private nbH: number;
+  private nbHead: Int32Array; private nbNext: Int32Array;
+  private nbUsed: number[] = [];
+  private household = new Map<string, number[]>();
+  private force = { x: 0, z: 0 };
 
   constructor(plan: CityPlan, spatialGrid: SpatialHashGrid, nav: NavGrid, buildings: BuildingIndex) {
     this.plan = plan;
@@ -150,6 +201,11 @@ export class SimulationEngine {
     const n = this.citizens.length;
     this.px = new Float32Array(n); this.pz = new Float32Array(n); this.py = new Float32Array(n);
     this.ox = new Float32Array(n); this.oz = new Float32Array(n); this.oy = new Float32Array(n);
+    this.vx = new Float32Array(n); this.vz = new Float32Array(n);
+    this.nbW = Math.ceil((nav.w * 0.5) / NB) + 1;
+    this.nbH = Math.ceil((nav.h * 0.5) / NB) + 1;
+    this.nbHead = new Int32Array(this.nbW * this.nbH).fill(-1);
+    this.nbNext = new Int32Array(n);
     for (let i = 0; i < n; i++) {
       const c = this.citizens[i];
       const rng = mulberry32(hashId(c.id) ^ 0x5eed);
@@ -158,8 +214,11 @@ export class SimulationEngine {
         items: [...c.schedule].sort((a, b) => a.hour - b.hour),
         active: 0, phase: Phase.IDLE, dest: null, heldSpot: null, inB: null, inDoor: null,
         pts: null, wp: 0, script: [], sp: 0, scriptInside: false, queued: false, running: false, early: false, nextWander: 0,
+        gaitPace: 1, stuck: 0, ghost: 0, replans: 0, noClip: false, lead: -1, followers: 0, paired: false,
       });
       c.animFrame = rng() * 10;
+      const h = this.household.get(c.homeParcelId);
+      if (h) h.push(i); else this.household.set(c.homeParcelId, [i]);
     }
     this.seatEveryone();
   }
@@ -236,6 +295,9 @@ export class SimulationEngine {
       ag.early = false;
       ag.inB = null;
       ag.inDoor = null;
+      ag.lead = -1; ag.followers = 0;
+      ag.stuck = 0; ag.ghost = 0;
+      this.vx[i] = 0; this.vz[i] = 0;
       ag.active = this.itemAt(ag, this.simTimeHours);
       const item = ag.items[ag.active];
       ag.c.state = item.state;
@@ -306,11 +368,73 @@ export class SimulationEngine {
     ag.dest = d;
     // Same building as now and going indoors again: stay put.
     if (ag.phase === Phase.INSIDE && d.door && d.b === ag.inB) return;
+    this.dropPair(i);
     ag.running = false;
+    ag.replans = 0;
+    ag.noClip = false;
     ag.c.faceYaw = undefined;
     ag.c.activityAnim = undefined;
+    const fromB = ag.phase === Phase.INSIDE ? ag.inB : null;
     if (ag.phase === Phase.INSIDE && ag.inB && ag.inDoor) this.leave(i);
     else this.requestRoute(i);
+    this.recruitCompanion(i, item, fromB);
+  }
+
+  /** A household member at the same place, due at the same place within 45 min, comes along. */
+  private recruitCompanion(i: number, item: ScheduleItem, fromB: Building | null): void {
+    const ag = this.agents[i];
+    if (ag.lead >= 0 || ag.followers > 0) return;
+    const fam = this.household.get(ag.c.homeParcelId);
+    if (!fam || fam.length < 2) return;
+    for (const k of fam) {
+      if (k === i) continue;
+      const K = this.agents[k];
+      if (K.lead >= 0 || K.followers > 0) continue;
+      if (fromB) {
+        if (K.phase !== Phase.INSIDE || K.inB !== fromB) continue;
+      } else {
+        if (K.phase !== Phase.IDLE && K.phase !== Phase.SPOT) continue;
+        if (Math.hypot(this.px[k] - this.px[i], this.pz[k] - this.pz[i]) > PAIR_JOIN) continue;
+      }
+      const nk = (K.active + 1) % K.items.length;
+      const next = K.items[nk];
+      if (next.location !== item.location) continue;
+      const until = (((next.hour - this.simTimeHours) % 24) + 24) % 24;
+      if (until > 0.75 && until < 23.5) continue;
+      K.active = nk;
+      K.early = until > 0 && until < 12;
+      this.begin(k, next);
+      // Stayed inside (already there), or brought someone of its own along.
+      if (K.phase === Phase.INSIDE || K.followers > 0) continue;
+      K.lead = i;
+      ag.followers++;
+      // Same stop: share the leader's door, or stand beside its point.
+      const d = ag.dest!;
+      if (K.heldSpot && !d.spot) { K.heldSpot.taken--; K.heldSpot = null; }
+      if (!d.spot) {
+        const ox = this.nav.isFree(d.x + 0.8, d.z) ? 0.8 : 0;
+        K.dest = { ...d, x: d.x + ox, cx: d.cx + ox };
+      }
+      return;
+    }
+  }
+
+  /** Stop walking together (either side). */
+  private dropPair(i: number): void {
+    const ag = this.agents[i];
+    ag.paired = false;
+    if (ag.lead >= 0) { this.agents[ag.lead].followers--; ag.lead = -1; }
+    if (ag.followers > 0) {
+      for (const k of this.household.get(ag.c.homeParcelId) ?? []) {
+        const K = this.agents[k];
+        if (K.lead !== i) continue;
+        K.lead = -1;
+        // Its own route is stale once it has walked beside us: plan again from here.
+        if (K.paired && K.phase === Phase.WALK) this.requestRoute(k);
+        K.paired = false;
+      }
+      ag.followers = 0;
+    }
   }
 
   private destFor(ag: Agent, item: ScheduleItem, from: Building | null): Dest {
@@ -485,18 +609,23 @@ export class SimulationEngine {
       } else {
         pts = new Float32Array([x, z, d.x, d.z]);
         this.stat.failures++;
+        ag.noClip = true; // no grid route: the straight line may cross walls
       }
     }
     ag.pts = pts;
     ag.wp = 1;
-    // Late (or simply in a hurry): run.
+    ag.stuck = 0;
+    // Gait by urgency: slow patrol, brisk apprentices; late (or simply in a hurry): run.
+    const c = ag.c;
+    ag.gaitPace = c.state === 'PATROLLING' ? PATROL : c.guildRank === 'apprentice' ? BRISK : 1;
     let len = 0;
     for (let k = 2; k < pts.length; k += 2) len += Math.hypot(pts[k] - pts[k - 2], pts[k + 1] - pts[k - 1]);
     const hoursLeft = (((this.deadline(ag) - this.simTimeHours) % 24) + 24) % 24;
     // Past the hour (wrapped to almost a day): late, hurry.
     const realLeft = hoursLeft > 12 ? 0 : hoursLeft / this.hoursPerSec;
     const need = len / Math.max(realLeft, 1);
-    ag.running = len > 15 && (need > this.walkSpeed * ag.pace * 1.15 || ag.rng() < 0.05);
+    const errand = c.guildRank === 'apprentice' ? 0.15 : 0.05;
+    ag.running = len > 15 && (need > this.walkSpeed * ag.pace * ag.gaitPace * 1.15 || ag.rng() < errand);
     this.setPhase(ag, Phase.WALK);
     return spent;
   }
@@ -511,18 +640,20 @@ export class SimulationEngine {
       this.evaluate(this.evalCursor);
       this.evalCursor = (this.evalCursor + 1) % n;
     }
+    const t0 = performance.now();
+    this.buildNeighbours();
     const walk = this.walkSpeed;
     for (let i = 0; i < n; i++) {
       const ag = this.agents[i];
       const c = ag.c;
       switch (ag.phase) {
-        case Phase.WALK: {
-          const v = walk * ag.pace * (ag.running ? RUN : 1);
-          this.walkStep(i, ag, v * dt);
+        case Phase.WALK:
+          this.walkStep(i, ag, dt, walk * ag.pace * ag.gaitPace * (ag.running ? RUN : 1));
           break;
-        }
         case Phase.SCRIPT:
           this.scriptStep(i, ag, walk * ag.pace * DOOR_PACE * dt);
+          this.vx[i] = (this.px[i] - this.ox[i]) / dt;
+          this.vz[i] = (this.pz[i] - this.oz[i]) / dt;
           break;
         case Phase.IDLE:
           if (ag.dest && ag.dest.wander > 0 && this.clock >= ag.nextWander) this.wander(i, ag);
@@ -534,29 +665,229 @@ export class SimulationEngine {
         c.vx = (this.px[i] - this.ox[i]) / dt;
         c.vz = (this.pz[i] - this.oz[i]) / dt;
         c.animFrame = ((c.animFrame ?? 0) + dt * 8.0) % 8;
+      } else {
+        this.vx[i] = 0; this.vz[i] = 0;
       }
+    }
+    this.stat.stepMs = performance.now() - t0;
+  }
+
+  /** Bucket everyone outdoors into NB-metre cells (linked lists in typed arrays). */
+  private buildNeighbours(): void {
+    const head = this.nbHead, next = this.nbNext;
+    for (const k of this.nbUsed) head[k] = -1;
+    this.nbUsed.length = 0;
+    const x0 = this.nav.minX, z0 = this.nav.minZ;
+    for (let i = 0; i < this.agents.length; i++) {
+      if (this.agents[i].phase === Phase.INSIDE) continue;
+      const gx = Math.floor((this.px[i] - x0) / NB), gz = Math.floor((this.pz[i] - z0) / NB);
+      if (gx < 0 || gz < 0 || gx >= this.nbW || gz >= this.nbH) continue;
+      const k = gz * this.nbW + gx;
+      if (head[k] < 0) this.nbUsed.push(k);
+      next[i] = head[k];
+      head[k] = i;
     }
   }
 
-  private walkStep(i: number, ag: Agent, dist: number): void {
+  /**
+   * Avoidance acceleration for walker i into this.force: time-to-collision power law against
+   * everyone within 4 m, keep-right in head-on meetings, overlap push, wall push.
+   * Returns the nearest standing person ahead (index, -1 if none) for stuck handling.
+   */
+  private avoid(i: number, ag: Agent, people: boolean): number {
+    const x = this.px[i], z = this.pz[i];
+    const vxi = this.vx[i], vzi = this.vz[i];
+    const spi = Math.hypot(vxi, vzi);
+    let fx = 0, fz = 0;
+    let blocker = -1, blockD = 1.44;
+    if (people) {
+      const gx = Math.floor((x - this.nav.minX) / NB), gz = Math.floor((z - this.nav.minZ) / NB);
+      for (let cz = gz - 2; cz <= gz + 2; cz++) {
+        if (cz < 0 || cz >= this.nbH) continue;
+        for (let cx = gx - 2; cx <= gx + 2; cx++) {
+          if (cx < 0 || cx >= this.nbW) continue;
+          for (let j = this.nbHead[cz * this.nbW + cx]; j >= 0; j = this.nbNext[j]) {
+            if (j === i || j === ag.lead || this.agents[j].lead === i) continue;
+            const wx = x - this.px[j], wz = z - this.pz[j];
+            const d2 = wx * wx + wz * wz;
+            if (d2 > NB_R2) continue;
+            const vxj = this.vx[j], vzj = this.vz[j];
+            // A standing person close ahead: candidate to step aside.
+            if (vxj === 0 && vzj === 0 && d2 < blockD && wx * vxi + wz * vzi < 0) { blocker = j; blockD = d2; }
+            const c = d2 - RADIUS2 * RADIUS2;
+            if (c < 0) {
+              const d = Math.sqrt(d2) || 0.01;
+              const push = ((RADIUS2 - d) / RADIUS2) * 12;
+              fx += (wx / d) * push; fz += (wz / d) * push;
+              continue;
+            }
+            const rvx = vxi - vxj, rvz = vzi - vzj;
+            const a = rvx * rvx + rvz * rvz;
+            const b = wx * rvx + wz * rvz;
+            if (b >= 0 || a < 1e-6) continue; // moving apart
+            const disc = b * b - a * c;
+            if (disc <= 0) continue; // passes clear
+            const tau = Math.max(0.05, (-b - Math.sqrt(disc)) / a);
+            if (tau > TTC_MAX) continue;
+            const e = Math.exp(-tau / TTC_T0);
+            const mag = Math.min(F_MAX, (TTC_K * e * (2 / tau + 1 / TTC_T0)) / tau);
+            // Separation at the moment of contact (length RADIUS2), pointing away from j.
+            fx += ((wx + rvx * tau) / RADIUS2) * mag;
+            fz += ((wz + rvz * tau) / RADIUS2) * mag;
+            const spj = Math.hypot(vxj, vzj);
+            if (spi > 0.1 && vxi * vxj + vzi * vzj < -0.3 * spi * spj) {
+              // Head-on: both lean to their own right, so opposing streams form lanes.
+              fx += (-vzi / spi) * KEEP_RIGHT * e;
+              fz += (vxi / spi) * KEEP_RIGHT * e;
+            }
+          }
+        }
+      }
+    }
+    // Walls within 1 m: push down the distance field's slope.
+    const cl = this.nav.clearance(x, z);
+    if (cl > 0 && cl < 1) {
+      const gx = this.nav.clearance(x + 0.5, z) - this.nav.clearance(x - 0.5, z);
+      const gz = this.nav.clearance(x, z + 0.5) - this.nav.clearance(x, z - 0.5);
+      const gl = Math.hypot(gx, gz);
+      if (gl > 0) { fx += (gx / gl) * WALL_K * (1 - cl); fz += (gz / gl) * WALL_K * (1 - cl); }
+    }
+    const fl = Math.hypot(fx, fz);
+    if (fl > F_MAX) { fx *= F_MAX / fl; fz *= F_MAX / fl; }
+    this.force.x = fx; this.force.z = fz;
+    return blocker;
+  }
+
+  private walkStep(i: number, ag: Agent, dt: number, speed: number): void {
     const pts = ag.pts!;
     let x = this.px[i], z = this.pz[i];
-    while (dist > 0 && ag.wp * 2 < pts.length) {
-      const tx = pts[ag.wp * 2], tz = pts[ag.wp * 2 + 1];
-      const dx = tx - x, dz = tz - z;
-      const l = Math.hypot(dx, dz);
-      if (l <= dist) { x = tx; z = tz; dist -= l; ag.wp++; continue; }
-      x += (dx / l) * dist; z += (dz / l) * dist;
-      dist = 0;
+    // Walking at a household member's side: steer to a point beside it instead of the route.
+    if (ag.lead >= 0) {
+      const L = this.agents[ag.lead];
+      const lx = this.px[ag.lead], lz = this.pz[ag.lead];
+      const far = Math.hypot(lx - x, lz - z) > 12;
+      if (L.phase === Phase.WALK && !far) {
+        ag.paired = true;
+        this.pairStep(i, ag, dt, lx, lz, speed);
+        return;
+      }
+      // Before setting off the leader may still be leaving its door or waiting for a path:
+      // walk our own route meanwhile. Once together, any other case (arrived, lost them,
+      // re-planning) means finishing alone: our own route is stale by then.
+      if (far || ag.paired || (L.phase !== Phase.ROUTE && L.phase !== Phase.SCRIPT)) {
+        this.dropPair(i);
+        this.requestRoute(i);
+        return;
+      }
     }
-    this.px[i] = x; this.pz[i] = z;
-    const gy = this.groundAt(x, z);
-    this.py[i] += (gy - this.py[i]) * 0.25;
-    if (ag.wp * 2 < pts.length) {
-      ag.c.targetX = pts[ag.wp * 2]; ag.c.targetZ = pts[ag.wp * 2 + 1];
+    if (ag.followers > 0) speed *= 0.9; // wait for company
+    // Next waypoint: corners are taken within 0.4 m; the last one exactly.
+    let tx = x, tz = z, last = true, dl = 0;
+    while (ag.wp * 2 < pts.length) {
+      tx = pts[ag.wp * 2]; tz = pts[ag.wp * 2 + 1];
+      last = ag.wp * 2 + 2 >= pts.length;
+      dl = Math.hypot(tx - x, tz - z);
+      if (dl <= (last ? speed * dt : 0.4)) {
+        ag.wp++;
+        if (last) { x = tx; z = tz; }
+        continue;
+      }
+      break;
+    }
+    if (ag.wp * 2 >= pts.length) {
+      this.px[i] = x; this.pz[i] = z;
+      this.arrive(i, ag);
       return;
     }
-    // Arrived.
+    // Ease in to the final point; avoidance off for the last metre so it lands exactly.
+    const want = last && dl < 1.5 ? Math.max(speed * 0.45, speed * (dl / 1.5)) : speed;
+    const near = last && dl < 1;
+    this.steer(i, ag, dt, (tx - x) / dl * want, (tz - z) / dl * want, want, !near);
+    ag.c.targetX = tx; ag.c.targetZ = tz;
+  }
+
+  /** Keep step beside the leader: aim 0.75 m to its right (behind it where that is a wall). */
+  private pairStep(i: number, ag: Agent, dt: number, lx: number, lz: number, speed: number): void {
+    const lvx = this.vx[ag.lead], lvz = this.vz[ag.lead];
+    const ls = Math.hypot(lvx, lvz);
+    let tx = lx, tz = lz;
+    if (ls > 0.1) {
+      const hx = lvx / ls, hz = lvz / ls;
+      tx = lx - hz * 0.75; tz = lz + hx * 0.75;
+      if (!this.nav.isFree(tx, tz) || this.nav.clearance(tx, tz) < 0.5) { tx = lx - hx * 0.9; tz = lz - hz * 0.9; }
+    }
+    const x = this.px[i], z = this.pz[i];
+    const dx = tx - x, dz = tz - z, d = Math.hypot(dx, dz);
+    // Match the leader's velocity, plus a catch-up term toward the slot.
+    const catchUp = Math.min(speed * 0.5, d * 2);
+    let dvx = lvx + (d > 0.01 ? (dx / d) * catchUp : 0), dvz = lvz + (d > 0.01 ? (dz / d) * catchUp : 0);
+    const dvs = Math.hypot(dvx, dvz), cap = speed * 1.35;
+    if (dvs > cap) { dvx *= cap / dvs; dvz *= cap / dvs; }
+    ag.running = this.agents[ag.lead].running;
+    ag.c.gait = ag.running ? 1 : 0;
+    this.steer(i, ag, dt, dvx, dvz, Math.max(dvs, 0.3), true);
+    ag.c.targetX = tx; ag.c.targetZ = tz;
+  }
+
+  /** Relax velocity toward (dvx, dvz) under avoidance, move, slide along walls, track progress. */
+  private steer(i: number, ag: Agent, dt: number, dvx: number, dvz: number, want: number, people: boolean): void {
+    const x = this.px[i], z = this.pz[i];
+    if (ag.ghost > 0) { ag.ghost -= dt; people = false; }
+    const blocker = this.avoid(i, ag, people);
+    let vx = this.vx[i] + ((dvx - this.vx[i]) / RELAX + this.force.x) * dt;
+    let vz = this.vz[i] + ((dvz - this.vz[i]) / RELAX + this.force.z) * dt;
+    const vs = Math.hypot(vx, vz), cap = Math.max(want, 0.3) * 1.3;
+    if (vs > cap) { vx *= cap / vs; vz *= cap / vs; }
+    let nx = x + vx * dt, nz = z + vz * dt;
+    // The grid is a hard constraint, except where we stand on a blocked cell already (a door
+    // facing a walled gap) or this leg has no grid route.
+    if (!ag.noClip && this.nav.isFree(x, z) && !this.nav.isFree(nx, nz)) {
+      if (this.nav.isFree(nx, z)) { nz = z; vz = 0; }
+      else if (this.nav.isFree(x, nz)) { nx = x; vx = 0; }
+      else { nx = x; nz = z; vx = 0; vz = 0; }
+    }
+    this.vx[i] = vx; this.vz[i] = vz;
+    this.px[i] = nx; this.pz[i] = nz;
+    const gy = this.groundAt(nx, nz);
+    this.py[i] += (gy - this.py[i]) * 0.25;
+    // Progress: under a third of the wanted speed counts as stuck.
+    const moved = Math.hypot(nx - x, nz - z);
+    if (moved < want * dt * 0.33) ag.stuck += dt;
+    else ag.stuck = Math.max(0, ag.stuck - dt * 2);
+    if (ag.stuck > STUCK_ASIDE && ag.ghost <= 0 && ag.stuck - dt <= STUCK_ASIDE) {
+      ag.ghost = GHOST;
+      if (blocker >= 0 && this.agents[blocker].phase === Phase.IDLE) this.stepAside(blocker, vx, vz);
+    }
+    if (ag.stuck > STUCK_REPLAN && ag.lead < 0) {
+      ag.stuck = 0;
+      ag.replans++;
+      this.stat.replans++;
+      if (ag.replans >= 2) ag.noClip = true;
+      this.requestRoute(i);
+    }
+  }
+
+  /** A standing person shuffles 0.8 m sideways out of a walker's way. */
+  private stepAside(j: number, wvx: number, wvz: number): void {
+    const ag = this.agents[j];
+    const s = Math.hypot(wvx, wvz) || 1;
+    const x = this.px[j], z = this.pz[j];
+    for (const side of [1, -1]) {
+      const tx = x - (wvz / s) * 0.8 * side, tz = z + (wvx / s) * 0.8 * side;
+      if (!this.nav.isFree(tx, tz)) continue;
+      ag.pts = new Float32Array([x, z, tx, tz]);
+      ag.wp = 1;
+      ag.running = false;
+      ag.gaitPace = STROLL;
+      this.setPhase(ag, Phase.WALK);
+      ag.dest = { ...ag.dest!, x: tx, z: tz };
+      this.stat.asides++;
+      return;
+    }
+  }
+
+  private arrive(i: number, ag: Agent): void {
+    this.vx[i] = 0; this.vz[i] = 0;
     ag.pts = null;
     const d = ag.dest!;
     if (d.door && d.b) this.enter(i, d.door);
@@ -603,6 +934,8 @@ export class SimulationEngine {
     ag.pts = new Float32Array([this.px[i], this.pz[i], tx, tz]);
     ag.wp = 1;
     ag.running = false;
+    ag.gaitPace = STROLL;
+    ag.stuck = 0;
     this.setPhase(ag, Phase.WALK);
     // Wandering keeps the same destination (centre and radius); only the stop changes.
     ag.dest = { ...d, x: tx, z: tz };
@@ -619,10 +952,13 @@ export class SimulationEngine {
   public navStats(): NavStats {
     const names = ['IDLE', 'ROUTE', 'WALK', 'SCRIPT', 'INSIDE', 'SPOT'];
     const phases: Record<string, number> = {};
-    let running = 0;
+    let running = 0, stuckNow = 0, pairs = 0;
     for (const ag of this.agents) {
       phases[names[ag.phase]] = (phases[names[ag.phase]] ?? 0) + 1;
-      if (ag.running && ag.phase === Phase.WALK) running++;
+      if (ag.phase !== Phase.WALK) continue;
+      if (ag.running) running++;
+      if (ag.stuck > STUCK_ASIDE) stuckNow++;
+      if (ag.lead >= 0 && ag.paired) pairs++;
     }
     let doors = 0, spots = 0;
     for (const b of this.buildings.all) { doors += b.doors.length; spots += b.spots.length; }
@@ -634,6 +970,7 @@ export class SimulationEngine {
       routes: s.routes, cacheHits: s.cacheHits, straight: s.straight, failures: s.failures,
       queue: this.queue.length, avgExpanded: s.routes ? Math.round(s.expanded / s.routes) : 0,
       routeMsLastFrame: Math.round(s.routeMs * 100) / 100, phases, running,
+      stuckNow, pairs, replans: s.replans, asides: s.asides, stepMs: Math.round(s.stepMs * 100) / 100,
     };
   }
 

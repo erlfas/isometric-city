@@ -40,7 +40,7 @@ Commands:
 
 - **3D Runtime Engine**:
   - [`src/engine/three-renderer.ts`](src/engine/three-renderer.ts): Three.js orthographic renderer, dynamic parcel dispatch, citizen archetype instancing, shadows. Buildings and props are drawn as one `BatchedMesh` per material ([`static-batches.ts`](src/engine/static-batches.ts)): place them with `put()`, not `scene.add(clone)`.
-  - [`src/engine/simulation.ts`](src/engine/simulation.ts): 1,500-citizen clockwork schedule, spatial hash grid.
+  - [`src/engine/simulation.ts`](src/engine/simulation.ts): 1,500-citizen schedule, routing (`nav-grid.ts`, doors from `building-anchors.ts`) and steering (time-to-collision avoidance, couples, gaits; tuning constants at the top). Live numbers: `__lublin.nav()` (`stuckNow`, `pairs`, `stepMs`).
   - [`src/engine/audio.ts`](src/engine/audio.ts): music (`music/`) and the synthesised positional soundscape (recipes in `sound-recipes.ts`). Which building a parcel is drawn as (shared by renderer and audio): `parcel-kind.ts`.
   - [`src/types.ts`](src/types.ts): TypeScript interfaces for `Parcel`, `Citizen`, `CityPlan`.
 - **Reference Photos & Artwork**:
