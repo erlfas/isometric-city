@@ -15,7 +15,7 @@ Checks:
      getAlbedo('...') call).
   5. Manifest files exist.
   6. Character kits: every mesh has a valid part, its variant names kit.groups options, every
-     Slot_* material has a palette, triangle budgets hold.
+     Slot_* material has a palette, triangle budgets hold, metallic <= KIT_MAX_METALLIC.
 """
 import glob
 import json
@@ -106,6 +106,7 @@ def roof_areas(pos, idx):
 KIT_PARTS = {"body", "head", "arm_L", "arm_R", "leg_L", "leg_R"}
 KIT_BASE_TRIS = 1300      # always-drawn meshes of one kit
 KIT_VARIANT_TRIS = 450    # any single variant mesh
+KIT_MAX_METALLIC = 0.3    # no environment map: more metallic renders near black (KEY_FINDINGS §18.6)
 
 
 def check_kit(name, gltf):
@@ -119,6 +120,10 @@ def check_kit(name, gltf):
     if set(kit.get("pivots", {})) != KIT_PARTS:
         fail(f"{name}: kit pivots {sorted(kit.get('pivots', {}))} != {sorted(KIT_PARTS)}")
     mats = gltf.get("materials", [])
+    for m in mats:
+        metal = m.get("pbrMetallicRoughness", {}).get("metallicFactor", 1.0)  # glTF default is 1
+        if metal > KIT_MAX_METALLIC + 1e-3:  # exported as float32
+            fail(f"{name}: material {m.get('name')} metallic {metal:.2f} > {KIT_MAX_METALLIC} (renders black)")
     base = 0
     for node in gltf.get("nodes", []):
         if "mesh" not in node:

@@ -742,7 +742,7 @@ def get_fixed_mats():
         # Low metallic: the scene has no environment map, so metal renders near black.
         # Own name: create_mat reuses by name and the legacy builders define CharIronSteel.
         "iron_steel": create_mat("CharSteelBright", (0.62, 0.63, 0.65), roughness=0.4, metallic=0.3),
-        "iron_dark": create_mat("CharIronDark", (0.18, 0.18, 0.20), roughness=0.45, metallic=0.6),
+        "iron_dark": create_mat("CharIronDarkKit", (0.2, 0.2, 0.22), roughness=0.45, metallic=0.3),
         "wood_ash": create_mat("CharWoodAsh", (0.48, 0.36, 0.24), roughness=0.75),
         "wood_dark": create_mat("CharWoodDark", (0.28, 0.18, 0.10), roughness=0.75),
         "leather_tan": create_mat("CharLeatherTan", (0.38, 0.26, 0.16), roughness=0.7),

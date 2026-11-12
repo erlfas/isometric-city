@@ -131,6 +131,16 @@ export class CitizenCrowd {
   /** Per mesh: instances written this frame, and its matrix / colour arrays. */
   private buffers = { counts: new Int32Array(0), mats: [] as Float32Array[], cols: [] as Float32Array[] };
 
+  /** Triangles of citizens drawn last frame, one pass (the shadow pass draws them again). */
+  drawnTriangles(): number {
+    let t = 0;
+    for (const m of this.meshes) {
+      const g = m.geometry;
+      t += m.count * (g.index ? g.index.count : g.attributes.position.count) / 3;
+    }
+    return t;
+  }
+
   /** Debug: hold these citizens at a fixed heading, optionally walking in place (lineups). */
   pose(ids: Set<string>, yaw: number, walk: boolean): void {
     this.posed = { ids, yaw, walk };

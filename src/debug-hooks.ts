@@ -5,16 +5,22 @@ import type { SimulationEngine } from './engine/simulation';
  * Dev-only camera hooks for screenshots and debugging (installed only under `vite dev`).
  *
  * URL hash, applied on load and on every hash change:
- *   #cam=x,z[,zoom[,quadrant]]        world position; zoom = world units visible (8-90); quadrant 0-3
+ *   #cam=x,z[,zoom[,quadrant]]        world position; zoom = world units visible vertically
+ *                                    (mouse wheel allows 8-90; here anything, e.g. 3.5 for faces)
  *   #model=house_timber_log[,n[,zoom[,quadrant]]]   n-th placed instance of a model (default 0)
  *   append &pause to pause the simulation, &hour=12 to set the sim clock
  *   &lineup=char_tanner[,n[,work|walk]]   stand n citizens of a character model in a row at the
- *                                    view centre (needs &pause); work loop or walk in place
+ *                                    view centre (needs &pause); work loop or walk in place.
+ *                                    Without cam/model it frames open ground at face zoom.
  *
  * window.__lublin: { renderer, sim, ready, snapTo(x,z,zoom?,q?), find(model), stats() }
  * Read any of it from a script: node scripts/probe.mjs "<hash>" "__lublin.stats()"
  * `ready` turns true after the first frame with the scene populated.
  */
+/** x, z, zoom: open paving with no walls between the row and the camera at the default
+ *  rotation (checked by screenshot); zoom close enough to judge faces. */
+const LINEUP_SPOT = [-15.5, -25.5, 3.5] as const;
+
 export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: SimulationEngine): void {
   const api = {
     renderer,
@@ -22,7 +28,8 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
     ready: false,
     snapTo: (x: number, z: number, zoom?: number, q?: number) => renderer.snapTo(x, z, zoom, q),
     find: (model: string) => renderer.findInstances(model),
-    /** Last frame's draw calls and triangles (incl. shadow pass), citizens per character model. */
+    /** Last frame's draw calls and triangles (incl. shadow pass), the citizens' share of those
+     *  triangles for one pass, and citizens per character model. */
     stats: () => {
       const { calls, triangles } = renderer.renderer.info.render;
       const models: Record<string, number> = {};
@@ -30,7 +37,8 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
         const m = renderer.getCitizenArchetype(c);
         models[m] = (models[m] ?? 0) + 1;
       }
-      return { calls, triangles, citizens: sim.citizens.length, models };
+      return { calls, triangles, citizenTrianglesPerPass: renderer.citizenTriangles(),
+        citizens: sim.citizens.length, models };
     },
   };
   (window as unknown as { __lublin: typeof api }).__lublin = api;
@@ -56,6 +64,7 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
     if (hour !== undefined) sim.simTimeHours = hour;
     const lineup = params.get('lineup');
     if (lineup) {
+      if (!cam && !model) renderer.snapTo(LINEUP_SPOT[0], LINEUP_SPOT[1], LINEUP_SPOT[2]);
       const [arch, n, mode] = lineup.split(',');
       const m = mode === 'work' || mode === 'walk' ? mode : 'idle';
       const got = renderer.lineup(sim.citizens, arch, num(n) ?? 8, m);

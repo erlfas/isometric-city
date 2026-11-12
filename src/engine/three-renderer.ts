@@ -938,6 +938,10 @@ export class ThreeIsometricRenderer {
     return picked.length;
   }
 
+  public citizenTriangles(): number {
+    return this.crowd.drawnTriangles();
+  }
+
   public updateCitizens(citizens: Citizen[], dt: number): void {
     this.camera.updateMatrixWorld();
     this.crowd.update(citizens, (c) => this.getCitizenArchetype(c), dt, performance.now() * 0.001, this.camera);
