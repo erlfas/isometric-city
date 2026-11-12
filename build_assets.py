@@ -341,12 +341,18 @@ def add_half_timber_wall(bm, a, b, z0, z1, outward, mat_timber, mat_glass=None,
 
 
 def add_gable_roof(bm, cx, cy, z_base, w, d, h, overhang, mat_roof, mat_plaster, mat_timber,
-                   mat_glass=None, timber=0.18, proud=0.05):
-    """Saddle roof (ridge along Y) with framed plaster gables instead of tiled gable ends.
+                   mat_glass=None, timber=0.18, proud=0.05, frame=True, loft_windows=2,
+                   bargeboards=True, eave_lip=0.0):
+    """Saddle roof (ridge along Y) with proper gable walls instead of tiled gable ends.
 
     Slopes follow add_sloped_roof (eaves at z_base, extended by `overhang`). The gables sit
-    on the wall planes y = cy +/- d/2 as plaster pentagons that close up under the eaves,
-    framed with a sill, king post, collar beam and struts, plus bargeboards and a ridge.
+    on the wall planes y = cy +/- d/2 as pentagons in `mat_plaster` (plaster, boards or
+    brick) that close up under the eaves.
+      frame:        timber frame on the gable (sill, king post, collar, struts)
+      loft_windows: 0, 1 (centred) or 2 small gable windows (needs mat_glass)
+      bargeboards:  timber verge boards along the gable edges
+      eave_lip:     thickness (m) of a roof-material fascia under each eave, so thatch
+                    reads as a thick bundle instead of a paper-thin sheet
     """
     w2, d2 = w * 0.5 + overhang, d * 0.5 + overhang
     ridge = z_base + h
@@ -359,6 +365,9 @@ def add_gable_roof(bm, cx, cy, z_base, w, d, h, overhang, mat_roof, mat_plaster,
     bm.faces.new([v0, r0, r1, v3]).material_index = mat_roof
     bm.faces.new([v1, v2, r1, r0]).material_index = mat_roof
     add_box(bm, cx, cy, ridge + 0.05, 0.30, d2 * 2.0, 0.12, mat_idx=mat_roof)   # ridge cap
+    if eave_lip > 0:
+        for sx in (-1.0, 1.0):
+            add_box(bm, cx + sx * (w2 - 0.2), cy, z_base - eave_lip * 0.5 + 0.02, 0.4, d2 * 2.0, eave_lip, mat_idx=mat_roof)
 
     hw = w * 0.5
     z_edge = z_base + h * (overhang / w2)        # roof height straight above the wall line
@@ -370,26 +379,123 @@ def add_gable_roof(bm, cx, cy, z_base, w, d, h, overhang, mat_roof, mat_plaster,
         verts = [bm.verts.new(Vector((px, y, pz))) for px, pz in pts]
         bm.faces.new(verts).material_index = mat_plaster
 
-        # bargeboards along the verge
-        ye = cy + sgn * (d2 - 0.08)
-        add_timber_beam(bm, Vector((cx - w2, ye, z_base)), Vector((cx, ye, ridge)), width=0.16, depth=0.18, mat_idx=mat_timber)
-        add_timber_beam(bm, Vector((cx + w2, ye, z_base)), Vector((cx, ye, ridge)), width=0.16, depth=0.18, mat_idx=mat_timber)
+        if bargeboards:                                          # verge boards
+            ye = cy + sgn * (d2 - 0.08)
+            add_timber_beam(bm, Vector((cx - w2, ye, z_base)), Vector((cx, ye, ridge)), width=0.16, depth=0.18, mat_idx=mat_timber)
+            add_timber_beam(bm, Vector((cx + w2, ye, z_base)), Vector((cx, ye, ridge)), width=0.16, depth=0.18, mat_idx=mat_timber)
 
-        # gable frame, proud of the plaster
         yb = y + sgn * proud
         zc = z_base + h * 0.42                                   # collar height
-        xc = (w2 * (1.0 - (zc - z_base) / h)) - 0.25             # collar reaches the roof line
-        add_timber_beam(bm, Vector((cx - hw, yb, z_base + timber * 0.5)), Vector((cx + hw, yb, z_base + timber * 0.5)),
-                        width=timber, depth=timber, mat_idx=mat_timber)
-        add_timber_beam(bm, Vector((cx, yb, z_base + timber)), Vector((cx, yb, ridge - 0.3)),
-                        width=timber, depth=timber, mat_idx=mat_timber)
-        add_timber_beam(bm, Vector((cx - xc, yb, zc)), Vector((cx + xc, yb, zc)),
-                        width=timber, depth=timber, mat_idx=mat_timber)
+        if frame:                                                # gable frame, proud of the infill
+            xc = (w2 * (1.0 - (zc - z_base) / h)) - 0.25         # collar reaches the roof line
+            add_timber_beam(bm, Vector((cx - hw, yb, z_base + timber * 0.5)), Vector((cx + hw, yb, z_base + timber * 0.5)),
+                            width=timber, depth=timber, mat_idx=mat_timber)
+            add_timber_beam(bm, Vector((cx, yb, z_base + timber)), Vector((cx, yb, ridge - 0.3)),
+                            width=timber, depth=timber, mat_idx=mat_timber)
+            add_timber_beam(bm, Vector((cx - xc, yb, zc)), Vector((cx + xc, yb, zc)),
+                            width=timber, depth=timber, mat_idx=mat_timber)
+            for sx in (-1.0, 1.0):
+                add_timber_beam(bm, Vector((cx + sx * hw * 0.8, yb, z_base + timber)), Vector((cx + sx * 0.35, yb, zc - 0.1)),
+                                width=timber * 0.8, depth=timber * 0.8, mat_idx=mat_timber)
+        if mat_glass is not None and loft_windows:               # small loft windows
+            xs = (0.0,) if loft_windows == 1 else (-1.0, 1.0)
+            for wx in xs:
+                add_box(bm, cx + wx, y + sgn * 0.02, zc + (ridge - zc) * 0.3, 0.55, 0.04, 0.7, mat_idx=mat_glass)
+
+
+def add_wall_window(bm, c, along, out, w, h, mat_glass, mat_frame, frame=0.12, pointed=False,
+                    shutters_mat=None):
+    """Framed window on an axis-aligned wall.
+
+    c: Vector at the window centre on the wall face; along: wall direction; out: outward normal.
+    Dark glass sits just proud of the wall, framed by jambs, a deeper sill and a head.
+    pointed=True gives a Gothic lancet head (two raking members over a glass triangle).
+    shutters_mat: if set, two open board shutters hinge out beside the window.
+    """
+    along = Vector(along).normalized()
+    out = Vector(out).normalized()
+    up = Vector((0.0, 0.0, 1.0))
+    g = c + out * 0.02
+    ax = abs(along.x) > 0.5
+    add_box(bm, g.x, g.y, g.z, w if ax else 0.04, 0.04 if ax else w, h, mat_idx=mat_glass)
+    f = c + out * (frame * 0.5)
+    hw, hh = w * 0.5 + frame * 0.5, h * 0.5 + frame * 0.5
+
+    def beam(p, q, size=frame):
+        add_timber_beam(bm, p, q, width=size, depth=size, mat_idx=mat_frame)
+
+    beam(f - along * hw - up * hh, f - along * hw + up * hh)                    # jambs
+    beam(f + along * hw - up * hh, f + along * hw + up * hh)
+    beam(f - along * (hw + 0.08) - up * hh + out * 0.03,
+         f + along * (hw + 0.08) - up * hh + out * 0.03, frame * 1.3)          # sill
+    if pointed:
+        apex = f + up * (hh + w * 0.55)
+        beam(f - along * hw + up * hh, apex)
+        beam(f + along * hw + up * hh, apex)
+        tri = [g - along * (w * 0.5) + up * (h * 0.5), g + along * (w * 0.5) + up * (h * 0.5),
+               g + up * (h * 0.5 + w * 0.5)]
+        if (tri[1] - tri[0]).cross(tri[2] - tri[1]).dot(out) < 0:
+            tri.reverse()                                                        # face outward
+        bm.faces.new([bm.verts.new(p) for p in tri]).material_index = mat_glass
+    else:
+        beam(f - along * hw + up * hh, f + along * hw + up * hh)               # head
+    if shutters_mat is not None:
+        for s in (-1.0, 1.0):
+            p = c + along * s * (hw + w * 0.25 + 0.04) + out * 0.04
+            add_box(bm, p.x, p.y, p.z, (w * 0.5) if ax else 0.05, 0.05 if ax else (w * 0.5), h, mat_idx=shutters_mat)
+
+
+def add_log_corner_crossings(bm, cx, cy, w, d, z0, z1, course=0.25, stub=0.38, mat_idx=0):
+    """Saddle-notched corners (wiencie): log ends cross past each corner, alternating
+    direction every course as the wall logs interlock."""
+    n = int(round((z1 - z0) / course))
+    for k in range(n):
+        z = z0 + (k + 0.5) * course
         for sx in (-1.0, 1.0):
-            add_timber_beam(bm, Vector((cx + sx * hw * 0.8, yb, z_base + timber)), Vector((cx + sx * 0.35, yb, zc - 0.1)),
-                            width=timber * 0.8, depth=timber * 0.8, mat_idx=mat_timber)
-            if mat_glass is not None:                            # small loft windows
-                add_box(bm, cx + sx * 1.0, y + sgn * 0.02, zc + (ridge - zc) * 0.3, 0.55, 0.04, 0.7, mat_idx=mat_glass)
+            for sy in (-1.0, 1.0):
+                x, y = cx + sx * w * 0.5, cy + sy * d * 0.5
+                if k % 2 == 0:   # log of the X-running wall pokes out in X
+                    p, q = Vector((x - sx * 0.15, y, z)), Vector((x + sx * stub, y, z))
+                else:            # log of the Y-running wall pokes out in Y
+                    p, q = Vector((x, y - sy * 0.15, z)), Vector((x, y + sy * stub, z))
+                add_timber_beam(bm, p, q, width=course * 0.95, depth=course * 0.92, mat_idx=mat_idx)
+
+
+def add_crow_step_gable(bm, cx, y, sgn, z_base, w, steps, step_h, mat_brick, mat_plaster,
+                        thick=0.5, niches=True):
+    """Brick Gothic crow-stepped gable (szczyt schodkowy) standing proud of the roof.
+
+    sgn: -1 for a gable facing -Y, +1 for +Y. Each step narrows by w / (steps + 1) and is
+    capped with plaster coping; plaster pinnacles (sterczyny) stand on every step end, and
+    white lancet blind niches (blendy) decorate the face.
+    """
+    yc = y + sgn * thick * 0.5
+    shrink = w / (steps + 1)
+    for s in range(steps):
+        sw = w - s * shrink
+        sz = z_base + s * step_h
+        add_box(bm, cx, yc, sz + step_h * 0.5, sw, thick, step_h, mat_idx=mat_brick)
+        for sx in (-1.0, 1.0):
+            ex = cx + sx * (sw * 0.5 - 0.22)
+            add_box(bm, ex, yc, sz + step_h + 0.04, 0.5, thick + 0.08, 0.08, mat_idx=mat_plaster)   # coping
+            add_box(bm, ex, yc, sz + step_h + 0.5, 0.32, 0.32, 0.9, mat_idx=mat_plaster)           # pinnacle
+    add_box(bm, cx, yc, z_base + steps * step_h + 0.04, w - (steps - 1) * shrink, thick + 0.08, 0.08, mat_idx=mat_plaster)
+    if niches:
+        yf = y + sgn * (thick + 0.02)
+        nw = 0.55
+        for i in range(-(steps - 1), steps, 2):
+            nx = cx + i * shrink * 0.5
+            # tallest step whose half-width still clears this niche
+            top_s = max(s for s in range(steps) if (w - s * shrink) * 0.5 - 0.35 > abs(nx - cx) + nw * 0.5)
+            z_top = z_base + (top_s + 1) * step_h - 0.45
+            z_bot = z_base + 0.4
+            if z_top - z_bot < 0.8:
+                continue
+            add_box(bm, nx, yf, (z_bot + z_top) * 0.5, nw, 0.04, z_top - z_bot, mat_idx=mat_plaster)
+            tri = [Vector((nx - nw * 0.5, yf, z_top)), Vector((nx + nw * 0.5, yf, z_top)), Vector((nx, yf, z_top + nw * 0.55))]
+            if sgn > 0:
+                tri.reverse()
+            bm.faces.new([bm.verts.new(p) for p in tri]).material_index = mat_plaster
 
 
 def add_ashlar_chimney(bm, cx, cy, z_base, w, d, h, mat_stone=0, mat_soot=1):
@@ -833,25 +939,35 @@ def build_house_timber_log(mats):
 
     mat_list = [
         mats["timber_dark"], mats["timber_plank"], mats["roof_thatch"],
-        mats["stone_limestone"], mats["brick_gothic"], mats["foliage_green"]
+        mats["stone_limestone"], mats["brick_gothic"], mats["foliage_green"],
+        mats["glass_dark"]
     ]
 
-    # Limestone plinth
+    # Fieldstone plinth (Limestone -> StoneFieldstone at export)
     add_box(bm, 0, 0, 0.4, 8.4, 11.4, 0.8, mat_idx=3)
 
-    # Interlocking dark pine log body
-    add_box(bm, 0, 0, 3.2, 8.0, 11.0, 4.8, mat_idx=0)
-    for cx in [-4.15, 4.15]:
-        for cy in [-5.65, 5.65]:
-            add_box(bm, cx, cy, 3.2, 0.45, 0.45, 4.8, mat_idx=1)
+    # Interlocking log body (TimberDark -> TimberLog at export) with saddle-notched
+    # corners: log ends cross past every corner, alternating each 25 cm course.
+    W, D, z0, z1 = 8.0, 11.0, 0.8, 5.6
+    add_box(bm, 0, 0, (z0 + z1) * 0.5, W, D, z1 - z0, mat_idx=0)
+    add_log_corner_crossings(bm, 0, 0, W, D, z0, z1, course=0.25, mat_idx=0)
 
-    # Wooden framed door and windows with shutters
-    add_box(bm, 0, -5.55, 1.6, 1.2, 0.15, 2.2, mat_idx=1)
-    add_box(bm, -2.4, -5.55, 2.2, 1.0, 0.15, 1.2, mat_idx=1)
-    add_box(bm, 2.4, -5.55, 2.2, 1.0, 0.15, 1.2, mat_idx=1)
+    # Plank door and small framed windows with open board shutters
+    add_box(bm, 0, -D * 0.5 - 0.05, 0.8 + 1.05, 1.1, 0.12, 2.1, mat_idx=1)
+    front, flank = Vector((0, -1, 0)), Vector((1, 0, 0))
+    for wx in (-2.4, 2.4):
+        add_wall_window(bm, Vector((wx, -D * 0.5, 2.5)), (1, 0, 0), front, 0.8, 0.8,
+                        mat_glass=6, mat_frame=1, frame=0.12, shutters_mat=1)
+    for wy in (-2.8, 2.2):                                      # camera-facing +X flank
+        add_wall_window(bm, Vector((W * 0.5, wy, 2.5)), (0, 1, 0), flank, 0.8, 0.8,
+                        mat_glass=6, mat_frame=1, frame=0.12, shutters_mat=1)
+    add_wall_window(bm, Vector((-W * 0.5, 0.0, 2.5)), (0, 1, 0), (-1, 0, 0), 0.8, 0.8, mat_glass=6, mat_frame=1)
+    add_wall_window(bm, Vector((0.0, D * 0.5, 2.5)), (1, 0, 0), (0, 1, 0), 0.8, 0.8, mat_glass=6, mat_frame=1)
 
-    # Thick thatched roof with mossy eaves and ridge cross-timbers (kozły)
-    add_sloped_roof(bm, 0, 0, 5.6, 8.0, 11.0, 5.2, overhang=0.6, mat_idx=2)
+    # Thick thatched roof: board gables (vertical planks), deep thatch eaves, verge boards,
+    # one loft window, and ridge cross-timbers (kozly)
+    add_gable_roof(bm, 0, 0, z1, W, D, 5.2, overhang=0.6, mat_roof=2, mat_plaster=1, mat_timber=1,
+                   mat_glass=6, frame=False, loft_windows=1, eave_lip=0.3)
     for ypos in [-5.0, -2.5, 0.0, 2.5, 5.0]:
         add_box(bm, 0, ypos, 10.9, 0.8, 0.15, 0.5, mat_idx=0)
 
@@ -934,32 +1050,55 @@ def build_house_patrician_brick(mats):
 
     mat_list = [
         mats["brick_gothic"], mats["plaster_white"], mats["roof_tile_red"],
-        mats["stone_limestone"], mats["iron_wrought"]
+        mats["stone_limestone"], mats["iron_wrought"], mats["glass_dark"],
+        mats["timber_plank"]
     ]
 
     # Ground + 1st floors in Polish Gothic Brick: 9m wide x 14m deep x 8m high
-    add_box(bm, 0, 0, 4.0, 9.0, 14.0, 8.0, mat_idx=0)
+    W, D, H = 9.0, 14.0, 8.0
+    x2, y2 = W * 0.5, D * 0.5
+    add_box(bm, 0, 0, H * 0.5, W, D, H, mat_idx=0)
 
-    # White plaster gothic lancet niches (blendówki)
-    for x in [-2.5, 0, 2.5]:
-        add_box(bm, x, -7.05, 5.0, 1.4, 0.12, 4.5, mat_idx=1)
-        add_box(bm, x, -7.05, 2.0, 1.2, 0.12, 2.2, mat_idx=1)
+    # Limestone plinth, string course between storeys, and eaves cornice
+    add_box(bm, 0, 0, 0.35, W + 0.24, D + 0.24, 0.7, mat_idx=3)
+    add_box(bm, 0, 0, 4.1, W + 0.16, D + 0.16, 0.2, mat_idx=3)
+    add_box(bm, 0, 0, H - 0.12, W + 0.2, D + 0.2, 0.24, mat_idx=3)
 
-    # Arched limestone portal & cellar street trapdoor
-    add_box(bm, 0, -7.1, 1.5, 1.8, 0.2, 2.8, mat_idx=3)
+    # Corner buttresses on the street facade, with sloped-look limestone caps
+    for sx in (-1.0, 1.0):
+        add_box(bm, sx * (x2 - 0.35), -y2 - 0.25, 3.6, 0.7, 0.5, 7.2, mat_idx=0)
+        add_box(bm, sx * (x2 - 0.35), -y2 - 0.25, 7.3, 0.8, 0.6, 0.2, mat_idx=3)
+
+    # Pointed Gothic portal: limestone surround, plank door; cellar street trapdoor
+    portal = Vector((0.0, -y2, 0.7 + 1.35))
+    # (the window helper's "glass" panel is the plank door leaf here: mat_glass=6)
+    add_wall_window(bm, portal, (1, 0, 0), (0, -1, 0), 1.5, 2.7, mat_glass=6, mat_frame=3,
+                    frame=0.28, pointed=True)
     add_box(bm, 2.8, -7.6, 0.2, 1.6, 1.2, 0.3, mat_idx=4) # cellar iron hatch
 
-    # High pitched clay tile roof
-    add_sloped_roof(bm, 0, 0, 8.0, 9.0, 14.0, 6.0, overhang=0.2, mat_idx=2)
+    # Lancet windows with limestone surrounds: street facade, +X flank (camera side), -X, back
+    def lancet(c, along, out, w=1.0, h=1.8):
+        add_wall_window(bm, c, along, out, w, h, mat_glass=5, mat_frame=3, frame=0.14, pointed=True)
 
-    # Crow-stepped gable on front (Szczyt schodkowy ze sterczynami)
-    steps = 5
-    for s in range(steps):
-        sw = 9.0 - s * 1.6
-        sz = 8.0 + s * 1.3
-        add_box(bm, 0, -7.05, sz + 0.65, sw, 0.5, 1.3, mat_idx=0)
-        add_box(bm, -sw * 0.5 + 0.25, -7.05, sz + 1.6, 0.4, 0.4, 0.8, mat_idx=1)
-        add_box(bm, sw * 0.5 - 0.25, -7.05, sz + 1.6, 0.4, 0.4, 0.8, mat_idx=1)
+    for wx in (-2.6, 2.6):
+        lancet(Vector((wx, -y2, 2.2)), (1, 0, 0), (0, -1, 0), h=1.4)          # ground floor
+    for wx in (-2.6, 0.0, 2.6):
+        lancet(Vector((wx, -y2, 5.6)), (1, 0, 0), (0, -1, 0))                 # upper floor
+    for sx, out in ((1.0, (1, 0, 0)), (-1.0, (-1, 0, 0))):
+        for wy in (-4.5, -1.5, 1.5, 4.5):
+            lancet(Vector((sx * x2, wy, 2.2)), (0, 1, 0), out, h=1.4)
+            lancet(Vector((sx * x2, wy, 5.6)), (0, 1, 0), out)
+    for wx in (-2.6, 0.0, 2.6):
+        lancet(Vector((wx, y2, 5.6)), (1, 0, 0), (0, 1, 0))
+
+    # High pitched clay tile roof; gable ends are brick (hidden behind the crow steps)
+    add_gable_roof(bm, 0, 0, H, W, D, 6.0, overhang=0.2, mat_roof=2, mat_plaster=0, mat_timber=0,
+                   frame=False, loft_windows=0, bargeboards=False)
+
+    # Crow-stepped gables (szczyt schodkowy) with pinnacles and white lancet blind niches,
+    # on the street front and, plainer, on the back
+    add_crow_step_gable(bm, 0, -y2, -1.0, H, W, steps=5, step_h=1.3, mat_brick=0, mat_plaster=1)
+    add_crow_step_gable(bm, 0, y2, 1.0, H, W, steps=5, step_h=1.3, mat_brick=0, mat_plaster=1, niches=False)
 
     bm.normal_update()
     mesh = bpy.data.meshes.new("Mesh_HousePatrician")
