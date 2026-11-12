@@ -83,6 +83,18 @@ export interface Citizen {
   state?: string;
   animFrame?: number;
   isMoving?: boolean;
+  // Locomotion (simulation.ts / navigation): velocity m/s, height of the feet, gait
+  vx?: number;
+  vz?: number;
+  y?: number;
+  /** Inside a building that is not cut away: simulated, not drawn. */
+  hidden?: boolean;
+  /** Heading (radians, atan2(dx, dz)) to face while standing, e.g. at a workbench. */
+  faceYaw?: number;
+  /** Extra vertical offset this frame (stepping up a stair). */
+  stepBob?: number;
+  /** 'work' plays the kit's work loop whatever the schedule state. */
+  activityAnim?: string;
 }
 
 export interface StreetNode {

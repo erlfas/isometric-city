@@ -605,6 +605,9 @@ def gltf_yz(y, z):
     return [round(z, 4), round(-y, 4)]
 
 
+LOD1_RATIO = 0.22   # share of triangles kept in the distant-zoom copy of every kit mesh
+
+
 def export_kit(kit):
     clear_scene()
     objs = []
@@ -626,6 +629,18 @@ def export_kit(kit):
         bpy.context.collection.objects.link(obj)
         objs.append(obj)
         tris[name] = sum(len(p.vertices) - 2 for p in mesh.polygons)
+        # LOD1 twin for distant zoom (citizen-crowd.ts swaps every citizen to it when a figure
+        # is under ~40 px tall): same part and variant, decimated; export_apply bakes it.
+        lod = bpy.data.objects.new(f"lod1__{name}", mesh.copy())
+        lod["part"] = part
+        lod["variant"] = variant
+        lod["lod"] = 1
+        dec = lod.modifiers.new("lod1", "DECIMATE")
+        dec.decimate_type = "COLLAPSE"
+        dec.ratio = LOD1_RATIO
+        dec.use_collapse_triangulate = True
+        bpy.context.collection.objects.link(lod)
+        objs.append(lod)
     bpy.context.scene["kit"] = json.dumps({
         "pivots": {p: gltf_yz(*yz) for p, yz in BASE_PIVOTS.items()},
         "groups": kit.groups,
@@ -641,7 +656,7 @@ def export_kit(kit):
     bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True,
                               export_apply=True, export_yup=True, export_extras=True)
     base = sum(t for n, t in tris.items() if n.endswith("__base"))
-    print(f"Exported kit: {path} ({os.path.getsize(path):,} bytes | {len(objs)} meshes | "
+    print(f"Exported kit: {path} ({os.path.getsize(path):,} bytes | {len(tris)} meshes + LOD1 | "
           f"{base} base tris, {sum(tris.values())} incl. all variants)")
 
 

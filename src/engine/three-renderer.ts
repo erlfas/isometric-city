@@ -784,7 +784,13 @@ export class ThreeIsometricRenderer {
 
   public updateCitizens(citizens: Citizen[], dt: number): void {
     this.camera.updateMatrixWorld();
-    this.crowd.update(citizens, (c) => this.getCitizenArchetype(c), dt, performance.now() * 0.001, this.camera);
+    this.crowd.update(citizens, (c) => this.getCitizenArchetype(c), dt, performance.now() * 0.001, this.camera,
+      this.canvas.clientHeight);
+  }
+
+  /** Crowd detail level, citizens drawn, triangles per pass (debug stats). */
+  public crowdStats(): { lod: number; drawn: number; triangles: number } {
+    return this.crowd.stats();
   }
 
   public updateCamera(dt: number): void {

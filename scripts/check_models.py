@@ -110,6 +110,8 @@ def roof_areas(pos, idx):
 KIT_PARTS = {"body", "head", "arm_L", "arm_R", "leg_L", "leg_R"}
 KIT_BASE_TRIS = 1300      # always-drawn meshes of one kit
 KIT_VARIANT_TRIS = 450    # any single variant mesh
+KIT_LOD1_BASE_TRIS = 360  # LOD1 (distant zoom, extras.lod = 1) always-drawn meshes of one kit
+KIT_LOD1_VARIANT_TRIS = 130
 KIT_MAX_METALLIC = 0.3    # no environment map: more metallic renders near black (KEY_FINDINGS §18.6)
 KIT_MAX_VARIANTS = 48     # distinct variants per part: the crowd's per-instance mask (citizen-crowd.ts)
 KIT_MAX_SLOTS = 31        # colour slots per kit: columns of the crowd's slot texture
@@ -138,13 +140,19 @@ def check_kit(name, gltf):
             fail(f"{name}: material {m.get('name')} metallic {metal:.2f} > {KIT_MAX_METALLIC} (renders black)")
     if len(slots) > KIT_MAX_SLOTS:
         fail(f"{name}: {len(slots)} colour slots (max {KIT_MAX_SLOTS})")
-    base = 0
+    base = [0, 0]   # per LOD
     variants = {}
+    pieces = [set(), set()]  # (part, variant) per LOD: LOD1 must mirror LOD0
     for node in gltf.get("nodes", []):
         if "mesh" not in node:
             continue
         ex = node.get("extras", {})
         part, variant = ex.get("part"), ex.get("variant", "")
+        lod = int(ex.get("lod", 0))
+        if lod not in (0, 1):
+            fail(f"{name}: node '{node.get('name')}' has extras.lod {lod} (0 or 1)")
+            continue
+        pieces[lod].add((part, variant))
         if part not in KIT_PARTS:
             fail(f"{name}: node '{node.get('name')}' has no valid extras.part ({part})")
         for cond in filter(None, variant.split("+")):
@@ -160,15 +168,20 @@ def check_kit(name, gltf):
             tris += gltf["accessors"][acc]["count"] // 3
         if variant:
             variants.setdefault(part, set()).add(variant)
-            if tris > KIT_VARIANT_TRIS:
-                fail(f"{name}: variant mesh '{node.get('name')}' has {tris} tris (budget {KIT_VARIANT_TRIS})")
+            budget = KIT_LOD1_VARIANT_TRIS if lod else KIT_VARIANT_TRIS
+            if tris > budget:
+                fail(f"{name}: LOD{lod} variant mesh '{node.get('name')}' has {tris} tris (budget {budget})")
         else:
-            base += tris
+            base[lod] += tris
     for part, vs in variants.items():
         if len(vs) > KIT_MAX_VARIANTS:
             fail(f"{name}: part {part} has {len(vs)} variants (max {KIT_MAX_VARIANTS})")
-    if base > KIT_BASE_TRIS:
-        fail(f"{name}: kit base meshes have {base} tris (budget {KIT_BASE_TRIS})")
+    if base[0] > KIT_BASE_TRIS:
+        fail(f"{name}: kit base meshes have {base[0]} tris (budget {KIT_BASE_TRIS})")
+    if base[1] > KIT_LOD1_BASE_TRIS:
+        fail(f"{name}: kit LOD1 base meshes have {base[1]} tris (budget {KIT_LOD1_BASE_TRIS})")
+    for part, variant in sorted(pieces[0] ^ pieces[1]):
+        fail(f"{name}: ({part}, '{variant or 'base'}') exists in only one LOD (build_characters.py export_kit)")
     for g, opts in groups.items():
         for o, w in opts.items():
             if len(w) != 2:

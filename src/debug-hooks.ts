@@ -42,7 +42,7 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
         models[m] = (models[m] ?? 0) + 1;
       }
       return { calls, triangles, citizenTrianglesPerPass: renderer.citizenTriangles(),
-        citizens: sim.citizens.length, models, placed: renderer.placedCounts() };
+        crowd: renderer.crowdStats(), citizens: sim.citizens.length, models, placed: renderer.placedCounts() };
     },
   };
   (window as unknown as { __lublin: typeof api }).__lublin = api;
