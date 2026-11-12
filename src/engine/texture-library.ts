@@ -143,6 +143,9 @@ export class TextureLibrary {
         color: new THREE.Color(b.tint ?? 0xffffff),
         roughness: e.roughness,
         metalness: s.metalness ?? 0,
+        // Keep the exported face culling: Blender exports doubleSided materials, and
+        // dropping that (three.js defaults to FrontSide) hid any inward-wound face.
+        side: s.side,
       });
       // Our normal maps are OpenGL-style (+Y = image up), but the glTF export flips v
       // (v' = 1 - v), so texture "up" runs against +v here. Invert green to match.

@@ -265,7 +265,10 @@ def add_pantile_roof(bm, cx, cy, z_base, w, d, h, overhang=0.45, courses=8, mat_
         v1 = bm.verts.new(Vector((xl0, y_max, zl0 + 0.025)))
         v2 = bm.verts.new(Vector((xl1, y_max, zl1)))
         v3 = bm.verts.new(Vector((xl1, y_min, zl1)))
-        bm.faces.new([v0, v1, v2, v3]).material_index = mat_tile
+        # Winding: reversed so the normal points up/out. [v0, v1, v2, v3] faced down and
+        # inward, so every model using this helper rendered its roof dark or, with
+        # single-sided materials, not at all (the "cream plaster block" bug).
+        bm.faces.new([v3, v2, v1, v0]).material_index = mat_tile
 
         xr0, zr0 = cx + w2 * (1.0 - t0), z_base + h * t0
         xr1, zr1 = cx + w2 * (1.0 - t1), z_base + h * t1
@@ -273,7 +276,7 @@ def add_pantile_roof(bm, cx, cy, z_base, w, d, h, overhang=0.45, courses=8, mat_
         vr1 = bm.verts.new(Vector((xr0, y_min, zr0 + 0.025)))
         vr2 = bm.verts.new(Vector((xr1, y_min, zr1)))
         vr3 = bm.verts.new(Vector((xr1, y_max, zr1)))
-        bm.faces.new([vr0, vr1, vr2, vr3]).material_index = mat_tile
+        bm.faces.new([vr3, vr2, vr1, vr0]).material_index = mat_tile
 
     add_box(bm, cx, cy, r_z + 0.08, 0.32, d2 * 2.0, 0.16, mat_idx=mat_tile)
 
