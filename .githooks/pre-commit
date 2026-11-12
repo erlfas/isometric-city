@@ -4,7 +4,7 @@
 set -e
 
 # Node: PATH, else the default Windows install.
-if ! command -v npm >/dev/null 2>&1 && [ -d "/c/Program Files/nodejs" ]; then
+if ! command -v node >/dev/null 2>&1 && [ -d "/c/Program Files/nodejs" ]; then
   PATH="/c/Program Files/nodejs:$PATH"
 fi
 
