@@ -105,6 +105,43 @@ SURNAMES_OR_EPITHETS = [
     "von Thorn", "von Breslau", "z Kazimierza", "Węgrzyn", "Ruś", "Litwin"
 ]
 
+WOODCUTTER_CRAFT = {"id": "woodcutter", "name": "Woodcutter", "sign": "Felling Axe & Log", "guild": "Sawyers & Woodcutters",
+                    "wealth": "plebeian"}
+LUMBER_YARDS = 3        # outermost craftless Kraków-suburb parcels become logging yards
+WOODCUTTERS = 18        # suburb men moved from the wood trades to the yards
+
+
+def assign_woodcutters(parcels, citizens):
+    """Post-pass with its own RNG, so every other parcel and citizen stays as generated.
+    Yards render as logging camps (buildingType contains 'logging', src/engine/parcel-kind.ts);
+    'Woodcutter' maps to char_woodcutter (three-renderer.ts getCitizenArchetype)."""
+    rng = random.Random(1392_7)
+    by_id = {p["id"]: p for p in parcels}
+    suburb = [p for p in parcels if p["district"] == "krakow_suburb" and not p.get("isShed")
+              and not p.get("craft") and not p["id"].endswith("player_workshop")]
+    yards = sorted(suburb, key=lambda p: -math.hypot(p["x"], p["z"]))[:LUMBER_YARDS]
+    for y in yards:
+        y["buildingType"] = "sawyer_logging_yard"
+        y["craft"] = WOODCUTTER_CRAFT
+    wood_trades = {"Carpenter", "Wheelwright", "Cooper"}
+    pool = [c for c in citizens if c["gender"] == "male" and c["trade"] in wood_trades
+            and by_id.get(c["homeParcelId"], {}).get("district") == "krakow_suburb"
+            and c["guildRank"] in ("apprentice", "journeyman", "laborer")]
+    for i, c in enumerate(rng.sample(pool, min(WOODCUTTERS, len(pool)))):
+        yard = yards[i % len(yards)]
+        old = by_id.get(c["workParcelId"])
+        if old and c["id"] in old["workplaceFor"]:
+            old["workplaceFor"].remove(c["id"])
+        yard["workplaceFor"].append(c["id"])
+        for s in c["schedule"]:
+            if s["location"] == c["workParcelId"]:
+                s["location"] = yard["id"]
+            s["task"] = s["task"].replace(f"({c['trade']})", "(Woodcutter)")
+        c["trade"] = "Woodcutter"
+        c["workParcelId"] = yard["id"]
+        c["carriedItem"] = "Felling Axe & Iron Wedges"
+
+
 def generate_lublin_city_plan():
     print("[CityPlanGenerator] Synthesizing Lublin 1392 morphology & agent schedules...")
 
@@ -887,6 +924,7 @@ def generate_lublin_city_plan():
             "schedule": schedule
         })
 
+    assign_woodcutters(parcels, citizens)
     print(f"[CityPlanGenerator] Simulated {len(citizens)} persistent citizens across {len(home_parcels)} households.")
 
     # 4. Royal Fair Systemic Events Specification
@@ -948,7 +986,7 @@ def generate_lublin_city_plan():
         "fairEvents": fair_events,
         "houseTypesCatalog": HOUSE_TYPES,
         "shedTypesCatalog": SHED_TYPES,
-        "craftsCatalog": CRAFTS
+        "craftsCatalog": CRAFTS + [WOODCUTTER_CRAFT]
     }
 
     # Save to public/city_plan.json and root city_plan.json

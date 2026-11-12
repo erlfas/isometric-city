@@ -1708,7 +1708,6 @@
         "cit_0471",
         "cit_0603",
         "cit_0749",
-        "cit_0971",
         "cit_0977",
         "cit_1051"
       ],
@@ -5996,7 +5995,6 @@
       ],
       "workplaceFor": [
         "cit_0002",
-        "cit_0101",
         "cit_0437",
         "cit_0553",
         "cit_0561",
@@ -7274,9 +7272,7 @@
       "workplaceFor": [
         "cit_0018",
         "cit_0234",
-        "cit_0372",
         "cit_0535",
-        "cit_0546",
         "cit_0755",
         "cit_0955",
         "cit_1115"
@@ -8166,10 +8162,8 @@
       ],
       "workplaceFor": [
         "cit_0041",
-        "cit_0205",
         "cit_0320",
         "cit_0571",
-        "cit_0606",
         "cit_0683",
         "cit_0687",
         "cit_0922",
@@ -9030,7 +9024,6 @@
       "workplaceFor": [
         "cit_0026",
         "cit_0143",
-        "cit_0221",
         "cit_0481",
         "cit_0594",
         "cit_0704",
@@ -9278,7 +9271,6 @@
         "cit_0163",
         "cit_0591",
         "cit_0750",
-        "cit_0833",
         "cit_1111",
         "cit_1169",
         "cit_1245",
@@ -9645,7 +9637,6 @@
       ],
       "workplaceFor": [
         "cit_0064",
-        "cit_0110",
         "cit_0150",
         "cit_0236",
         "cit_0781",
@@ -10749,7 +10740,6 @@
         "cit_0893",
         "cit_1003",
         "cit_1011",
-        "cit_1107",
         "cit_1143",
         "cit_1262",
         "cit_1293"
@@ -13933,10 +13923,7 @@
         "cit_0081",
         "cit_0464",
         "cit_0534",
-        "cit_0576",
-        "cit_0848",
-        "cit_0850",
-        "cit_0902"
+        "cit_0850"
       ],
       "commodities": {
         "rye_sacks": 2,
@@ -14120,13 +14107,11 @@
         "cit_0362",
         "cit_0376",
         "cit_0423",
-        "cit_0451",
         "cit_0789",
         "cit_0824",
         "cit_1032",
         "cit_1063",
-        "cit_1173",
-        "cit_1254"
+        "cit_1173"
       ],
       "commodities": {
         "rye_sacks": 8,
@@ -14707,8 +14692,6 @@
       "workplaceFor": [
         "cit_0132",
         "cit_0206",
-        "cit_0355",
-        "cit_0379",
         "cit_0607",
         "cit_0729",
         "cit_0741",
@@ -15545,7 +15528,6 @@
         "cit_0762"
       ],
       "workplaceFor": [
-        "cit_0069",
         "cit_0097",
         "cit_0148",
         "cit_0307",
@@ -15575,9 +15557,15 @@
       "depth": 12.0,
       "orientation": 338.8,
       "elevation": 0.5,
-      "buildingType": "blacksmith_open_forge_timber",
+      "buildingType": "sawyer_logging_yard",
       "isShed": false,
-      "craft": null,
+      "craft": {
+        "id": "woodcutter",
+        "name": "Woodcutter",
+        "sign": "Felling Axe & Log",
+        "guild": "Sawyers & Woodcutters",
+        "wealth": "plebeian"
+      },
       "aging": {
         "ageYears": 50,
         "ridgeSag": 0.19,
@@ -15600,7 +15588,14 @@
         "cit_1377",
         "cit_1460"
       ],
-      "workplaceFor": [],
+      "workplaceFor": [
+        "cit_0101",
+        "cit_0355",
+        "cit_0848",
+        "cit_0205",
+        "cit_0833",
+        "cit_0110"
+      ],
       "commodities": {
         "rye_sacks": 4,
         "salted_herring_kilderkins": 6,
@@ -15924,9 +15919,15 @@
       "depth": 12.0,
       "orientation": 337.4,
       "elevation": 0.5,
-      "buildingType": "two_family_timber_longhouse",
+      "buildingType": "sawyer_logging_yard",
       "isShed": false,
-      "craft": null,
+      "craft": {
+        "id": "woodcutter",
+        "name": "Woodcutter",
+        "sign": "Felling Axe & Log",
+        "guild": "Sawyers & Woodcutters",
+        "wealth": "plebeian"
+      },
       "aging": {
         "ageYears": 36,
         "ridgeSag": 0.113,
@@ -15950,7 +15951,14 @@
         "cit_1189",
         "cit_1345"
       ],
-      "workplaceFor": [],
+      "workplaceFor": [
+        "cit_1254",
+        "cit_0971",
+        "cit_0576",
+        "cit_0221",
+        "cit_0379",
+        "cit_0902"
+      ],
       "commodities": {
         "rye_sacks": 3,
         "salted_herring_kilderkins": 4,
@@ -16127,9 +16135,15 @@
       "depth": 12.0,
       "orientation": 334.3,
       "elevation": 0.5,
-      "buildingType": "timber_shingle_cottage_small",
+      "buildingType": "sawyer_logging_yard",
       "isShed": false,
-      "craft": null,
+      "craft": {
+        "id": "woodcutter",
+        "name": "Woodcutter",
+        "sign": "Felling Axe & Log",
+        "guild": "Sawyers & Woodcutters",
+        "wealth": "plebeian"
+      },
       "aging": {
         "ageYears": 77,
         "ridgeSag": 0.183,
@@ -16150,7 +16164,14 @@
         "cit_0663",
         "cit_1084"
       ],
-      "workplaceFor": [],
+      "workplaceFor": [
+        "cit_0451",
+        "cit_0606",
+        "cit_1107",
+        "cit_0069",
+        "cit_0372",
+        "cit_0546"
+      ],
       "commodities": {
         "rye_sacks": 14,
         "salted_herring_kilderkins": 0,
@@ -21779,32 +21800,32 @@
       "id": "cit_0069",
       "name": "Sędziwój Krawiec",
       "gender": "male",
-      "trade": "Cooper",
+      "trade": "Woodcutter",
       "guildRank": "journeyman",
       "wealthClass": "artisan",
       "homeParcelId": "p_305",
       "bedNumber": 1,
-      "workParcelId": "p_305",
+      "workParcelId": "p_317",
       "walletGroschen": 243,
-      "carriedItem": "Craft Tools of Cooper",
+      "carriedItem": "Felling Axe & Iron Wedges",
       "schedule": [
         {
           "hour": 5,
           "state": "WAKING",
-          "location": "p_305",
+          "location": "p_317",
           "task": "Kindling morning peat hearth and praying"
         },
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_305",
+          "location": "p_317",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_305",
-          "task": "Guild trade / fair business (Cooper)"
+          "location": "p_317",
+          "task": "Guild trade / fair business (Woodcutter)"
         },
         {
           "hour": 12,
@@ -21815,7 +21836,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_305",
+          "location": "p_317",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -21827,13 +21848,13 @@
         {
           "hour": 21,
           "state": "RETURNING",
-          "location": "p_305",
+          "location": "p_317",
           "task": "Returning home before gate portcullis drops"
         },
         {
           "hour": 22,
           "state": "SLEEPING",
-          "location": "p_305",
+          "location": "p_317",
           "task": "Sound asleep in straw pallet bed"
         }
       ]
@@ -23783,14 +23804,14 @@
       "id": "cit_0101",
       "name": "Jakub Litwin",
       "gender": "male",
-      "trade": "Carpenter",
+      "trade": "Woodcutter",
       "guildRank": "laborer",
       "wealthClass": "plebeian",
       "homeParcelId": "p_303",
       "bedNumber": 1,
-      "workParcelId": "p_116",
+      "workParcelId": "p_306",
       "walletGroschen": 346,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Felling Axe & Iron Wedges",
       "schedule": [
         {
           "hour": 5,
@@ -23801,14 +23822,14 @@
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_116",
+          "location": "p_306",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_116",
-          "task": "Guild trade / fair business (Carpenter)"
+          "location": "p_306",
+          "task": "Guild trade / fair business (Woodcutter)"
         },
         {
           "hour": 12,
@@ -23819,7 +23840,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_116",
+          "location": "p_306",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -24350,14 +24371,14 @@
       "id": "cit_0110",
       "name": "Piotr Kmieć",
       "gender": "male",
-      "trade": "Wheelwright",
+      "trade": "Woodcutter",
       "guildRank": "journeyman",
       "wealthClass": "plebeian",
       "homeParcelId": "p_250",
       "bedNumber": 1,
-      "workParcelId": "p_188",
+      "workParcelId": "p_306",
       "walletGroschen": 138,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Felling Axe & Iron Wedges",
       "schedule": [
         {
           "hour": 5,
@@ -24368,14 +24389,14 @@
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_188",
+          "location": "p_306",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_188",
-          "task": "Guild trade / fair business (Wheelwright)"
+          "location": "p_306",
+          "task": "Guild trade / fair business (Woodcutter)"
         },
         {
           "hour": 12,
@@ -24386,7 +24407,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_188",
+          "location": "p_306",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -30287,14 +30308,14 @@
       "id": "cit_0205",
       "name": "Jan Rzeźnik",
       "gender": "male",
-      "trade": "Wheelwright",
+      "trade": "Woodcutter",
       "guildRank": "journeyman",
       "wealthClass": "plebeian",
       "homeParcelId": "p_303",
       "bedNumber": 2,
-      "workParcelId": "p_159",
+      "workParcelId": "p_306",
       "walletGroschen": 78,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Felling Axe & Iron Wedges",
       "schedule": [
         {
           "hour": 5,
@@ -30305,14 +30326,14 @@
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_159",
+          "location": "p_306",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_159",
-          "task": "Guild trade / fair business (Wheelwright)"
+          "location": "p_306",
+          "task": "Guild trade / fair business (Woodcutter)"
         },
         {
           "hour": 12,
@@ -30323,7 +30344,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_159",
+          "location": "p_306",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -31295,14 +31316,14 @@
       "id": "cit_0221",
       "name": "Jodok Kowal",
       "gender": "male",
-      "trade": "Cooper",
+      "trade": "Woodcutter",
       "guildRank": "journeyman",
       "wealthClass": "plebeian",
       "homeParcelId": "p_225",
       "bedNumber": 3,
-      "workParcelId": "p_176",
+      "workParcelId": "p_313",
       "walletGroschen": 270,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Felling Axe & Iron Wedges",
       "schedule": [
         {
           "hour": 5,
@@ -31313,14 +31334,14 @@
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_176",
+          "location": "p_313",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_176",
-          "task": "Guild trade / fair business (Cooper)"
+          "location": "p_313",
+          "task": "Guild trade / fair business (Woodcutter)"
         },
         {
           "hour": 12,
@@ -31331,7 +31352,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_176",
+          "location": "p_313",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -39677,32 +39698,32 @@
       "id": "cit_0355",
       "name": "Jan z Kazimierza",
       "gender": "male",
-      "trade": "Wheelwright",
+      "trade": "Woodcutter",
       "guildRank": "apprentice",
       "wealthClass": "artisan",
       "homeParcelId": "p_289",
       "bedNumber": 3,
-      "workParcelId": "p_289",
+      "workParcelId": "p_306",
       "walletGroschen": 43,
-      "carriedItem": "Craft Tools of Wheelwright",
+      "carriedItem": "Felling Axe & Iron Wedges",
       "schedule": [
         {
           "hour": 5,
           "state": "WAKING",
-          "location": "p_289",
+          "location": "p_306",
           "task": "Kindling morning peat hearth and praying"
         },
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_289",
+          "location": "p_306",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_289",
-          "task": "Guild trade / fair business (Wheelwright)"
+          "location": "p_306",
+          "task": "Guild trade / fair business (Woodcutter)"
         },
         {
           "hour": 12,
@@ -39713,7 +39734,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_289",
+          "location": "p_306",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -39725,13 +39746,13 @@
         {
           "hour": 21,
           "state": "RETURNING",
-          "location": "p_289",
+          "location": "p_306",
           "task": "Returning home before gate portcullis drops"
         },
         {
           "hour": 22,
           "state": "SLEEPING",
-          "location": "p_289",
+          "location": "p_306",
           "task": "Sound asleep in straw pallet bed"
         }
       ]
@@ -40736,14 +40757,14 @@
       "id": "cit_0372",
       "name": "Jakub Szewc",
       "gender": "male",
-      "trade": "Cooper",
+      "trade": "Woodcutter",
       "guildRank": "laborer",
       "wealthClass": "plebeian",
       "homeParcelId": "p_315",
       "bedNumber": 2,
-      "workParcelId": "p_140",
+      "workParcelId": "p_317",
       "walletGroschen": 340,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Felling Axe & Iron Wedges",
       "schedule": [
         {
           "hour": 5,
@@ -40754,14 +40775,14 @@
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_140",
+          "location": "p_317",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_140",
-          "task": "Guild trade / fair business (Cooper)"
+          "location": "p_317",
+          "task": "Guild trade / fair business (Woodcutter)"
         },
         {
           "hour": 12,
@@ -40772,7 +40793,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_140",
+          "location": "p_317",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -41177,14 +41198,14 @@
       "id": "cit_0379",
       "name": "Jakub Czapla",
       "gender": "male",
-      "trade": "Wheelwright",
+      "trade": "Woodcutter",
       "guildRank": "laborer",
       "wealthClass": "plebeian",
       "homeParcelId": "p_266",
       "bedNumber": 1,
-      "workParcelId": "p_289",
+      "workParcelId": "p_313",
       "walletGroschen": 338,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Felling Axe & Iron Wedges",
       "schedule": [
         {
           "hour": 5,
@@ -41195,14 +41216,14 @@
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_289",
+          "location": "p_313",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_289",
-          "task": "Guild trade / fair business (Wheelwright)"
+          "location": "p_313",
+          "task": "Guild trade / fair business (Woodcutter)"
         },
         {
           "hour": 12,
@@ -41213,7 +41234,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_289",
+          "location": "p_313",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -45677,14 +45698,14 @@
       "id": "cit_0451",
       "name": "Stanisław Piwowar",
       "gender": "male",
-      "trade": "Carpenter",
+      "trade": "Woodcutter",
       "guildRank": "laborer",
       "wealthClass": "plebeian",
       "homeParcelId": "p_241",
       "bedNumber": 2,
-      "workParcelId": "p_277",
+      "workParcelId": "p_317",
       "walletGroschen": 200,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Felling Axe & Iron Wedges",
       "schedule": [
         {
           "hour": 5,
@@ -45695,14 +45716,14 @@
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_277",
+          "location": "p_317",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_277",
-          "task": "Guild trade / fair business (Carpenter)"
+          "location": "p_317",
+          "task": "Guild trade / fair business (Woodcutter)"
         },
         {
           "hour": 12,
@@ -45713,7 +45734,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_277",
+          "location": "p_317",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -51626,14 +51647,14 @@
       "id": "cit_0546",
       "name": "Marcin z Chodla",
       "gender": "male",
-      "trade": "Cooper",
+      "trade": "Woodcutter",
       "guildRank": "laborer",
       "wealthClass": "plebeian",
       "homeParcelId": "p_245",
       "bedNumber": 1,
-      "workParcelId": "p_140",
+      "workParcelId": "p_317",
       "walletGroschen": 298,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Felling Axe & Iron Wedges",
       "schedule": [
         {
           "hour": 5,
@@ -51644,14 +51665,14 @@
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_140",
+          "location": "p_317",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_140",
-          "task": "Guild trade / fair business (Cooper)"
+          "location": "p_317",
+          "task": "Guild trade / fair business (Woodcutter)"
         },
         {
           "hour": 12,
@@ -51662,7 +51683,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_140",
+          "location": "p_317",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -53504,14 +53525,14 @@
       "id": "cit_0576",
       "name": "Lutko z Kazimierza",
       "gender": "male",
-      "trade": "Cooper",
+      "trade": "Woodcutter",
       "guildRank": "journeyman",
       "wealthClass": "plebeian",
       "homeParcelId": "p_284",
       "bedNumber": 6,
-      "workParcelId": "p_274",
+      "workParcelId": "p_313",
       "walletGroschen": 141,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Felling Axe & Iron Wedges",
       "schedule": [
         {
           "hour": 5,
@@ -53522,14 +53543,14 @@
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_274",
+          "location": "p_313",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_274",
-          "task": "Guild trade / fair business (Cooper)"
+          "location": "p_313",
+          "task": "Guild trade / fair business (Woodcutter)"
         },
         {
           "hour": 12,
@@ -53540,7 +53561,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_274",
+          "location": "p_313",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -55382,14 +55403,14 @@
       "id": "cit_0606",
       "name": "Michał Kmieć",
       "gender": "male",
-      "trade": "Wheelwright",
+      "trade": "Woodcutter",
       "guildRank": "laborer",
       "wealthClass": "plebeian",
       "homeParcelId": "p_256",
       "bedNumber": 4,
-      "workParcelId": "p_159",
+      "workParcelId": "p_317",
       "walletGroschen": 150,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Felling Axe & Iron Wedges",
       "schedule": [
         {
           "hour": 5,
@@ -55400,14 +55421,14 @@
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_159",
+          "location": "p_317",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_159",
-          "task": "Guild trade / fair business (Wheelwright)"
+          "location": "p_317",
+          "task": "Guild trade / fair business (Woodcutter)"
         },
         {
           "hour": 12,
@@ -55418,7 +55439,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_159",
+          "location": "p_317",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -69587,14 +69608,14 @@
       "id": "cit_0833",
       "name": "Klemens Szmatruz",
       "gender": "male",
-      "trade": "Carpenter",
+      "trade": "Woodcutter",
       "guildRank": "laborer",
       "wealthClass": "plebeian",
       "homeParcelId": "p_218",
       "bedNumber": 4,
-      "workParcelId": "p_181",
+      "workParcelId": "p_306",
       "walletGroschen": 337,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Felling Axe & Iron Wedges",
       "schedule": [
         {
           "hour": 5,
@@ -69605,14 +69626,14 @@
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_181",
+          "location": "p_306",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_181",
-          "task": "Guild trade / fair business (Carpenter)"
+          "location": "p_306",
+          "task": "Guild trade / fair business (Woodcutter)"
         },
         {
           "hour": 12,
@@ -69623,7 +69644,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_181",
+          "location": "p_306",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -70520,43 +70541,43 @@
       "id": "cit_0848",
       "name": "Biernacik Złotnik",
       "gender": "male",
-      "trade": "Cooper",
+      "trade": "Woodcutter",
       "guildRank": "journeyman",
       "wealthClass": "plebeian",
       "homeParcelId": "p_274",
       "bedNumber": 3,
-      "workParcelId": "p_274",
+      "workParcelId": "p_306",
       "walletGroschen": 312,
-      "carriedItem": "Craft Tools of Cooper",
+      "carriedItem": "Felling Axe & Iron Wedges",
       "schedule": [
         {
           "hour": 5,
           "state": "WAKING",
-          "location": "p_274",
+          "location": "p_306",
           "task": "Kindling morning peat hearth and praying"
         },
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_274",
+          "location": "p_306",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_274",
-          "task": "Guild trade / fair business (Cooper)"
+          "location": "p_306",
+          "task": "Guild trade / fair business (Woodcutter)"
         },
         {
           "hour": 12,
           "state": "EATING",
-          "location": "p_274",
+          "location": "p_306",
           "task": "Midday bread, roast pork & small beer"
         },
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_274",
+          "location": "p_306",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -70568,13 +70589,13 @@
         {
           "hour": 21,
           "state": "RETURNING",
-          "location": "p_274",
+          "location": "p_306",
           "task": "Returning home before gate portcullis drops"
         },
         {
           "hour": 22,
           "state": "SLEEPING",
-          "location": "p_274",
+          "location": "p_306",
           "task": "Sound asleep in straw pallet bed"
         }
       ]
@@ -73898,32 +73919,32 @@
       "id": "cit_0902",
       "name": "Jodok Włodarz",
       "gender": "male",
-      "trade": "Cooper",
+      "trade": "Woodcutter",
       "guildRank": "apprentice",
       "wealthClass": "plebeian",
       "homeParcelId": "p_274",
       "bedNumber": 4,
-      "workParcelId": "p_274",
+      "workParcelId": "p_313",
       "walletGroschen": 335,
-      "carriedItem": "Craft Tools of Cooper",
+      "carriedItem": "Felling Axe & Iron Wedges",
       "schedule": [
         {
           "hour": 5,
           "state": "WAKING",
-          "location": "p_274",
+          "location": "p_313",
           "task": "Kindling morning peat hearth and praying"
         },
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_274",
+          "location": "p_313",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_274",
-          "task": "Guild trade / fair business (Cooper)"
+          "location": "p_313",
+          "task": "Guild trade / fair business (Woodcutter)"
         },
         {
           "hour": 12,
@@ -73934,7 +73955,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_274",
+          "location": "p_313",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -73946,13 +73967,13 @@
         {
           "hour": 21,
           "state": "RETURNING",
-          "location": "p_274",
+          "location": "p_313",
           "task": "Returning home before gate portcullis drops"
         },
         {
           "hour": 22,
           "state": "SLEEPING",
-          "location": "p_274",
+          "location": "p_313",
           "task": "Sound asleep in straw pallet bed"
         }
       ]
@@ -78221,14 +78242,14 @@
       "id": "cit_0971",
       "name": "Paweł Białobłocki",
       "gender": "male",
-      "trade": "Cooper",
+      "trade": "Woodcutter",
       "guildRank": "laborer",
       "wealthClass": "plebeian",
       "homeParcelId": "p_292",
       "bedNumber": 5,
-      "workParcelId": "p_028",
+      "workParcelId": "p_313",
       "walletGroschen": 281,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Felling Axe & Iron Wedges",
       "schedule": [
         {
           "hour": 5,
@@ -78239,14 +78260,14 @@
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_028",
+          "location": "p_313",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_028",
-          "task": "Guild trade / fair business (Cooper)"
+          "location": "p_313",
+          "task": "Guild trade / fair business (Woodcutter)"
         },
         {
           "hour": 12,
@@ -78257,7 +78278,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_028",
+          "location": "p_313",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -86729,14 +86750,14 @@
       "id": "cit_1107",
       "name": "Maciej von Breslau",
       "gender": "male",
-      "trade": "Cooper",
+      "trade": "Woodcutter",
       "guildRank": "journeyman",
       "wealthClass": "plebeian",
       "homeParcelId": "p_259",
       "bedNumber": 7,
-      "workParcelId": "p_211",
+      "workParcelId": "p_317",
       "walletGroschen": 254,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Felling Axe & Iron Wedges",
       "schedule": [
         {
           "hour": 5,
@@ -86747,14 +86768,14 @@
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_211",
+          "location": "p_317",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_211",
-          "task": "Guild trade / fair business (Cooper)"
+          "location": "p_317",
+          "task": "Guild trade / fair business (Woodcutter)"
         },
         {
           "hour": 12,
@@ -86765,7 +86786,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_211",
+          "location": "p_317",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -95930,32 +95951,32 @@
       "id": "cit_1254",
       "name": "Jan z Lublina",
       "gender": "male",
-      "trade": "Carpenter",
+      "trade": "Woodcutter",
       "guildRank": "apprentice",
       "wealthClass": "artisan",
       "homeParcelId": "p_277",
       "bedNumber": 8,
-      "workParcelId": "p_277",
+      "workParcelId": "p_313",
       "walletGroschen": 227,
-      "carriedItem": "Craft Tools of Carpenter",
+      "carriedItem": "Felling Axe & Iron Wedges",
       "schedule": [
         {
           "hour": 5,
           "state": "WAKING",
-          "location": "p_277",
+          "location": "p_313",
           "task": "Kindling morning peat hearth and praying"
         },
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_277",
+          "location": "p_313",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_277",
-          "task": "Guild trade / fair business (Carpenter)"
+          "location": "p_313",
+          "task": "Guild trade / fair business (Woodcutter)"
         },
         {
           "hour": 12,
@@ -95966,7 +95987,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_277",
+          "location": "p_313",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -95978,13 +95999,13 @@
         {
           "hour": 21,
           "state": "RETURNING",
-          "location": "p_277",
+          "location": "p_313",
           "task": "Returning home before gate portcullis drops"
         },
         {
           "hour": 22,
           "state": "SLEEPING",
-          "location": "p_277",
+          "location": "p_313",
           "task": "Sound asleep in straw pallet bed"
         }
       ]
@@ -111658,6 +111679,13 @@
       "sign": "Dipped Beeswax Candle",
       "guild": "Chandlers Guild",
       "wealth": "artisan"
+    },
+    {
+      "id": "woodcutter",
+      "name": "Woodcutter",
+      "sign": "Felling Axe & Log",
+      "guild": "Sawyers & Woodcutters",
+      "wealth": "plebeian"
     }
   ]
 }

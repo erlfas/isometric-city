@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Citizen } from '../types';
+import { WORK_ANIMS, type WorkAnim, type WorkPose } from './work-anims';
 
 /**
  * Draws all citizens with one InstancedMesh per (archetype, mesh piece).
@@ -107,6 +108,7 @@ const _parts = PARTS.map(() => new THREE.Matrix4());
 const _frustum = new THREE.Frustum();
 const _viewProj = new THREE.Matrix4();
 const _sphere = new THREE.Sphere(new THREE.Vector3(), CULL_RADIUS);
+const _pose: WorkPose = { armL: 0, armR: 0, headPitch: 0, headYaw: 0, lean: 0 };
 
 /** out = T(0,py,pz) * R(pitch about X, yaw about Y) * T(0,-py,-pz) */
 function pivotRotation(out: THREE.Matrix4, py: number, pz: number, pitch: number, yaw: number): void {
@@ -124,7 +126,7 @@ export class CitizenCrowd {
   private slots: Slot[][] = [];
   private motion: Motion[] = [];
   private builtFor: Citizen[] | null = null;
-  private workAnim: string[] = [];
+  private workAnim: (WorkAnim | null)[] = [];
   private phaseOffset: number[] = [];
   private looks: { arch: Archetype; look: Look }[] = [];
   private posed: { ids: Set<string>; yaw: number; walk: boolean } | null = null;
@@ -229,7 +231,7 @@ export class CitizenCrowd {
       this.phaseOffset[i] = rnd() * 100;
       if (!arch) return;
       const look = this.look(c, arch.meta, rnd);
-      this.workAnim[i] = arch.meta?.anim.work ?? 'idle';
+      this.workAnim[i] = WORK_ANIMS[arch.meta?.anim.work ?? ''] ?? null;
       if (!members.has(arch)) members.set(arch, arch.pieces.map(() => []));
       const lists = members.get(arch)!;
       arch.pieces.forEach((p, k) => {
@@ -338,26 +340,14 @@ export class CitizenCrowd {
       const still = 1 - m.amp;
       if (still > 0.01) {
         const breathe = Math.sin(t * 2.2) * 0.03;
-        let wl = breathe, wr = -breathe, hp = 0, hy = Math.sin(t * 0.37) * 0.35, ln = 0;
-        if (c.state === 'WORKING') {
-          const work = this.workAnim[i];
-          if (work === 'hammer') {
-            const u = (t / 1.25) % 1;
-            wr = u < 0.7 ? -0.45 - 2.0 * Math.sin((u / 0.7) * Math.PI / 2) ** 2
-                         : -2.45 + 1.75 * Math.min(1, (u - 0.7) / 0.1);
-            wl = -0.8;
-            hp = 0.3; hy = 0; ln = 0.08;
-          } else if (work === 'scrape') {
-            const sw = Math.sin(t * 2.6);
-            wl = wr = -1.0 + 0.3 * sw;
-            hp = 0.35; hy = 0; ln = 0.14 + 0.04 * sw;
-          }
-        }
-        armL = armL * m.amp + wl * still;
-        armR = armR * m.amp + wr * still;
-        headPitch = hp * still;
-        headYaw = hy * still;
-        lean = ln * still;
+        const w = _pose;
+        w.armL = breathe; w.armR = -breathe; w.headPitch = 0; w.headYaw = Math.sin(t * 0.37) * 0.35; w.lean = 0;
+        if (c.state === 'WORKING' || c.state === 'PATROLLING') this.workAnim[i]?.(t, w); // guards work by patrolling
+        armL = armL * m.amp + w.armL * still;
+        armR = armR * m.amp + w.armR * still;
+        headPitch = w.headPitch * still;
+        headYaw = w.headYaw * still;
+        lean = w.lean * still;
         legL *= m.amp;
         legR *= m.amp;
         bob += Math.sin(t * 2.2) * 0.004 * still;
