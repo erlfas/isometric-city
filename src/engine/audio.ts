@@ -17,7 +17,8 @@
  * and is suspended while muted or the tab is hidden; update() is a no-op then.
  */
 import musicUrl from '../../music/Copper_and_Rye.mp3?url';
-import type { Citizen, CityPlan } from '../types';
+import type { Citizen, CityPlan, Parcel } from '../types';
+import { parcelHash, parcelKind } from './parcel-kind';
 import * as R from './sound-recipes';
 
 export interface Listener {
@@ -34,18 +35,22 @@ type EmitterKind = 'forge' | 'cooper' | 'saw' | 'loom';
 interface Emitter extends Point { kind: EmitterKind; next: number; pitch: number }
 type BellName = 'tenor' | 'treble' | 'friary';
 
-/** What a parcel sounds like. The first three branches follow the order in which
- *  three-renderer.ts populateCityScene picks a parcel's model, so a parcel drawn as a
- *  bakery or brewery stays quiet even when its buildingType says forge. */
-function soundOf(craft: string, type: string): EmitterKind | 'water' | null {
-  if (craft === 'baker' || type.includes('baker')) return null;
-  if (craft === 'tanner' || type.includes('tanner')) return 'water'; // riverfront tanneries
-  if (craft === 'brewer' || type.includes('brewer')) return null;
-  if (craft === 'blacksmith' || craft === 'armorer' || type.includes('blacksmith')) return 'forge';
-  if (craft === 'weaver' || type.includes('weaver')) return 'loom';
-  if (craft === 'cooper' || type.includes('cooper')) return 'cooper';
-  if (craft === 'carpenter' || craft === 'wheelwright' || type === 'artisan_half_timber_workshop') return 'saw';
-  return null;
+/** What a parcel sounds like, from the building it is drawn as (parcelKind), so a parcel
+ *  drawn as a bakery stays quiet even when its buildingType says forge. */
+function soundOf(p: Parcel, index: number): EmitterKind | 'water' | null {
+  const craft = p.craft?.id ?? '';
+  switch (parcelKind(p, parcelHash(p, index))) {
+    case 'tanner': return 'water'; // riverfront tanneries
+    case 'smith': return 'forge';
+    case 'weaver': return craft === 'tailor' ? null : 'loom';
+    case 'logging': return 'saw';
+    case 'brick': case 'half_timber': case 'log': case 'district':
+      // ordinary houses: the trade worked inside decides
+      if (craft === 'cooper' || p.buildingType.includes('cooper')) return 'cooper';
+      if (craft === 'carpenter' || craft === 'wheelwright' || p.buildingType === 'artisan_half_timber_workshop') return 'saw';
+      return null;
+    default: return null;
+  }
 }
 /** Reference distance (m) per kind: full volume within it, falling off beyond (see reach). */
 const EMITTER_REF: Record<EmitterKind, number> = { forge: 14, cooper: 9, saw: 7, loom: 7 };
@@ -117,13 +122,12 @@ export class Soundscape {
     this.emitters = [];
     this.homes = [];
     this.water = [];
-    for (const p of plan.parcels) {
-      if (p.isShed || p.buildingType.startsWith('shed_')) continue;
-      const kind = soundOf(p.craft?.id ?? '', p.buildingType);
+    plan.parcels.forEach((p, i) => {
+      const kind = soundOf(p, i);
       if (kind === 'water') this.water.push({ x: p.x, z: p.z });
       else if (kind) this.emitters.push({ kind, x: p.x, z: p.z, next: 0, pitch: Math.random() });
-      else this.homes.push({ x: p.x, z: p.z });
-    }
+      else if (!p.isShed) this.homes.push({ x: p.x, z: p.z });
+    });
     this.trees = (plan.vegetation ?? []).map((v) => ({ x: v.x, z: v.z }));
   }
 

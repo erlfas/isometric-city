@@ -32,7 +32,8 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
     snapTo: (x: number, z: number, zoom?: number, q?: number) => renderer.snapTo(x, z, zoom, q),
     find: (model: string) => renderer.findInstances(model),
     /** Last frame's draw calls and triangles (incl. shadow pass), the citizens' share of those
-     *  triangles for one pass, and citizens per character model. */
+     *  triangles for one pass, citizens per character model, and placed instances per
+     *  building model (0 = loaded but never placed: check before relying on a model). */
     stats: () => {
       const { calls, triangles } = renderer.renderer.info.render;
       const models: Record<string, number> = {};
@@ -41,7 +42,7 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
         models[m] = (models[m] ?? 0) + 1;
       }
       return { calls, triangles, citizenTrianglesPerPass: renderer.citizenTriangles(),
-        citizens: sim.citizens.length, models };
+        citizens: sim.citizens.length, models, placed: renderer.placedCounts() };
     },
   };
   (window as unknown as { __lublin: typeof api }).__lublin = api;

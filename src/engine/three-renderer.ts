@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { CityPlan, Citizen } from '../types';
 import { TextureLibrary } from './texture-library';
 import { CitizenCrowd } from './citizen-crowd';
+import { parcelHash, parcelKind } from './parcel-kind';
 
 interface LightPreset {
   sun: number; sunI: number;          // directional key light
@@ -639,16 +640,6 @@ export class ThreeIsometricRenderer {
     const loggingTmpl = this.models.get('logging_camp');
     const harborTmpl = this.models.get('river_harbor');
 
-    // Helper for deterministic hashing
-    const hashString = (str: string): number => {
-      let hash = 0;
-      for (let k = 0; k < str.length; k++) {
-        hash = (hash << 5) - hash + str.charCodeAt(k);
-        hash |= 0;
-      }
-      return Math.abs(hash);
-    };
-
     const hsl = { h: 0, s: 0, l: 0 };
 
     for (let i = 0; i < plan.parcels.length; i++) {
@@ -657,94 +648,37 @@ export class ThreeIsometricRenderer {
       let scaleX = 1.0;
       let scaleZ = 1.0;
 
-      const craftId = (p as any).craft?.id || '';
-      const bType = p.buildingType || '';
-      const hash = hashString(p.id || `parcel_${i}`);
-
-      // 1. Storage & utility sheds
-      if ((p.isShed || bType.startsWith('shed_')) && shedTmpl) {
-        tmpl = shedTmpl;
-        scaleX = Math.min(1.15, Math.max(0.85, p.width / 5.2));
-        scaleZ = Math.min(1.15, Math.max(0.85, p.depth / 6.2));
-      }
-      // 2. Specific Craft Guild Workshops & Industrial Facilities
-      else if (craftId === 'baker' || bType.includes('baker')) {
-        tmpl = bakerTmpl || halfTimberTmpl;
-      } else if (craftId === 'tanner' || bType.includes('tanner')) {
-        tmpl = tannerTmpl || logTmpl;
-      } else if (craftId === 'brewer' || bType.includes('brewer')) {
-        tmpl = brewerTmpl || brickTmpl;
-      } else if (craftId === 'blacksmith' || craftId === 'armorer' || bType.includes('blacksmith')) {
-        tmpl = smithTmpl || halfTimberTmpl;
-      } else if (craftId === 'potter' || bType.includes('potter')) {
-        tmpl = potterTmpl || logTmpl;
-      } else if (craftId === 'weaver' || craftId === 'tailor' || bType.includes('weaver')) {
-        tmpl = weaverTmpl || halfTimberTmpl;
-      } else if (bType.includes('watermill')) {
-        tmpl = watermillTmpl || logTmpl;
-      } else if (bType.includes('windmill')) {
-        tmpl = windmillTmpl || logTmpl;
-      } else if (bType.includes('quarry') || craftId === 'mason') {
-        tmpl = quarryTmpl || brickTmpl;
-      } else if (bType.includes('sawmill') || bType.includes('logging') || (craftId === 'carpenter' && p.district === 'krakow_suburb' && (hash % 4 === 0))) {
-        tmpl = loggingTmpl || logTmpl;
-      } else if (bType.includes('harbor')) {
-        tmpl = harborTmpl || halfTimberTmpl;
-      }
-      // 3. Patrician Kamienice & Stone/Brick Architecture (Old Town, Rynek, Grodzka)
-      else if (
-        bType.includes('patrician') ||
-        bType.includes('kamienica') ||
-        bType.includes('brick') ||
-        bType.includes('stone_arches') ||
-        craftId === 'goldsmith'
-      ) {
-        tmpl = brickTmpl;
-      }
-      // 4. Urban Half-Timber & Jettied Fachwerk (Middle-Class Artisans)
-      else if (
-        bType.includes('fachwerk') ||
-        bType.includes('half_timber') ||
-        bType.includes('jettied') ||
-        bType.includes('narrow_gable') ||
-        bType.includes('furrier') ||
-        bType.includes('shoemaker') ||
-        craftId === 'shoemaker' ||
-        craftId === 'furrier' ||
-        craftId === 'candlemaker' ||
-        craftId === 'roper' ||
-        craftId === 'butcher'
-      ) {
-        tmpl = halfTimberTmpl;
-      }
-      // 5. Rustic Vernacular Timber & Thatched Cottages
-      else if (
-        bType.includes('log') ||
-        bType.includes('timber') ||
-        bType.includes('thatched') ||
-        bType.includes('cruck') ||
-        bType.includes('longhouse') ||
-        bType.includes('cottage') ||
-        bType.includes('loess') ||
-        bType.includes('cooper') ||
-        craftId === 'cooper' ||
-        craftId === 'wheelwright' ||
-        craftId === 'carpenter'
-      ) {
-        tmpl = logTmpl;
-      }
-      // 6. District Harmonious Context Fallbacks
-      else if (p.district === 'market_square') {
-        tmpl = (hash % 4 === 0 ? halfTimberTmpl : brickTmpl) || brickTmpl;
-      } else if (p.district === 'krakow_suburb') {
-        tmpl = (hash % 3 === 0 ? halfTimberTmpl : logTmpl) || logTmpl;
-      } else {
-        tmpl = (hash % 2 === 0 ? halfTimberTmpl : logTmpl) || halfTimberTmpl;
+      const hash = parcelHash(p, i);
+      const kind = parcelKind(p, hash);
+      switch (kind) {
+        case 'shed':
+          tmpl = shedTmpl;
+          scaleX = Math.min(1.15, Math.max(0.85, p.width / 5.2));
+          scaleZ = Math.min(1.15, Math.max(0.85, p.depth / 6.2));
+          break;
+        case 'baker': tmpl = bakerTmpl || halfTimberTmpl; break;
+        case 'tanner': tmpl = tannerTmpl || logTmpl; break;
+        case 'brewer': tmpl = brewerTmpl || brickTmpl; break;
+        case 'smith': tmpl = smithTmpl || halfTimberTmpl; break;
+        case 'potter': tmpl = potterTmpl || logTmpl; break;
+        case 'weaver': tmpl = weaverTmpl || halfTimberTmpl; break;
+        case 'watermill': tmpl = watermillTmpl || logTmpl; break;
+        case 'windmill': tmpl = windmillTmpl || logTmpl; break;
+        case 'quarry': tmpl = quarryTmpl || brickTmpl; break;
+        case 'logging': tmpl = loggingTmpl || logTmpl; break;
+        case 'harbor': tmpl = harborTmpl || halfTimberTmpl; break;
+        case 'brick': tmpl = brickTmpl; break;
+        case 'half_timber': tmpl = halfTimberTmpl; break;
+        case 'log': tmpl = logTmpl; break;
+        case 'district':
+          if (p.district === 'market_square') tmpl = (hash % 4 === 0 ? halfTimberTmpl : brickTmpl) || brickTmpl;
+          else if (p.district === 'krakow_suburb') tmpl = (hash % 3 === 0 ? halfTimberTmpl : logTmpl) || logTmpl;
+          else tmpl = (hash % 2 === 0 ? halfTimberTmpl : logTmpl) || halfTimberTmpl;
       }
 
       if (!tmpl) tmpl = halfTimberTmpl || brickTmpl || logTmpl;
 
-      if (!p.isShed && !bType.startsWith('shed_')) {
+      if (kind !== 'shed') {
         scaleX = Math.min(1.15, Math.max(0.85, p.width / 8.5));
         scaleZ = Math.min(1.15, Math.max(0.85, p.depth / 12.0));
       }
@@ -1073,6 +1007,15 @@ export class ThreeIsometricRenderer {
     return this.scene.children
       .filter((c) => c.name === model)
       .map((c) => ({ x: c.position.x, z: c.position.z, parcelId: c.userData?.parcelId }));
+  }
+
+  /** Placed instances per loaded building/prop model; models with none are listed as 0.
+   *  Characters are not scene children (CitizenCrowd instances them), so char_* are left out. */
+  public placedCounts(): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const name of this.models.keys()) if (!name.startsWith('char_')) counts[name] = 0;
+    for (const c of this.scene.children) if (c.name in counts) counts[c.name]++;
+    return counts;
   }
 
   public updateDayNightLighting(hour: number): void {
