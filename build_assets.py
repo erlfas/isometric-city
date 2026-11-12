@@ -109,7 +109,8 @@ def get_materials():
         "birch_bark": create_mat("BirchBark", (0.84, 0.82, 0.78), roughness=0.8),
         "wood_end_grain": create_mat("WoodEndGrain", (0.75, 0.65, 0.46), roughness=0.7),
         "soot_black": create_mat("SootBlack", (0.08, 0.08, 0.08), roughness=0.95),
-        "glass_dark": create_mat("GlassDark", (0.10, 0.14, 0.18), roughness=0.2),
+        # Linear colour: (0.10, 0.14, 0.18) displayed as a light blue-grey (~89,105,118 sRGB).
+        "glass_dark": create_mat("GlassDark", (0.022, 0.026, 0.032), roughness=0.35),
         # Texture-family splits (Phase 3): same colours as the flat originals so models
         # look unchanged until the runtime binds textures by material name.
         "timber_log": create_mat("TimberLog", (0.24, 0.16, 0.10)),
@@ -275,6 +276,118 @@ def add_pantile_roof(bm, cx, cy, z_base, w, d, h, overhang=0.45, courses=8, mat_
         bm.faces.new([vr0, vr1, vr2, vr3]).material_index = mat_tile
 
     add_box(bm, cx, cy, r_z + 0.08, 0.32, d2 * 2.0, 0.16, mat_idx=mat_tile)
+
+def add_half_timber_wall(bm, a, b, z0, z1, outward, mat_timber, mat_glass=None,
+                         bay=1.5, timber=0.18, proud=0.05, rails=(1.0, 2.5), windows=True):
+    """Timber frame (szachulec) over a plaster wall running from a to b, between z0 and z1.
+
+    a, b: (x, y) corners on the plaster face; outward: unit vector out of the wall.
+    Square timbers sit `proud` m in front of the plaster, so the infill reads as recessed
+    and catches shadow along every member (KEY_FINDINGS section 13).
+    Layout: sill and head plates, posts every ~`bay` m, long corner braces in the two
+    end bays, and in the inner bays two rails (window sill / lintel) with a St. Andrew's
+    cross below and a glazed window between them in alternate bays.
+    """
+    a = Vector((a[0], a[1], 0.0))
+    b = Vector((b[0], b[1], 0.0))
+    length = (b - a).length
+    t = (b - a) / length
+    out = Vector(outward).normalized()
+    off = out * proud
+    n = max(3, round(length / bay))
+    step = length / n
+    h = timber * 0.5
+    z_sill, z_lintel = z0 + rails[0], z0 + rails[1]
+
+    def P(s, z):
+        return a + t * s + off + Vector((0.0, 0.0, z))
+
+    def beam(p, q, size=timber):
+        add_timber_beam(bm, p, q, width=size, depth=size, mat_idx=mat_timber)
+
+    beam(P(0.0, z0 + h), P(length, z0 + h))                  # sill plate
+    beam(P(0.0, z1 - h), P(length, z1 - h))                  # head plate
+    for i in range(n + 1):                                    # posts
+        s = min(max(i * step, h), length - h)
+        beam(P(s, z0 + timber), P(s, z1 - timber))
+
+    for i in range(n):
+        s0, s1 = i * step + h, (i + 1) * step - h
+        if i == 0:                                            # corner brace, foot at the corner
+            beam(P(s0, z0 + timber), P(s1, z1 - timber), timber * 0.85)
+            continue
+        if i == n - 1:
+            beam(P(s1, z0 + timber), P(s0, z1 - timber), timber * 0.85)
+            continue
+        beam(P(s0, z_sill), P(s1, z_sill), timber * 0.9)      # window-sill rail
+        beam(P(s0, z_lintel), P(s1, z_lintel), timber * 0.9)  # lintel rail
+        beam(P(s0, z0 + timber), P(s1, z_sill - h), timber * 0.75)   # St. Andrew's cross
+        beam(P(s1, z0 + timber), P(s0, z_sill - h), timber * 0.75)
+        if windows and mat_glass is not None and i % 2 == 1:
+            c = a + t * ((s0 + s1) * 0.5) + out * 0.02
+            ww, wh = step - timber * 2.2, (z_lintel - z_sill) - timber * 1.6
+            along_x = abs(t.x) > 0.5
+            zc = (z_sill + z_lintel) * 0.5
+            add_box(bm, c.x, c.y, zc, ww if along_x else 0.04, 0.04 if along_x else ww, wh, mat_idx=mat_glass)
+            # leaded-window mullion cross, just proud of the glass
+            m = c + out * 0.03 + Vector((0, 0, zc))      # c lies on z = 0; lift to window centre
+            add_timber_beam(bm, m + Vector((0, 0, -wh * 0.5)), m + Vector((0, 0, wh * 0.5)),
+                            width=0.06, depth=0.06, mat_idx=mat_timber)
+            add_timber_beam(bm, m - t * (ww * 0.5) + Vector((0, 0, wh * 0.08)), m + t * (ww * 0.5) + Vector((0, 0, wh * 0.08)),
+                            width=0.06, depth=0.06, mat_idx=mat_timber)
+
+
+def add_gable_roof(bm, cx, cy, z_base, w, d, h, overhang, mat_roof, mat_plaster, mat_timber,
+                   mat_glass=None, timber=0.18, proud=0.05):
+    """Saddle roof (ridge along Y) with framed plaster gables instead of tiled gable ends.
+
+    Slopes follow add_sloped_roof (eaves at z_base, extended by `overhang`). The gables sit
+    on the wall planes y = cy +/- d/2 as plaster pentagons that close up under the eaves,
+    framed with a sill, king post, collar beam and struts, plus bargeboards and a ridge.
+    """
+    w2, d2 = w * 0.5 + overhang, d * 0.5 + overhang
+    ridge = z_base + h
+    v0 = bm.verts.new(Vector((cx - w2, cy - d2, z_base)))
+    v1 = bm.verts.new(Vector((cx + w2, cy - d2, z_base)))
+    v2 = bm.verts.new(Vector((cx + w2, cy + d2, z_base)))
+    v3 = bm.verts.new(Vector((cx - w2, cy + d2, z_base)))
+    r0 = bm.verts.new(Vector((cx, cy - d2, ridge)))
+    r1 = bm.verts.new(Vector((cx, cy + d2, ridge)))
+    bm.faces.new([v0, r0, r1, v3]).material_index = mat_roof
+    bm.faces.new([v1, v2, r1, r0]).material_index = mat_roof
+    add_box(bm, cx, cy, ridge + 0.05, 0.30, d2 * 2.0, 0.12, mat_idx=mat_roof)   # ridge cap
+
+    hw = w * 0.5
+    z_edge = z_base + h * (overhang / w2)        # roof height straight above the wall line
+    for sgn in (-1.0, 1.0):
+        y = cy + sgn * d * 0.5
+        pts = [(cx - hw, z_base), (cx + hw, z_base), (cx + hw, z_edge), (cx, ridge), (cx - hw, z_edge)]
+        if sgn > 0:
+            pts.reverse()                        # keep the face normal pointing out of the gable
+        verts = [bm.verts.new(Vector((px, y, pz))) for px, pz in pts]
+        bm.faces.new(verts).material_index = mat_plaster
+
+        # bargeboards along the verge
+        ye = cy + sgn * (d2 - 0.08)
+        add_timber_beam(bm, Vector((cx - w2, ye, z_base)), Vector((cx, ye, ridge)), width=0.16, depth=0.18, mat_idx=mat_timber)
+        add_timber_beam(bm, Vector((cx + w2, ye, z_base)), Vector((cx, ye, ridge)), width=0.16, depth=0.18, mat_idx=mat_timber)
+
+        # gable frame, proud of the plaster
+        yb = y + sgn * proud
+        zc = z_base + h * 0.42                                   # collar height
+        xc = (w2 * (1.0 - (zc - z_base) / h)) - 0.25             # collar reaches the roof line
+        add_timber_beam(bm, Vector((cx - hw, yb, z_base + timber * 0.5)), Vector((cx + hw, yb, z_base + timber * 0.5)),
+                        width=timber, depth=timber, mat_idx=mat_timber)
+        add_timber_beam(bm, Vector((cx, yb, z_base + timber)), Vector((cx, yb, ridge - 0.3)),
+                        width=timber, depth=timber, mat_idx=mat_timber)
+        add_timber_beam(bm, Vector((cx - xc, yb, zc)), Vector((cx + xc, yb, zc)),
+                        width=timber, depth=timber, mat_idx=mat_timber)
+        for sx in (-1.0, 1.0):
+            add_timber_beam(bm, Vector((cx + sx * hw * 0.8, yb, z_base + timber)), Vector((cx + sx * 0.35, yb, zc - 0.1)),
+                            width=timber * 0.8, depth=timber * 0.8, mat_idx=mat_timber)
+            if mat_glass is not None:                            # small loft windows
+                add_box(bm, cx + sx * 1.0, y + sgn * 0.02, zc + (ridge - zc) * 0.3, 0.55, 0.04, 0.7, mat_idx=mat_glass)
+
 
 def add_ashlar_chimney(bm, cx, cy, z_base, w, d, h, mat_stone=0, mat_soot=1):
     h_base, h_taper, h_shaft, h_cap = h * 0.45, h * 0.10, h * 0.40, h * 0.05
@@ -764,7 +877,8 @@ def build_house_half_timber(mats):
 
     mat_list = [
         mats["plaster_white"], mats["timber_dark"], mats["roof_tile_red"],
-        mats["stone_limestone"], mats["brick_gothic"], mats["timber_plank"]
+        mats["stone_limestone"], mats["brick_gothic"], mats["timber_plank"],
+        mats["glass_dark"]
     ]
 
     # Ground floor: stone/brick plinth
@@ -774,19 +888,24 @@ def build_house_half_timber(mats):
     add_box(bm, 1.8, -6.05, 2.0, 2.2, 0.15, 1.6, mat_idx=5) # shutter
     add_box(bm, 1.8, -6.3, 1.3, 2.4, 0.5, 0.1, mat_idx=5) # display shelf
 
-    # Overhanging 2nd floor jetty (0.6m overhang)
-    add_box(bm, 0, 0, 6.2, 8.8, 12.6, 3.8, mat_idx=0)
-    for x in [-4.42, 4.42]:
-        add_box(bm, x, 0, 6.2, 0.12, 12.6, 3.8, mat_idx=1)
-    for y in [-6.32, 6.32]:
-        add_box(bm, 0, y, 6.2, 8.8, 0.12, 3.8, mat_idx=1)
+    # Overhanging 2nd floor jetty: lime-plaster infill (recessed) in a timber frame on all
+    # four sides. Previously four solid TimberDark slabs hid the plaster entirely, so the
+    # storey read as a dark band instead of white panels between dark beams.
+    W, D, z0, z1 = 8.8, 12.6, 4.3, 8.1
+    add_box(bm, 0, 0, (z0 + z1) * 0.5, W, D, z1 - z0, mat_idx=0)
+    x2, y2 = W * 0.5, D * 0.5
+    for a, b, out in [((-x2, -y2), (x2, -y2), (0, -1, 0)),   # street facade (-Y)
+                      ((x2, -y2), (x2, y2), (1, 0, 0)),      # camera-facing flank (+X)
+                      ((x2, y2), (-x2, y2), (0, 1, 0)),
+                      ((-x2, y2), (-x2, -y2), (-1, 0, 0))]:
+        add_half_timber_wall(bm, a, b, z0, z1, Vector(out), mat_timber=1, mat_glass=6)
 
     # Carved wooden corbels under jetty
     for cx in [-4.0, -2.0, 0.0, 2.0, 4.0]:
         add_box(bm, cx, -6.2, 4.3, 0.35, 0.5, 0.7, mat_idx=1)
 
-    # Clay tiled medieval gable roof with attic dormer
-    add_sloped_roof(bm, 0, 0, 8.1, 8.8, 12.6, 5.5, overhang=0.4, mat_idx=2)
+    # Clay tiled medieval gable roof (framed plaster gables) with attic dormer
+    add_gable_roof(bm, 0, 0, z1, W, D, 5.5, overhang=0.4, mat_roof=2, mat_plaster=0, mat_timber=1, mat_glass=6)
     add_box(bm, 2.2, -2.0, 11.2, 1.6, 2.2, 1.8, mat_idx=0)
     add_sloped_roof(bm, 2.2, -2.0, 12.1, 1.6, 2.2, 1.0, overhang=0.2, mat_idx=2)
 
