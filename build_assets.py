@@ -1926,9 +1926,317 @@ def build_castle_donjon(mats):
 # =============================================================
 
 # -------------------------------------------------------------
+# Workshop helpers (_ws_*): used only by the six craft workshops below.
+# Every face built here is wound by an explicit reference point (no guessing
+# vertex order), so roofs, tubs and slats always face outward/up.
+# -------------------------------------------------------------
+def _ws_poly(bm, verts, mat, ref, outward=True):
+    """Face from BMVerts whose normal points away from `ref` (towards it if outward=False)."""
+    co = [v.co for v in verts]
+    c = sum(co, Vector()) / len(co)
+    n = Vector()
+    for i in range(len(co)):                       # Newell normal: valid for any planar polygon
+        p, q = co[i], co[(i + 1) % len(co)]
+        n.x += (p.y - q.y) * (p.z + q.z)
+        n.y += (p.z - q.z) * (p.x + q.x)
+        n.z += (p.x - q.x) * (p.y + q.y)
+    if (n.dot(c - Vector(ref)) < 0) == outward:
+        verts = list(reversed(verts))
+    f = bm.faces.new(verts)
+    f.material_index = mat
+    return f
+
+
+def _ws_face(bm, pts, mat, ref, outward=True):
+    return _ws_poly(bm, [bm.verts.new(Vector(p)) for p in pts], mat, ref, outward)
+
+
+def _ws_prism(bm, top, thick, mat):
+    """Convex slab (lean-to roof, board): `top` = upper face corners, extruded down by `thick`."""
+    top = [Vector(p) for p in top]
+    bot = [p - Vector((0.0, 0.0, thick)) for p in top]
+    c = (sum(top, Vector()) + sum(bot, Vector())) / (2 * len(top))
+    _ws_face(bm, top, mat, c)
+    _ws_face(bm, bot, mat, c)
+    for i in range(len(top)):
+        j = (i + 1) % len(top)
+        _ws_face(bm, [top[i], top[j], bot[j], bot[i]], mat, c)
+
+
+def _ws_cyl(bm, p1, p2, r, segs=10, mat=0, caps=True):
+    """Cylinder between two arbitrary points (logs, lying casks, wheels, bolts of cloth)."""
+    p1, p2 = Vector(p1), Vector(p2)
+    ax = (p2 - p1).normalized()
+    ref = Vector((0.0, 0.0, 1.0)) if abs(ax.z) < 0.9 else Vector((1.0, 0.0, 0.0))
+    u = ax.cross(ref).normalized()
+    v = ax.cross(u)
+    ring = [u * math.cos(2 * math.pi * i / segs) + v * math.sin(2 * math.pi * i / segs) for i in range(segs)]
+    a = [bm.verts.new(p1 + d * r) for d in ring]
+    b = [bm.verts.new(p2 + d * r) for d in ring]
+    mid = (p1 + p2) * 0.5
+    for i in range(segs):
+        j = (i + 1) % segs
+        _ws_poly(bm, [a[i], a[j], b[j], b[i]], mat, mid)
+    if caps:
+        _ws_poly(bm, a, mat, mid)
+        _ws_poly(bm, b, mat, mid)
+
+
+def _ws_lathe(bm, cx, cy, z0, prof, segs=8, mat=0, cap_bottom=True, cap_top=True):
+    """Solid of revolution about a vertical axis; prof = [(radius, z), ...] bottom to top.
+    Keep consecutive profile points at different z (a flat ledge has no 'outward')."""
+    rings = [[bm.verts.new(Vector((cx + r * math.cos(2 * math.pi * i / segs),
+                                    cy + r * math.sin(2 * math.pi * i / segs), z0 + z)))
+              for i in range(segs)] for r, z in prof]
+    for k in range(len(rings) - 1):
+        axis_pt = Vector((cx, cy, z0 + (prof[k][1] + prof[k + 1][1]) * 0.5))
+        for i in range(segs):
+            j = (i + 1) % segs
+            _ws_poly(bm, [rings[k][i], rings[k][j], rings[k + 1][j], rings[k + 1][i]], mat, axis_pt)
+    if cap_bottom:
+        _ws_poly(bm, rings[0], mat, Vector((cx, cy, z0 + prof[0][1] + 1.0)))
+    if cap_top:
+        _ws_poly(bm, rings[-1], mat, Vector((cx, cy, z0 + prof[-1][1] - 1.0)))
+
+
+def _ws_tub(bm, cx, cy, z0, r, h, mat_wood, mat_fill, mat_hoop=None, segs=12, fill=0.8, wall=0.07):
+    """Open-topped stave tub: outer and inner walls, rim, liquid surface at `fill` of the height
+    and optional iron hoops. (Liquid placed inside a closed add_cylinder is invisible.)"""
+    def ring(rad, z):
+        return [bm.verts.new(Vector((cx + rad * math.cos(2 * math.pi * i / segs),
+                                     cy + rad * math.sin(2 * math.pi * i / segs), z))) for i in range(segs)]
+    zt, zf = z0 + h, z0 + h * fill
+    ob, ot, it, ib = ring(r, z0), ring(r, zt), ring(r - wall, zt), ring(r - wall, zf)
+    below, above = Vector((cx, cy, z0 - 1.0)), Vector((cx, cy, zt + 1.0))
+    for i in range(segs):
+        j = (i + 1) % segs
+        _ws_poly(bm, [ob[i], ob[j], ot[j], ot[i]], mat_wood, Vector((cx, cy, (z0 + zt) * 0.5)))
+        _ws_poly(bm, [ot[i], ot[j], it[j], it[i]], mat_wood, below)                 # rim, up
+        _ws_poly(bm, [it[i], it[j], ib[j], ib[i]], mat_wood, Vector((cx, cy, (zt + zf) * 0.5)), outward=False)
+    _ws_poly(bm, ib, mat_fill, below)                                               # liquid, up
+    _ws_poly(bm, ob, mat_wood, above)                                               # base, down
+    if mat_hoop is not None:
+        for zh in (z0 + h * 0.2, z0 + h * 0.72):
+            lo, hi = ring(r + 0.015, zh - 0.035), ring(r + 0.015, zh + 0.035)
+            for i in range(segs):
+                j = (i + 1) % segs
+                _ws_poly(bm, [lo[i], lo[j], hi[j], hi[i]], mat_hoop, Vector((cx, cy, zh)))
+
+
+def _ws_barrel(bm, cx, cy, z0, r=0.38, h=0.95, mat_wood=0, mat_hoop=1, segs=10):
+    """Upright bellied cask with two iron hoops."""
+    _ws_lathe(bm, cx, cy, z0, [(r * 0.84, 0.0), (r * 0.97, h * 0.22), (r, h * 0.5),
+                               (r * 0.97, h * 0.78), (r * 0.84, h)], segs, mat_wood)
+    for zf in (0.22, 0.78):
+        rh = r * 0.97 + 0.015
+        _ws_lathe(bm, cx, cy, z0, [(rh, h * zf - 0.035), (rh, h * zf + 0.035)], segs, mat_hoop,
+                  cap_bottom=False, cap_top=False)
+
+
+def _ws_cask(bm, p, axis, r=0.42, length=1.0, mat_wood=0, mat_hoop=1, segs=10):
+    """Cask lying on its side along `axis`."""
+    p = Vector(p)
+    ax = Vector(axis).normalized()
+    _ws_cyl(bm, p - ax * (length * 0.5), p + ax * (length * 0.5), r, segs, mat_wood)
+    _ws_cyl(bm, p - ax * 0.2 * length, p + ax * 0.2 * length, r * 1.05, segs, mat_wood)   # belly
+    for s in (-0.36, 0.36):
+        c = p + ax * (s * length)
+        _ws_cyl(bm, c - ax * 0.035, c + ax * 0.035, r * 1.04, segs, mat_hoop)
+
+
+def _ws_pot(bm, cx, cy, z0, kind, mat, s=1.0, segs=8):
+    """Terracotta ware for drying shelves: 'jug', 'amphora', 'bowl' or 'jar'."""
+    prof = {
+        "jug": [(0.09, 0.0), (0.15, 0.07), (0.17, 0.18), (0.12, 0.30), (0.06, 0.38), (0.08, 0.44)],
+        "amphora": [(0.05, 0.0), (0.12, 0.08), (0.16, 0.22), (0.13, 0.36), (0.06, 0.44), (0.075, 0.50)],
+        "bowl": [(0.07, 0.0), (0.15, 0.05), (0.20, 0.13)],
+        "jar": [(0.16, 0.0), (0.24, 0.12), (0.27, 0.30), (0.22, 0.48), (0.14, 0.56), (0.16, 0.62)],
+    }[kind]
+    _ws_lathe(bm, cx, cy, z0, [(r * s, z * s) for r, z in prof], segs, mat)
+
+
+def _ws_glaze(bm, c, along, out, w, h, mat_glass, mat_frame):
+    """Leaded window in a timber-frame bay: dark glass just proud of the plaster + mullion cross."""
+    along, out = Vector(along).normalized(), Vector(out).normalized()
+    g = c + out * 0.02
+    ax = abs(along.x) > 0.5
+    add_box(bm, g.x, g.y, g.z, w if ax else 0.04, 0.04 if ax else w, h, mat_idx=mat_glass)
+    m = c + out * 0.06
+    up = Vector((0.0, 0.0, 1.0))
+    add_timber_beam(bm, m - up * (h * 0.5), m + up * (h * 0.5), width=0.06, depth=0.06, mat_idx=mat_frame)
+    add_timber_beam(bm, m - along * (w * 0.5) + up * (h * 0.08), m + along * (w * 0.5) + up * (h * 0.08),
+                    width=0.06, depth=0.06, mat_idx=mat_frame)
+
+
+def _ws_four_sides(hx, hy):
+    """(a, b, outward) for the four walls of a centred hx x hy half-size footprint, listed
+    head-to-tail (street -Y, camera flank +X, back +Y, -X) for ends=("post", "butt")."""
+    return [((-hx, -hy), (hx, -hy), (0, -1, 0)), ((hx, -hy), (hx, hy), (1, 0, 0)),
+            ((hx, hy), (-hx, hy), (0, 1, 0)), ((-hx, hy), (-hx, -hy), (-1, 0, 0))]
+
+
+def _ws_three_sides(hx, hy):
+    """The +X, back and -X walls (the street front is framed separately with openings)."""
+    return _ws_four_sides(hx, hy)[1:]
+
+
+# Corner joints for _ws_three_sides: the flank/back walls own the two back corners; the two
+# street corners stay flush because _ws_framed_front draws its own end posts there.
+_WS_THREE_SIDE_ENDS = (("flush", "post"), ("butt", "post"), ("butt", "flush"))
+
+
+def _ws_wall_frame(a, b, outward, proud):
+    a = Vector((a[0], a[1], 0.0))
+    b = Vector((b[0], b[1], 0.0))
+    length = (b - a).length
+    t = (b - a) / length
+    out = Vector(outward).normalized()
+    return a, t, out, length, out * proud
+
+
+def _ws_framed_front(bm, a, b, z0, z1, outward, mat_timber, openings, timber=0.18, proud=0.05, rail=None):
+    """Street-front timber frame with door/shop openings (add_half_timber_wall would brace
+    straight across a doorway). openings: [(s0, s1, z_bottom, z_top)] measured along a->b.
+    Posts frame every opening, heads/sills close them, and each solid panel gets a long
+    brace (alternating direction) plus an optional mid rail at z0 + rail."""
+    a, t, out, length, off = _ws_wall_frame(a, b, outward, proud)
+    h = timber * 0.5
+
+    def P(s, z):
+        return a + t * s + off + Vector((0.0, 0.0, z))
+
+    def beam(p, q, size=timber):
+        add_timber_beam(bm, p, q, width=size, depth=size, mat_idx=mat_timber)
+
+    beam(P(0.0, z0 + h), P(length, z0 + h))
+    beam(P(0.0, z1 - h), P(length, z1 - h))
+    edges = [h, length - h]
+    for s0, s1, zb, zt in openings:
+        edges += [s0 - h, s1 + h]
+        beam(P(s0 - timber, zt + h), P(s1 + timber, zt + h))
+        if zb > z0 + 0.3:
+            beam(P(s0 - timber, zb - h), P(s1 + timber, zb - h))
+    edges.sort()
+    for s in edges:
+        beam(P(s, z0 + timber), P(s, z1 - timber))
+    flip = False
+    for sa, sb in zip(edges[:-1], edges[1:]):
+        if sb - sa < 0.5 or any(sa >= o[0] - timber and sb <= o[1] + timber for o in openings):
+            continue
+        p0, p1 = sa + h, sb - h
+        if rail:
+            beam(P(p0, z0 + rail), P(p1, z0 + rail), timber * 0.9)
+        if flip:
+            beam(P(p1, z0 + timber), P(p0, z1 - timber), timber * 0.85)
+        else:
+            beam(P(p0, z0 + timber), P(p1, z1 - timber), timber * 0.85)
+        flip = not flip
+
+
+def _ws_andrew_wall(bm, a, b, z0, z1, outward, mat_timber, mat_glass=None, bay=1.4,
+                    timber=0.18, proud=0.05, rail=0.9, window_every=2, ends=("flush", "flush")):
+    """Dense St. Andrew's-cross framing (krzyze sw. Andrzeja) for the weaver: a low cross under
+    the rail in every bay and a full-height cross above it, except glazed bays.
+    ends: corner joints as in add_half_timber_wall ("post" owns the outer corner post)."""
+    a, t, out, length, off = _ws_wall_frame(a, b, outward, proud)
+    n = max(2, round(length / bay))
+    step = length / n
+    h = timber * 0.5
+    zr = z0 + rail
+
+    def P(s, z):
+        return a + t * s + off + Vector((0.0, 0.0, z))
+
+    def beam(p, q, size=timber):
+        add_timber_beam(bm, p, q, width=size, depth=size, mat_idx=mat_timber)
+
+    s_lo = -_ht_end_extent(ends[0], timber, proud)
+    s_hi = length + _ht_end_extent(ends[1], timber, proud)
+    beam(P(s_lo, z0 + h), P(s_hi, z0 + h))
+    beam(P(s_lo, z1 - h), P(s_hi, z1 - h))
+    for i in range(n + 1):
+        s = min(max(i * step, h), length - h)
+        end = ends[0] if i == 0 else ends[1] if i == n else None
+        if end == "butt":
+            continue
+        if end == "post":
+            s = -proud if i == 0 else length + proud
+        beam(P(s, z0 + timber), P(s, z1 - timber))
+    for i in range(n):
+        s0, s1 = i * step + h, (i + 1) * step - h
+        if i == 0 and ends[0] != "flush":
+            s0 = h - proud
+        if i == n - 1 and ends[1] != "flush":
+            s1 = length - (h - proud)
+        beam(P(s0, zr), P(s1, zr), timber * 0.9)
+        beam(P(s0, z0 + timber), P(s1, zr - h), timber * 0.7)
+        beam(P(s1, z0 + timber), P(s0, zr - h), timber * 0.7)
+        if mat_glass is not None and 0 < i < n - 1 and i % window_every == 1:
+            zb, zt = zr + h + 0.06, z1 - timber - 0.06
+            c = a + t * ((s0 + s1) * 0.5) + Vector((0.0, 0.0, (zb + zt) * 0.5))
+            _ws_glaze(bm, c, t, out, (s1 - s0) - 0.16, zt - zb, mat_glass, mat_timber)
+        else:
+            beam(P(s0, zr + h), P(s1, z1 - timber), timber * 0.75)
+            beam(P(s1, zr + h), P(s0, z1 - timber), timber * 0.75)
+
+
+def _ws_louvre(bm, c, along, out, w, h, mat_back, mat_slat, slats=6):
+    """Malt-kiln ventilation louvre (zaluzja): dark opening behind downward-sloping board slats."""
+    along, out = Vector(along).normalized(), Vector(out).normalized()
+    up = Vector((0.0, 0.0, 1.0))
+    g = c + out * 0.02
+    ax = abs(along.x) > 0.5
+    add_box(bm, g.x, g.y, g.z, w if ax else 0.04, 0.04 if ax else w, h, mat_idx=mat_back)
+    step = h / slats
+    for k in range(slats):
+        zt = h * 0.5 - k * step
+        p0 = c + out * 0.05 + up * zt
+        p1 = c + out * 0.17 + up * (zt - step * 1.05)
+        _ws_face(bm, [p0 - along * (w * 0.5), p0 + along * (w * 0.5),
+                      p1 + along * (w * 0.5), p1 - along * (w * 0.5)], mat_slat, c - out)
+
+
+def _ws_ridge_crosses(bm, cx, ys, z_ridge, slope, mat, reach=0.55, size=0.1):
+    """Crossed ridge sticks (kozly) that hold thatch down; feet rest on the roof surface."""
+    for y in ys:
+        for sx in (-1.0, 1.0):
+            add_timber_beam(bm, Vector((cx + sx * reach, y, z_ridge - reach * slope + 0.04)),
+                            Vector((cx - sx * reach * 0.55, y, z_ridge + 0.4)), width=size, depth=size, mat_idx=mat)
+
+
+def _ws_hide_rack(bm, x0, x1, y, h, hides, mat_frame, leg=0.6, pole_r=0.12):
+    """A-frame hide/cloth rack along X with pelts hanging from the pole; hides = [mat, ...]."""
+    for x in (x0, x1):
+        for sy in (-1.0, 1.0):
+            add_timber_beam(bm, Vector((x, y + sy * leg, 0.0)), Vector((x, y, h)), width=0.13, depth=0.13, mat_idx=mat_frame)
+    add_timber_beam(bm, Vector((x0 - 0.15, y, h - 0.05)), Vector((x1 + 0.15, y, h - 0.05)), width=pole_r, depth=pole_r, mat_idx=mat_frame)
+    n = len(hides)
+    seg = (x1 - x0 - 0.3) / n
+    for i, m in enumerate(hides):
+        hx = x0 + 0.15 + seg * (i + 0.5)
+        hl = 1.15 + 0.2 * ((i * 7) % 3) / 2.0              # uneven pelt lengths
+        add_box(bm, hx, y + (0.03 if i % 2 else -0.03), h - 0.13 - hl * 0.5, seg * 0.82, 0.04, hl, mat_idx=m)
+
+
+def _ws_finish(bm, mat_list, mesh_name, obj_name, glb_name):
+    bm.normal_update()
+    mesh = bpy.data.meshes.new(mesh_name)
+    bm.to_mesh(mesh)
+    bm.free()
+    for m in mat_list:
+        mesh.materials.append(m)
+    obj = bpy.data.objects.new(obj_name, mesh)
+    bpy.context.collection.objects.link(obj)
+    export_object(obj, glb_name)
+
+
+# -------------------------------------------------------------
 # 12. Baker's House & Masonry Bread Oven (Piekarnia)
 # -------------------------------------------------------------
 def build_baker_house(mats):
+    """Half-timbered bakery (reference_photos/baker_house): framed ground-floor shop with bread
+    counter and lift-up shutter, jettied framed upper storey, tiled gable roof, gilded pretzel
+    on an iron bracket, and a brick beehive oven with stone flue under a tiled lean-to on +X."""
     clear_scene()
     bm = bmesh.new()
 
@@ -1937,7 +2245,7 @@ def build_baker_house(mats):
         mats["timber_dark"],        # 1
         mats["roof_tile_red"],      # 2
         mats["brick_gothic"],       # 3
-        mats["stone_limestone"],    # 4
+        mats["stone_limestone"],    # 4  (-> StoneFieldstone at export)
         mats["timber_plank"],       # 5
         mats["flour_sack_cloth"],   # 6
         mats["fire_orange"],        # 7
@@ -1954,288 +2262,308 @@ def build_baker_house(mats):
 
     W, D = 7.6, 11.2
     w2, d2 = W * 0.5, D * 0.5
+    z0, z1 = 0.6, 3.8                       # ground storey (shop + bakehouse)
+    Wj, Dj = W + 0.5, D + 0.6               # jettied upper storey
+    wj, dj = Wj * 0.5, Dj * 0.5
+    zt = 7.2
 
-    # Ground floor shop plinth
-    add_box(bm, 0, 0, 0.9, W, D, 1.8, mat_idx=4)
-    for cx in [-w2 + 0.2, w2 - 0.2]:
-        for cy in [-d2 + 0.2, d2 - 0.2]:
-            add_box(bm, cx, cy, 0.9, 0.55, 0.55, 1.84, mat_idx=4)
+    # Fieldstone plinth and plaster ground storey
+    add_box(bm, 0, 0, z0 * 0.5, W + 0.12, D + 0.12, z0, mat_idx=4)
+    add_box(bm, 0, 0, (z0 + z1) * 0.5, W, D, z1 - z0, mat_idx=0)
 
-    add_box(bm, 0, 0, 2.8, W - 0.1, D - 0.1, 2.0, mat_idx=0)
-    add_timber_beam(bm, Vector((-w2, -d2, 1.8)), Vector((w2, -d2, 1.8)), width=0.22, depth=0.22, mat_idx=1)
-    add_timber_beam(bm, Vector((-w2, d2, 1.8)), Vector((w2, d2, 1.8)), width=0.22, depth=0.22, mat_idx=1)
-    add_timber_beam(bm, Vector((-w2, -d2, 1.8)), Vector((-w2, d2, 1.8)), width=0.22, depth=0.22, mat_idx=1)
-    add_timber_beam(bm, Vector((w2, -d2, 1.8)), Vector((w2, d2, 1.8)), width=0.22, depth=0.22, mat_idx=1)
+    # Street front (-Y): plank door (x -2.0) and shop window (x 1.4) in a framed facade
+    _ws_framed_front(bm, (-w2, -d2), (w2, -d2), z0, z1, (0, -1, 0), 1,
+                     [(1.25, 2.35, z0, z0 + 2.2), (4.1, 6.7, z0 + 0.95, z0 + 2.35)], rail=1.0)
+    add_box(bm, -2.0, -d2 - 0.04, z0 + 1.1, 1.06, 0.06, 2.18, mat_idx=5)            # door leaf
+    for zs in (z0 + 0.45, z0 + 1.75):                                                # strap hinges
+        add_box(bm, -2.05, -d2 - 0.08, zs, 0.8, 0.02, 0.07, mat_idx=9)
+    add_box(bm, -1.62, -d2 - 0.09, z0 + 1.05, 0.08, 0.03, 0.14, mat_idx=9)          # latch
+    add_box(bm, 1.4, -d2 - 0.03, z0 + 1.65, 2.56, 0.04, 1.36, mat_idx=13)           # dark shop interior
+    add_box(bm, 1.4, -d2 - 0.42, z0 + 0.85, 2.9, 0.8, 0.1, mat_idx=5)              # bread counter
+    for bx in (0.1, 2.7):
+        add_timber_beam(bm, Vector((bx, -d2 - 0.05, z0 + 0.2)), Vector((bx, -d2 - 0.72, z0 + 0.78)), width=0.1, depth=0.1, mat_idx=1)
+    for i in range(6):                                                               # round loaves
+        for j, ly in enumerate((-d2 - 0.62, -d2 - 0.3)):
+            add_beehive_dome(bm, 0.3 + i * 0.44 + j * 0.2, ly, z0 + 0.9, 0.15, 0.11, segs_u=8, segs_v=3, mat_idx=14)
+    _ws_prism(bm, [(-0.05, -d2 - 0.06, z0 + 2.5), (2.85, -d2 - 0.06, z0 + 2.5),
+                   (2.85, -d2 - 0.85, z0 + 2.28), (-0.05, -d2 - 0.85, z0 + 2.28)], 0.06, 5)   # lifted shutter
+    for bx in (0.0, 2.8):
+        add_timber_beam(bm, Vector((bx, -d2 - 0.08, z1 - 0.3)), Vector((bx, -d2 - 0.82, z0 + 2.26)), width=0.04, depth=0.04, mat_idx=9)
 
-    # Bakery Street Front Entrance Door (-Y)
-    add_box(bm, -1.8, -d2 - 0.05, 1.6, 1.4, 0.16, 2.4, mat_idx=1)
-    add_box(bm, -1.8, -d2 - 0.02, 1.55, 1.1, 0.08, 2.2, mat_idx=5)
-    add_box(bm, -1.3, -d2 - 0.08, 1.5, 0.08, 0.10, 0.14, mat_idx=9)
+    # Framed ground-storey flanks and back, leaded windows in alternate bays
+    for (a, b, out), ends in zip(_ws_three_sides(w2, d2), _WS_THREE_SIDE_ENDS):
+        add_half_timber_wall(bm, a, b, z0, z1, Vector(out), mat_timber=1, mat_glass=13, ends=ends)
 
-    # Open Bakery Shop Window & Bread Display Sill (-Y)
-    add_box(bm, 1.5, -d2 - 0.05, 2.2, 2.2, 0.16, 1.6, mat_idx=1)
-    add_box(bm, 1.5, -d2 + 0.05, 2.2, 1.9, 0.08, 1.3, mat_idx=13)
-    add_box(bm, 1.5, -d2 - 0.35, 1.45, 2.4, 0.65, 0.12, mat_idx=5)
-    add_timber_beam(bm, Vector((0.6, -d2, 0.8)), Vector((0.6, -d2 - 0.32, 1.4)), width=0.10, depth=0.10, mat_idx=1)
-    add_timber_beam(bm, Vector((2.4, -d2, 0.8)), Vector((2.4, -d2 - 0.32, 1.4)), width=0.10, depth=0.10, mat_idx=1)
-    for bx in [0.7, 1.2, 1.7, 2.2]:
-        add_box(bm, bx, -d2 - 0.32, 1.58, 0.35, 0.24, 0.14, mat_idx=14)
+    # Jetty: projecting joist ends and corner brackets under the overhang
+    for i in range(11):
+        add_box(bm, -3.5 + i * 0.7, -d2 - 0.18, z1 - 0.11, 0.16, 0.36, 0.2, mat_idx=1)
+    for i in range(14):
+        add_box(bm, w2 + 0.18, -5.2 + i * 0.8, z1 - 0.11, 0.36, 0.16, 0.2, mat_idx=1)
+    for bx in (-w2 + 0.1, w2 - 0.1):
+        add_timber_beam(bm, Vector((bx, -d2 - 0.05, z1 - 0.8)), Vector((bx, -dj + 0.02, z1 - 0.12)), width=0.16, depth=0.16, mat_idx=1)
+    for by in (-d2 + 0.1, d2 - 0.1):
+        add_timber_beam(bm, Vector((w2 + 0.05, by, z1 - 0.8)), Vector((wj - 0.02, by, z1 - 0.12)), width=0.16, depth=0.16, mat_idx=1)
 
-    # Jettied 2nd Floor
-    W_j, D_j = W + 0.50, D + 0.60
-    w2_j, d2_j = W_j * 0.5, D_j * 0.5
-    z_j, h_j = 3.8, 3.6
-    for cx in [-2.8, -1.4, 0.0, 1.4, 2.8]:
-        add_box(bm, cx, -d2 - 0.18, z_j - 0.32, 0.24, 0.45, 0.65, mat_idx=1)
-    add_box(bm, 0, 0, z_j + h_j * 0.5, W_j - 0.15, D_j - 0.15, h_j, mat_idx=0)
-    add_timber_beam(bm, Vector((-w2_j, -d2_j, z_j)), Vector((w2_j, -d2_j, z_j)), width=0.20, depth=0.20, mat_idx=1)
-    add_timber_beam(bm, Vector((-w2_j, d2_j, z_j)), Vector((w2_j, d2_j, z_j)), width=0.20, depth=0.20, mat_idx=1)
-    add_timber_beam(bm, Vector((-w2_j, -d2_j, z_j + h_j)), Vector((w2_j, -d2_j, z_j + h_j)), width=0.20, depth=0.20, mat_idx=1)
-    add_timber_beam(bm, Vector((-w2_j, d2_j, z_j + h_j)), Vector((w2_j, d2_j, z_j + h_j)), width=0.20, depth=0.20, mat_idx=1)
-    for px in [-w2_j, w2_j]:
-        for py in [-d2_j, d2_j]:
-            add_timber_beam(bm, Vector((px, py, z_j)), Vector((px, py, z_j + h_j)), width=0.22, depth=0.22, mat_idx=1)
+    # Jettied upper storey: plaster panels in a full timber frame on all four sides
+    add_box(bm, 0, 0, (z1 + zt) * 0.5, Wj, Dj, zt - z1, mat_idx=0)
+    for a, b, out in _ws_four_sides(wj, dj):
+        add_half_timber_wall(bm, a, b, z1, zt, Vector(out), mat_timber=1, mat_glass=13, ends=("post", "butt"))
 
-    # Center vertical stud & diagonal braces
-    add_timber_beam(bm, Vector((0, -d2_j, z_j)), Vector((0, -d2_j, z_j + h_j)), width=0.18, depth=0.18, mat_idx=1)
-    add_timber_beam(bm, Vector((-w2_j, -d2_j, z_j)), Vector((0, -d2_j, z_j + h_j * 0.7)), width=0.16, depth=0.16, mat_idx=1)
-    add_timber_beam(bm, Vector((w2_j, -d2_j, z_j)), Vector((0, -d2_j, z_j + h_j * 0.7)), width=0.16, depth=0.16, mat_idx=1)
-    add_box(bm, 0, -d2_j - 0.05, z_j + h_j * 0.55, 1.4, 0.15, 1.4, mat_idx=1)
-    add_box(bm, 0, -d2_j + 0.02, z_j + h_j * 0.55, 1.1, 0.08, 1.1, mat_idx=13)
+    # Steep clay-tile roof with framed plaster gables and loft windows; brick kitchen chimney
+    add_gable_roof(bm, 0, 0, zt, Wj, Dj, 4.9, overhang=0.4, mat_roof=2, mat_plaster=0, mat_timber=1, mat_glass=13,
+                   frame_wrap=True)
+    add_box(bm, 1.3, 3.2, 10.8, 0.7, 0.7, 2.4, mat_idx=3)
+    add_box(bm, 1.3, 3.2, 12.05, 0.9, 0.9, 0.1, mat_idx=3)
+    add_box(bm, 1.3, 3.2, 12.11, 0.5, 0.5, 0.02, mat_idx=12)
 
-    for fy in [-3.2, 0.0, 3.2]:
-        add_timber_beam(bm, Vector((w2_j, fy, z_j)), Vector((w2_j, fy, z_j + h_j)), width=0.18, depth=0.18, mat_idx=1)
-    add_timber_beam(bm, Vector((w2_j, -d2_j, z_j)), Vector((w2_j, -1.6, z_j + h_j)), width=0.14, depth=0.14, mat_idx=1)
-    add_timber_beam(bm, Vector((w2_j, d2_j, z_j)), Vector((w2_j, 1.6, z_j + h_j)), width=0.14, depth=0.14, mat_idx=1)
-    add_box(bm, w2_j + 0.05, -1.6, z_j + 1.8, 0.16, 1.2, 1.3, mat_idx=1)
-    add_box(bm, w2_j - 0.02, -1.6, z_j + 1.8, 0.08, 0.9, 1.0, mat_idx=13)
-    add_box(bm, w2_j + 0.05, 1.6, z_j + 1.8, 0.16, 1.2, 1.3, mat_idx=1)
-    add_box(bm, w2_j - 0.02, 1.6, z_j + 1.8, 0.08, 0.9, 1.0, mat_idx=13)
+    # Gilded pretzel (precel) on a wrought-iron bracket at the front-left corner
+    bx, by, bz = -wj - 0.05, -dj - 0.1, 5.9
+    add_box(bm, bx + 0.02, by + 0.02, bz - 0.3, 0.1, 0.12, 0.8, mat_idx=9)
+    add_timber_beam(bm, Vector((bx, by, bz)), Vector((bx - 1.25, by, bz)), width=0.06, depth=0.06, mat_idx=9)
+    add_timber_beam(bm, Vector((bx, by, bz - 0.6)), Vector((bx - 0.95, by, bz)), width=0.05, depth=0.05, mat_idx=9)
+    for hx in (bx - 0.55, bx - 1.15):
+        add_timber_beam(bm, Vector((hx, by, bz)), Vector((hx, by, bz - 0.2)), width=0.03, depth=0.03, mat_idx=9)
+    add_curved_pretzel(bm, bx - 0.85, by, bz - 0.55, size=0.85, mat_gold=8)
 
-    # Attic flour chute
-    add_box(bm, w2_j + 0.05, 0.0, z_j + 1.8, 0.16, 1.2, 2.0, mat_idx=1)
-    add_box(bm, w2_j - 0.02, 0.0, z_j + 1.8, 0.08, 0.9, 1.7, mat_idx=5)
-    add_flour_chute(bm, w2_j, 0.0, z_j + 1.4, length=2.4, width=0.6, depth=0.22, angle_deg=38, mat_wood=5)
+    # Beehive bread oven (brick dome on a brick plinth with a wood store), stone flue
+    ox, oy = 5.6, -0.8
+    add_box(bm, ox, oy, 0.6, 2.9, 3.6, 1.2, mat_idx=15)                              # plinth
+    add_box(bm, ox, oy - 1.8 - 0.02, 0.5, 1.2, 0.06, 0.7, mat_idx=12)                # wood-store arch
+    for i in range(3):
+        for j in range(2):
+            add_box(bm, ox - 0.35 + i * 0.35, oy - 1.88, 0.3 + j * 0.3, 0.26, 0.04, 0.26, mat_idx=11)
+    add_box(bm, ox, oy, 1.25, 3.0, 3.7, 0.1, mat_idx=3)                              # coping
+    add_beehive_dome(bm, ox, oy - 0.3, 1.3, 1.2, 1.35, segs_u=14, segs_v=6, mat_idx=15)
+    add_box(bm, ox, oy - 1.45, 1.75, 0.9, 0.4, 0.9, mat_idx=3)                       # mouth arch
+    add_box(bm, ox, oy - 1.45, 2.28, 1.05, 0.5, 0.16, mat_idx=3)
+    add_box(bm, ox, oy - 1.68, 1.68, 0.55, 0.04, 0.5, mat_idx=7)                     # glowing mouth
+    add_cylinder(bm, ox, oy - 0.3, 2.64, 0.16, 0.08, segs=8, mat_idx=12)             # smoke hole
+    add_ashlar_chimney(bm, ox, oy + 1.35, 1.3, w=0.9, d=0.8, h=5.4, mat_stone=4, mat_soot=12)
 
-    # Roof
-    add_pantile_roof(bm, 0, 0, z_j + h_j, W_j, D_j, 4.8, overhang=0.45, courses=9, mat_tile=2, mat_trim=1, mat_plaster=0)
+    # (No lean-to over the oven: from the iso camera a roof hides the dome, the bakery's
+    # signature; the reference shows it open-air.)
 
-    # Gilded pretzel sign
-    bracket_x, bracket_y, bracket_z = -w2_j - 0.05, -d2_j - 0.15, z_j + h_j * 0.75
-    add_box(bm, bracket_x, bracket_y, bracket_z, 0.12, 0.20, 0.70, mat_idx=9)
-    add_timber_beam(bm, Vector((bracket_x, bracket_y, bracket_z)), Vector((bracket_x - 1.2, bracket_y - 0.3, bracket_z)), width=0.06, depth=0.06, mat_idx=9)
-    add_timber_beam(bm, Vector((bracket_x, bracket_y, bracket_z - 0.5)), Vector((bracket_x - 0.9, bracket_y - 0.22, bracket_z)), width=0.05, depth=0.05, mat_idx=9)
-    add_curved_pretzel(bm, bracket_x - 1.0, bracket_y - 0.25, bracket_z - 0.45, size=0.85, mat_gold=8)
+    # Bread peel leaning on the oven, firewood cords, flour sacks, rain barrel
+    add_timber_beam(bm, Vector((4.3, -2.95, 0.02)), Vector((4.5, -2.62, 1.95)), width=0.06, depth=0.06, mat_idx=16)
+    add_box(bm, 4.52, -2.6, 2.12, 0.32, 0.04, 0.36, mat_idx=16)
+    add_prop_firewood_pile(bm, cx=6.3, cy=-3.75, cz=0, w=1.5, d=0.9, h=1.0, mat_bark=10, mat_end=11)
+    add_prop_firewood_pile(bm, cx=5.4, cy=2.0, cz=0, w=2.2, d=1.0, h=1.3, mat_bark=10, mat_end=11)
+    add_prop_flour_sacks(bm, [(4.45, -4.65, 0, 0), (4.5, -4.0, 0, 0), (5.15, -4.35, 0, 0),
+                              (4.55, -4.33, 0.68, 0), (-4.25, -4.95, 0, 0), (-4.3, -4.3, 0, 0)], mat_sack=6)
+    _ws_barrel(bm, -4.35, 2.0, 0.0, r=0.42, h=1.05, mat_wood=5, mat_hoop=9)
 
-    # Outdoor bake oven complex
-    oven_x, oven_y, oven_base_w, oven_base_d, oven_base_h = 5.2, -1.2, 3.2, 3.6, 1.4
-    add_box(bm, oven_x, oven_y, oven_base_h * 0.5, oven_base_w, oven_base_d, oven_base_h, mat_idx=4)
-    add_box(bm, oven_x, oven_y - oven_base_d * 0.5 + 0.3, 0.45, 1.4, 0.7, 0.9, mat_idx=12)
-    for wy in [-0.2, 0.0, 0.2]:
-        add_box(bm, oven_x, oven_y - oven_base_d * 0.5 + 0.3 + wy, 0.35, 1.1, 0.18, 0.4, mat_idx=10)
-    add_beehive_dome(bm, oven_x, oven_y, oven_base_h, radius=1.25, height=1.45, segs_u=14, segs_v=6, mat_idx=15)
-    add_box(bm, oven_x, oven_y - 1.25 + 0.15, oven_base_h + 0.55, 1.0, 0.45, 0.95, mat_idx=3)
-    add_box(bm, oven_x, oven_y - 1.25 - 0.05, oven_base_h + 0.45, 0.65, 0.12, 0.65, mat_idx=7)
-    add_ashlar_chimney(bm, oven_x, oven_y + 1.2, oven_base_h, w=1.1, d=1.1, h=5.8, mat_stone=4, mat_soot=12)
+    _ws_finish(bm, mat_list, "Mesh_HouseBaker", "HouseBaker", "house_baker")
 
-    # Canopy
-    canopy_y1, canopy_y2 = oven_y - oven_base_d * 0.5 - 0.2, oven_y + oven_base_d * 0.5 + 0.2
-    canopy_x, post_h = oven_x + oven_base_w * 0.5 + 0.1, 3.4
-    add_timber_beam(bm, Vector((canopy_x, canopy_y1, 0)), Vector((canopy_x, canopy_y1, post_h)), width=0.18, depth=0.18, mat_idx=1)
-    add_timber_beam(bm, Vector((canopy_x, canopy_y2, 0)), Vector((canopy_x, canopy_y2, post_h)), width=0.18, depth=0.18, mat_idx=1)
-    add_timber_beam(bm, Vector((canopy_x, canopy_y1, post_h)), Vector((canopy_x, canopy_y2, post_h)), width=0.18, depth=0.18, mat_idx=1)
-    add_timber_beam(bm, Vector((canopy_x, canopy_y1, post_h - 0.8)), Vector((canopy_x, canopy_y1 + 0.7, post_h)), width=0.12, depth=0.12, mat_idx=1)
-    add_timber_beam(bm, Vector((canopy_x, canopy_y2, post_h - 0.8)), Vector((canopy_x, canopy_y2 - 0.7, post_h)), width=0.12, depth=0.12, mat_idx=1)
-    canopy_w = canopy_x - w2_j + 0.4
-    canopy_mid_x = (canopy_x + w2_j) * 0.5
-    canopy_len_y = canopy_y2 - canopy_y1 + 0.6
-    canopy_mid_y = (canopy_y1 + canopy_y2) * 0.5
-    add_box(bm, canopy_mid_x, canopy_mid_y, post_h + 0.25, canopy_w, canopy_len_y, 0.14, mat_idx=2)
-    add_timber_beam(bm, Vector((oven_x - 1.2, oven_y - oven_base_d * 0.5 - 0.4, 0.1)), Vector((oven_x - 0.9, oven_y - oven_base_d * 0.5 + 0.2, 2.4)), width=0.08, depth=0.08, mat_idx=5)
-    add_box(bm, oven_x - 0.85, oven_y - oven_base_d * 0.5 + 0.25, 2.45, 0.32, 0.04, 0.45, mat_idx=5)
 
-    # Firewood & flour sacks
-    add_prop_firewood_pile(bm, cx=oven_x + 1.25, cy=oven_y - oven_base_d * 0.5 + 0.7, cz=0, w=1.7, d=1.1, h=1.15, mat_bark=10, mat_end=11)
-    add_prop_firewood_pile(bm, cx=oven_x, cy=oven_y + 3.2, cz=0, w=2.0, d=1.2, h=1.4, mat_bark=10, mat_end=11)
-
-    sack_positions = [
-        (-w2_j - 0.4, -d2 + 1.2, 0, 0.1),
-        (-w2_j - 0.4, -d2 + 1.8, 0, -0.2),
-        (-w2_j - 0.35, -d2 + 1.5, 0.55, 0.4),
-        (w2_j + 0.5, -d2 + 1.5, 0, 0.2),
-        (w2_j + 0.45, -d2 + 2.1, 0, -0.3)
-    ]
-    add_prop_flour_sacks(bm, sack_positions, mat_sack=6)
-
-    bm.normal_update()
-    mesh = bpy.data.meshes.new("Mesh_HouseBaker")
-    bm.to_mesh(mesh)
-    bm.free()
-    for m in mat_list: mesh.materials.append(m)
-    obj = bpy.data.objects.new("HouseBaker", mesh)
-    bpy.context.collection.objects.link(obj)
-    export_object(obj, "house_baker")
-
+# -------------------------------------------------------------
+# 13. Tanner's Riverside Workshop (Garbarnia)
+# -------------------------------------------------------------
 def build_tanner_workshop(mats):
+    """Weathered log workshop (reference_photos/tanner_workshop) with saddle-notched corners,
+    thick thatch with ridge sticks, a front-gable drying gallery hung with hides, a yard of six
+    open stave vats (dark tan liquor, bark liquor, white lime), A-frame hide racks, a fleshing
+    beam on its trestle and stacks of cured leather."""
     clear_scene()
     bm = bmesh.new()
 
     mat_list = [
         mats["timber_dark"],       # 0
-        mats["timber_weathered"],  # 1
+        mats["timber_weathered"],  # 1  (-> TimberLogWeathered at export: log body)
         mats["roof_thatch"],       # 2
         mats["tannin_water"],      # 3
         mats["hide_leather"],      # 4
         mats["hide_raw"],          # 5
-        mats["stone_limestone"],   # 6
-        mats["timber_plank"]       # 7
+        mats["stone_limestone"],   # 6  (-> StoneFieldstone)
+        mats["timber_plank"],      # 7
+        mats["plaster_white"],     # 8  lime-pit liquor
+        mats["iron_wrought"],      # 9
+        mats["glass_dark"],        # 10
     ]
 
-    W, D = 7.2, 11.5
+    W, D = 7.0, 11.0
     w2, d2 = W * 0.5, D * 0.5
-    # Weathered timber log building
-    add_box(bm, 0, 0, 1.8, W, D, 3.6, mat_idx=1)
-    for cx in [-w2, w2]:
-        for cy in [-d2, d2]:
-            add_timber_beam(bm, Vector((cx, cy, 0)), Vector((cx, cy, 3.6)), width=0.24, depth=0.24, mat_idx=0)
-    add_pantile_roof(bm, 0, 0, 3.6, W, D, 4.2, overhang=0.55, courses=7, mat_tile=2, mat_trim=0, mat_plaster=1)
+    zp, ze = 0.5, 3.4
 
-    # -------------------------------------------------------------
-    # 6 CIRCULAR SUNKEN WOODEN TANNING VATS (Riverfront Flank)
-    # -------------------------------------------------------------
-    vat_r = 0.95
-    vat_h = 0.65
-    vat_x_start = w2 + 1.8
-    for col in [0, 1]:
-        for row in range(3):
-            vx = vat_x_start + col * (vat_r * 2.2)
-            vy = -3.2 + row * (vat_r * 2.3)
-            # Wooden tub rim
-            add_cylinder(bm, vx, vy, vat_h * 0.5, radius=vat_r, height=vat_h, segs=12, mat_idx=0)
-            # Dark tannin liquor
-            add_cylinder(bm, vx, vy, vat_h * 0.85, radius=vat_r * 0.88, height=0.08, segs=12, mat_idx=3)
+    # Fieldstone footing, weathered log body with crossed log ends at the corners
+    add_box(bm, 0, 0, zp * 0.5, W + 0.3, D + 0.3, zp, mat_idx=6)
+    add_box(bm, 0, 0, (zp + ze) * 0.5, W, D, ze - zp, mat_idx=1)
+    add_log_corner_crossings(bm, 0, 0, W, D, zp, ze, course=0.25, stub=0.35, mat_idx=1)
 
-    # -------------------------------------------------------------
-    # 2 TALL HIDE-STRETCHING FRAMES WITH ANIMAL PELTS
-    # -------------------------------------------------------------
-    for idx, fy in enumerate([-2.8, 2.8]):
-        fx = w2 + 4.2
-        # Wooden outer frame
-        add_timber_beam(bm, Vector((fx, fy - 1.2, 0)), Vector((fx, fy - 1.2, 3.4)), width=0.14, depth=0.14, mat_idx=0)
-        add_timber_beam(bm, Vector((fx, fy + 1.2, 0)), Vector((fx, fy + 1.2, 3.4)), width=0.14, depth=0.14, mat_idx=0)
-        add_timber_beam(bm, Vector((fx, fy - 1.2, 3.2)), Vector((fx, fy + 1.2, 3.2)), width=0.14, depth=0.14, mat_idx=0)
-        add_timber_beam(bm, Vector((fx, fy - 1.2, 0.4)), Vector((fx, fy + 1.2, 0.4)), width=0.14, depth=0.14, mat_idx=0)
-        # Pinned ox hide pelt
-        add_box(bm, fx, fy, 1.8, 0.04, 1.8, 2.2, mat_idx=5 if idx % 2 == 0 else 4)
+    # Plank door with frame, small shuttered windows (street and camera flank)
+    dx = -1.6
+    add_box(bm, dx, -d2 - 0.04, zp + 1.05, 1.0, 0.06, 2.1, mat_idx=7)
+    for sx in (-1.0, 1.0):
+        add_timber_beam(bm, Vector((dx + sx * 0.6, -d2 - 0.07, zp)), Vector((dx + sx * 0.6, -d2 - 0.07, zp + 2.25)), width=0.14, depth=0.14, mat_idx=0)
+    add_timber_beam(bm, Vector((dx - 0.75, -d2 - 0.07, zp + 2.25)), Vector((dx + 0.75, -d2 - 0.07, zp + 2.25)), width=0.16, depth=0.16, mat_idx=0)
+    for zs in (zp + 0.4, zp + 1.7):
+        add_box(bm, dx, -d2 - 0.08, zs, 0.75, 0.02, 0.07, mat_idx=9)
+    add_wall_window(bm, Vector((1.6, -d2, 2.2)), (1, 0, 0), (0, -1, 0), 0.7, 0.6, mat_glass=10, mat_frame=7, frame=0.1, shutters_mat=7)
+    for wy in (-2.6, 1.8):
+        add_wall_window(bm, Vector((w2, wy, 2.2)), (0, 1, 0), (1, 0, 0), 0.7, 0.6, mat_glass=10, mat_frame=7, frame=0.1, shutters_mat=7)
+    add_wall_window(bm, Vector((-w2, 0.0, 2.2)), (0, 1, 0), (-1, 0, 0), 0.7, 0.6, mat_glass=10, mat_frame=7, frame=0.1)
 
-    # Fleshing beam (curved log on trestle)
-    add_timber_beam(bm, Vector((0, -d2 - 1.8, 0.5)), Vector((0, -d2 - 3.2, 0.9)), width=0.35, depth=0.35, mat_idx=1)
-    # Stack of cured leather hides
-    add_box(bm, -2.2, -d2 - 2.2, 0.4, 1.2, 1.6, 0.8, mat_idx=4)
+    # Thick thatch, board gables, ridge sticks (kozly)
+    rh, ov = 4.1, 0.55
+    add_gable_roof(bm, 0, 0, ze, W, D, rh, overhang=ov, mat_roof=2, mat_plaster=7, mat_timber=7,
+                   frame=False, loft_windows=0, eave_lip=0.3)
+    _ws_ridge_crosses(bm, 0, (-4.6, -2.3, 0.0, 2.3, 4.6), ze + rh, rh / (w2 + ov), 0)
 
-    bm.normal_update()
-    mesh = bpy.data.meshes.new("Mesh_Tanner")
-    bm.to_mesh(mesh)
-    bm.free()
-    for m in mat_list: mesh.materials.append(m)
-    obj = bpy.data.objects.new("HouseTanner", mesh)
-    bpy.context.collection.objects.link(obj)
-    export_object(obj, "house_tanner")
+    # Front-gable drying gallery (susharnia): loft opening, plank deck on brackets, railing, hides
+    add_box(bm, 0, -d2 - 0.03, ze + 1.15, 1.6, 0.04, 1.3, mat_idx=10)
+    add_box(bm, 0, -d2 - 0.55, ze + 0.05, 3.4, 1.1, 0.1, mat_idx=7)
+    for gx in (-1.5, 1.5):
+        add_timber_beam(bm, Vector((gx, -d2 - 0.05, ze - 0.75)), Vector((gx, -d2 - 0.98, ze - 0.02)), width=0.12, depth=0.12, mat_idx=0)
+    for gx in (-1.62, -0.55, 0.55, 1.62):
+        add_timber_beam(bm, Vector((gx, -d2 - 1.03, ze + 0.1)), Vector((gx, -d2 - 1.03, ze + 1.05)), width=0.08, depth=0.08, mat_idx=0)
+    add_timber_beam(bm, Vector((-1.7, -d2 - 1.03, ze + 1.0)), Vector((1.7, -d2 - 1.03, ze + 1.0)), width=0.1, depth=0.1, mat_idx=0)
+    for i, (hx, m) in enumerate(((-1.08, 5), (0.0, 4), (1.08, 5))):
+        add_box(bm, hx, -d2 - 1.12, ze + 0.32 - 0.1 * i, 0.82, 0.04, 1.3 - 0.1 * (i % 2), mat_idx=m)
 
-# ==============================================================================
-# 5. UPGRADED RIVERSIDE WATERMILL (watermill/front.jpg)
-# ==============================================================================
+    # Six open stave vats: dark tannin, bark liquor and white lime pits, plank walk between
+    for vx, vy, liquor in ((4.9, -4.3, 3), (7.2, -4.3, 4), (4.9, -2.0, 8),
+                           (7.2, -2.0, 3), (4.9, 0.3, 4), (7.2, 0.3, 3)):
+        _ws_tub(bm, vx, vy, 0.0, 0.88, 0.8, mat_wood=7, mat_fill=liquor, mat_hoop=9, segs=14, fill=0.82)
+    add_box(bm, 6.05, -2.0, 0.05, 0.4, 6.2, 0.1, mat_idx=7)
+    add_timber_beam(bm, Vector((5.3, -2.0, 0.6)), Vector((6.2, -1.6, 2.2)), width=0.06, depth=0.06, mat_idx=7)   # stirring pole
 
+    # A-frame hide racks behind the vats and in the forecourt
+    _ws_hide_rack(bm, 4.4, 8.0, 3.6, 2.6, [5, 4, 5, 4], mat_frame=0)
+    _ws_hide_rack(bm, 4.4, 7.9, -6.6, 2.5, [4, 5, 4], mat_frame=0)
+
+    # Fleshing beam (log on a trestle) with a hide over it, cured leather stacks, tanbark heap
+    _ws_cyl(bm, (-1.4, -6.9, 0.22), (0.2, -7.9, 1.0), 0.2, segs=10, mat=1)
+    for lx, ly in ((-0.2, -8.3), (0.6, -7.5)):
+        add_timber_beam(bm, Vector((lx, ly, 0.0)), Vector((0.2, -7.9, 0.95)), width=0.1, depth=0.1, mat_idx=0)
+    add_timber_beam(bm, Vector((-0.75, -7.3, 0.72)), Vector((-0.25, -7.62, 0.9)), width=0.03, depth=0.22, mat_idx=9)   # drawknife
+    for sx, sy in ((-2.4, -7.0), (-2.6, -8.3)):
+        for k in range(6):
+            jx, jy = 0.05 * ((k * 3) % 3 - 1), 0.04 * ((k * 2) % 3 - 1)
+            add_box(bm, sx + jx, sy + jy, 0.06 + k * 0.12, 1.2, 0.9, 0.11, mat_idx=4 if k % 2 else 5)
+    add_beehive_dome(bm, 2.4, -7.7, 0.0, 0.9, 0.55, segs_u=10, segs_v=3, mat_idx=4)
+    _ws_barrel(bm, 3.3, -6.2, 0.0, r=0.38, h=0.95, mat_wood=7, mat_hoop=9)
+
+    _ws_finish(bm, mat_list, "Mesh_Tanner", "HouseTanner", "house_tanner")
+
+
+# -------------------------------------------------------------
+# 14. Brewer's Malthouse (Slodownia)
+# -------------------------------------------------------------
 def build_brewer_malthouse(mats):
+    """Malthouse (reference_photos/brewer_malthouse): fieldstone ground floor with pointed windows
+    and portal, framed upper storey whose bays are slatted malt louvres, shingle roof with a
+    louvred ridge vent, copper-kettle sign, cask-washing troughs, stacked lying casks, tables."""
     clear_scene()
     bm = bmesh.new()
 
     mat_list = [
-        mats["stone_limestone"], # 0
-        mats["timber_dark"],     # 1
-        mats["roof_shingle"],    # 2
-        mats["copper_patina"],   # 3
-        mats["timber_plank"],    # 4
-        mats["water_clean"],     # 5
-        mats["iron_wrought"],    # 6
-        mats["glass_dark"],      # 7
-        mats["plaster_cream"]    # 8
+        mats["stone_limestone"],  # 0  (-> StoneFieldstone)
+        mats["timber_dark"],      # 1
+        mats["roof_shingle"],     # 2
+        mats["copper_patina"],    # 3
+        mats["timber_plank"],     # 4
+        mats["water_clean"],      # 5
+        mats["iron_wrought"],     # 6
+        mats["glass_dark"],       # 7
+        mats["plaster_cream"],    # 8
+        mats["soot_black"],       # 9
+        mats["timber_weathered"], # 10  louvre slats
     ]
 
     W, D = 8.6, 13.5
     w2, d2 = W * 0.5, D * 0.5
+    zg, zt = 4.2, 7.8
+    Wu, Du = W + 0.3, D + 0.3
+    wu, du = Wu * 0.5, Du * 0.5
 
-    # 1. Sturdy Limestone Ashlar Ground Floor (Z: 0 to 4.2m)
-    add_box(bm, 0, 0, 2.1, W, D, 4.2, mat_idx=0)
-    # Arched limestone window surrounds & portals
-    for wy in [-4.2, -1.4, 1.4, 4.2]:
-        add_box(bm, -w2 - 0.05, wy, 2.2, 0.15, 1.2, 1.8, mat_idx=0)
-        add_box(bm, -w2 + 0.04, wy, 2.2, 0.08, 0.85, 1.4, mat_idx=7)
-    # Front entrance door
-    add_box(bm, 0, -d2 - 0.05, 1.8, 1.8, 0.15, 2.6, mat_idx=1)
-    add_box(bm, 0, -d2 - 0.02, 1.75, 1.4, 0.08, 2.4, mat_idx=4)
+    # Stone ground floor: plinth step, walls, string course
+    add_box(bm, 0, 0, zg * 0.5, W, D, zg, mat_idx=0)
+    add_box(bm, 0, 0, 0.3, W + 0.2, D + 0.2, 0.6, mat_idx=0)
+    add_box(bm, 0, 0, zg - 0.1, W + 0.14, D + 0.14, 0.2, mat_idx=0)
 
-    # 2. Upper Half-Timber Story with Malt Ventilation Louvers (Z: 4.2 to 7.8m)
-    z_u = 4.2
-    h_u = 3.6
-    add_box(bm, 0, 0, z_u + h_u * 0.5, W + 0.3, D + 0.3, h_u, mat_idx=8) # plaster core
-    # Timber posts
-    for cx in [-w2 - 0.15, w2 + 0.15]:
-        for cy in [-d2 - 0.15, d2 + 0.15]:
-            add_timber_beam(bm, Vector((cx, cy, z_u)), Vector((cx, cy, z_u + h_u)), width=0.22, depth=0.22, mat_idx=1)
-    # Prominent Malt Drying Louvers (horizontal wooden ventilation slats)
-    for ly in [-3.5, 0.0, 3.5]:
-        # Both walls have louvers!
-        for wx_sign in [-1, 1]:
-            wx = (w2 + 0.18) * wx_sign
-            add_box(bm, wx, ly, z_u + 1.8, 0.14, 1.8, 2.2, mat_idx=1) # frame
-            for s in range(5):
-                add_box(bm, wx + 0.04 * wx_sign, ly, z_u + 0.9 + s * 0.45, 0.08, 1.6, 0.12, mat_idx=4) # slats
+    # Pointed portal with plank door and step; pointed windows on every side
+    add_wall_window(bm, Vector((0.0, -d2, 0.6 + 1.25)), (1, 0, 0), (0, -1, 0), 1.5, 2.5, mat_glass=4,
+                    mat_frame=0, frame=0.26, pointed=True)
+    add_box(bm, 0, -d2 - 0.45, 0.15, 2.2, 0.9, 0.3, mat_idx=0)
 
-    # 3. Weathered Oak Shingle Roof
-    add_pantile_roof(bm, 0, 0, z_u + h_u, W + 0.3, D + 0.3, 4.8, overhang=0.45, courses=9, mat_tile=2, mat_trim=1, mat_plaster=8)
+    def lancet(c, along, out):
+        add_wall_window(bm, c, along, out, 0.8, 1.3, mat_glass=7, mat_frame=0, frame=0.16, pointed=True)
 
-    # 4. Hanging Copper Alembic Brew Kettle Sign
-    sign_x = w2 + 0.2
-    sign_y = -d2 - 0.2
-    sign_z = z_u + 2.4
-    add_timber_beam(bm, Vector((sign_x, sign_y, sign_z)), Vector((sign_x + 1.2, sign_y, sign_z)), width=0.08, depth=0.08, mat_idx=6)
-    # Copper alembic kettle emblem
-    add_cylinder(bm, sign_x + 0.8, sign_y, sign_z - 0.4, radius=0.35, height=0.55, segs=10, mat_idx=3)
-    add_cylinder(bm, sign_x + 0.8, sign_y, sign_z - 0.05, radius=0.12, height=0.4, segs=8, mat_idx=3) # swan neck flue
+    for wx in (-2.7, 2.7):
+        lancet(Vector((wx, -d2, 2.3)), (1, 0, 0), (0, -1, 0))
+        lancet(Vector((wx, d2, 2.3)), (1, 0, 0), (0, 1, 0))
+    for sx in (-1.0, 1.0):
+        for wy in (-4.8, -1.6, 1.6, 4.8):
+            lancet(Vector((sx * w2, wy, 2.3)), (0, 1, 0), (sx, 0, 0))
 
-    # 5. OUTDOOR CASK YARD (+X flank & front)
-    # 4 Long Wooden Soak Wash Troughs
-    for idx, ty in enumerate([-4.0, -1.2, 1.6, 4.4]):
-        add_water_trough(bm, w2 + 2.0, ty, 0, w=1.1, d=2.4, h=0.7, mat_wood=4, mat_water=5)
+    # Framed upper storey; alternate inner bays are tall malt-drying louvres
+    add_box(bm, 0, 0, (zg + zt) * 0.5, Wu, Du, zt - zg, mat_idx=8)
+    rails = (0.6, 3.0)
+    for a, b, out in _ws_four_sides(wu, du):
+        add_half_timber_wall(bm, a, b, zg, zt, Vector(out), mat_timber=1, rails=rails, windows=False,
+                             ends=("post", "butt"))
+        av, bv = Vector((a[0], a[1], 0)), Vector((b[0], b[1], 0))
+        length = (bv - av).length
+        t = (bv - av) / length
+        n = max(3, round(length / 1.5))                  # same bay layout as add_half_timber_wall
+        step = length / n
+        for i in range(1, n - 1, 2):
+            c = av + t * ((i + 0.5) * step) + Vector((0, 0, zg + (rails[0] + rails[1]) * 0.5))
+            _ws_louvre(bm, c, t, Vector(out), step - 0.4, rails[1] - rails[0] - 0.3, mat_back=9, mat_slat=10, slats=7)
 
-    # Pyramid Stacks of Oak Beer Barrels
-    add_barrel_pyramid(bm, w2 + 4.2, -2.4, 0, rot_y=False, mat_wood=4, mat_iron=6)
-    add_barrel_pyramid(bm, w2 + 4.2, 2.4, 0, rot_y=False, mat_wood=4, mat_iron=6)
+    # Shingle roof with framed gables and a louvred ridge ventilator (malt-kiln vent)
+    rh = 4.3
+    add_gable_roof(bm, 0, 0, zt, Wu, Du, rh, overhang=0.45, mat_roof=2, mat_plaster=8, mat_timber=1, mat_glass=7,
+                   frame_wrap=True)
+    ridge = zt + rh
+    add_box(bm, 0, 2.5, ridge, 1.0, 1.4, 0.8, mat_idx=1)
+    for sx in (-1.0, 1.0):
+        _ws_louvre(bm, Vector((sx * 0.5, 2.5, ridge + 0.05)), (0, 1, 0), (sx, 0, 0), 1.1, 0.55, mat_back=9, mat_slat=10, slats=3)
+    add_sloped_roof(bm, 0, 2.5, ridge + 0.4, 1.0, 1.4, 0.32, overhang=0.15, mat_idx=2)
 
-    # Outdoor Wooden Drinking Tables & Benches (Front forecourt)
+    # Copper brew-kettle sign hung from an iron bracket at the camera-facing front corner
+    sx0, sy0, sz0 = wu + 0.05, -du - 0.1, 6.7
+    add_box(bm, sx0, sy0 + 0.05, sz0 - 0.35, 0.1, 0.1, 0.9, mat_idx=6)
+    add_timber_beam(bm, Vector((sx0, sy0, sz0)), Vector((sx0 + 1.35, sy0, sz0)), width=0.06, depth=0.06, mat_idx=6)
+    add_timber_beam(bm, Vector((sx0, sy0, sz0 - 0.7)), Vector((sx0 + 1.0, sy0, sz0)), width=0.05, depth=0.05, mat_idx=6)
+    for hx in (sx0 + 0.45, sx0 + 1.25):
+        add_timber_beam(bm, Vector((hx, sy0, sz0)), Vector((hx, sy0, sz0 - 0.25)), width=0.03, depth=0.03, mat_idx=6)
+    add_box(bm, sx0 + 0.85, sy0, sz0 - 0.82, 1.0, 0.06, 1.15, mat_idx=4)
+    _ws_lathe(bm, sx0 + 0.85, sy0 - 0.3, sz0 - 1.25, [(0.12, 0.0), (0.24, 0.12), (0.25, 0.3), (0.13, 0.45),
+                                                    (0.05, 0.6), (0.07, 0.68)], 10, 3)
+
+    # Cask-washing troughs on the +X flank, stacks of lying casks, loose upright casks
+    for ty in (-4.6, -1.9, 0.8, 3.5):
+        add_water_trough(bm, 5.6, ty, 0, w=1.1, d=2.3, h=0.7, mat_wood=4, mat_water=5)
+    r = 0.42
+    for y0 in (-3.6, 1.3):
+        for yy in (y0, y0 + 1.05):
+            for row, count in enumerate((3, 2, 1)):
+                for i in range(count):
+                    x = 6.82 + row * 0.43 + i * 0.86
+                    _ws_cask(bm, (x, yy, r + row * 0.73), (0, 1, 0), r=r, length=1.0, mat_wood=4, mat_hoop=6)
+    for bxp, byp in ((5.3, -6.3), (6.2, -6.6), (5.6, -7.4), (5.6, 5.8), (6.5, 5.6)):
+        _ws_barrel(bm, bxp, byp, 0.0, r=0.4, h=1.0, mat_wood=4, mat_hoop=6)
+
+    # Forecourt drinking tables
     add_tavern_table_and_benches(bm, -2.2, -d2 - 2.8, 0, mat_wood=4)
     add_tavern_table_and_benches(bm, 2.2, -d2 - 2.8, 0, mat_wood=4)
 
-    bm.normal_update()
-    mesh = bpy.data.meshes.new("Mesh_Brewer")
-    bm.to_mesh(mesh)
-    bm.free()
-    for m in mat_list: mesh.materials.append(m)
-    obj = bpy.data.objects.new("HouseBrewer", mesh)
-    bpy.context.collection.objects.link(obj)
-    export_object(obj, "house_brewer")
+    _ws_finish(bm, mat_list, "Mesh_Brewer", "HouseBrewer", "house_brewer")
 
-# ==============================================================================
-# 3. UPGRADED POTTER'S WORKSHOP & KILN (potter_workshop/front.jpg)
-# ==============================================================================
 
+# -------------------------------------------------------------
+# 15. Blacksmith's Workshop & Open Forge (Kuznia)
+# -------------------------------------------------------------
 def build_blacksmith_workshop(mats):
+    """Forge (reference_photos/blacksmith_workshop): an open, braced timber forge shed with a
+    shingle gable roof and signboard in front of a stone-and-framed dwelling. Inside: stone hearth
+    with glowing coals, brick hood and tall stone chimney, leather bellows, anvil on a stump,
+    quench trough, tool rack, grindstone, coal heap and an open coal bunker on +X."""
     clear_scene()
     bm = bmesh.new()
 
     mat_list = [
-        mats["stone_limestone"], # 0
+        mats["stone_limestone"], # 0  (-> StoneFieldstone)
         mats["brick_gothic"],    # 1
         mats["timber_dark"],     # 2
         mats["roof_shingle"],    # 3
@@ -2245,132 +2573,148 @@ def build_blacksmith_workshop(mats):
         mats["water_clean"],     # 7
         mats["coal_black"],      # 8
         mats["timber_plank"],    # 9
-        mats["glass_dark"]       # 10
+        mats["glass_dark"],      # 10
+        mats["plaster_cream"],   # 11
+        mats["iron_wrought"],    # 12
+        mats["hide_leather"],    # 13
+        mats["timber_weathered"] # 14
     ]
 
-    # Rear Workshop Building: 6.8m wide x 8.0m deep x 8.5m high (Z=0 to 11.0m)
-    W_b, D_b = 6.8, 8.0
-    w2_b, d2_b = W_b * 0.5, D_b * 0.5
-    y_b_offset = 2.2 # pushed back to make room for open forge
+    # Dwelling/workshop behind the forge: y -1.8 .. 6.2
+    yb, Wb, Db = 2.2, 6.8, 8.0
+    wb, db = Wb * 0.5, Db * 0.5
+    zg, zt = 3.4, 6.6
+    Wu, Du = Wb + 0.3, Db + 0.3
+    wu, du = Wu * 0.5, Du * 0.5
+    add_box(bm, 0, yb, zg * 0.5, Wb, Db, zg, mat_idx=0)
+    add_box(bm, 0, yb, 0.25, Wb + 0.16, Db + 0.16, 0.5, mat_idx=0)
+    add_box(bm, 0, yb, (zg + zt) * 0.5, Wu, Du, zt - zg, mat_idx=11)
+    for a, b, out, glass in [((-wu, yb - du), (wu, yb - du), (0, -1, 0), None),   # hidden behind the forge roof
+                             ((wu, yb - du), (wu, yb + du), (1, 0, 0), 10),
+                             ((wu, yb + du), (-wu, yb + du), (0, 1, 0), 10),
+                             ((-wu, yb + du), (-wu, yb - du), (-1, 0, 0), 10)]:
+        add_half_timber_wall(bm, a, b, zg, zt, Vector(out), mat_timber=2, mat_glass=glass, ends=("post", "butt"))
+    add_gable_roof(bm, 0, yb, zt, Wu, Du, 4.2, overhang=0.35, mat_roof=3, mat_plaster=11, mat_timber=2, mat_glass=10,
+                   frame_wrap=True)
 
-    # Ground floor in sturdy brick & limestone quoin blocks
-    add_box(bm, 0, y_b_offset, 1.8, W_b, D_b, 3.6, mat_idx=1)
-    for cx in [-w2_b + 0.2, w2_b - 0.2]:
-        for cy in [y_b_offset - d2_b + 0.2, y_b_offset + d2_b - 0.2]:
-            add_box(bm, cx, cy, 1.8, 0.5, 0.5, 3.65, mat_idx=0)
+    # +X flank: plank door, shuttered windows
+    add_box(bm, wb + 0.04, 2.8, 1.05 + 0.25, 0.06, 1.0, 2.1, mat_idx=9)
+    for sy in (-1.0, 1.0):
+        add_timber_beam(bm, Vector((wb + 0.07, 2.8 + sy * 0.6, 0.25)), Vector((wb + 0.07, 2.8 + sy * 0.6, 2.5)), width=0.14, depth=0.14, mat_idx=2)
+    add_timber_beam(bm, Vector((wb + 0.07, 2.05, 2.5)), Vector((wb + 0.07, 3.55, 2.5)), width=0.16, depth=0.16, mat_idx=2)
+    add_wall_window(bm, Vector((wb, 4.9, 1.9)), (0, 1, 0), (1, 0, 0), 0.8, 0.8, mat_glass=10, mat_frame=2, frame=0.12, shutters_mat=9)
+    add_wall_window(bm, Vector((0.0, yb + db, 1.9)), (1, 0, 0), (0, 1, 0), 0.8, 0.8, mat_glass=10, mat_frame=2, frame=0.12)
 
-    # Upper floor: Half-timbered quarters (Z: 3.6 to 6.8)
-    add_box(bm, 0, y_b_offset, 5.2, W_b + 0.3, D_b + 0.3, 3.2, mat_idx=1) # brick infill
-    # Timber framing posts and diagonals on upper floor
-    for cx in [-w2_b - 0.1, w2_b + 0.1]:
-        for cy in [y_b_offset - d2_b - 0.1, y_b_offset + d2_b + 0.1]:
-            add_timber_beam(bm, Vector((cx, cy, 3.6)), Vector((cx, cy, 6.8)), width=0.2, depth=0.2, mat_idx=2)
-    # Upper window
-    add_box(bm, 0, y_b_offset - d2_b - 0.2, 5.2, 1.2, 0.15, 1.2, mat_idx=2)
-    add_box(bm, 0, y_b_offset - d2_b - 0.25, 5.2, 0.9, 0.05, 0.9, mat_idx=10)
+    # Open forge shed: braced posts, tie beams, wall plates, shingle gable roof, board gable
+    yf0, yf1, hx, ze = -7.2, -1.8, 3.5, 3.3
+    for x in (-hx, hx):
+        sx = 1.0 if x > 0 else -1.0
+        for y in (yf0, -4.5):
+            add_timber_beam(bm, Vector((x, y, 0)), Vector((x, y, ze)), width=0.24, depth=0.24, mat_idx=2)
+            add_timber_beam(bm, Vector((x, y, ze - 0.9)), Vector((x - sx * 0.9, y, ze)), width=0.13, depth=0.13, mat_idx=2)
+        add_timber_beam(bm, Vector((x, yf0, ze - 0.9)), Vector((x, yf0 + 0.9, ze)), width=0.13, depth=0.13, mat_idx=2)
+        add_timber_beam(bm, Vector((x, -4.5, ze - 0.9)), Vector((x, -3.6, ze)), width=0.13, depth=0.13, mat_idx=2)
+        add_timber_beam(bm, Vector((x, yf0 - 0.15, ze)), Vector((x, yf1, ze)), width=0.2, depth=0.2, mat_idx=2)
+    for y in (yf0, -4.5):
+        add_timber_beam(bm, Vector((-hx - 0.1, y, ze)), Vector((hx + 0.1, y, ze)), width=0.22, depth=0.22, mat_idx=2)
+    add_gable_roof(bm, 0, (yf0 + yf1) * 0.5, ze + 0.12, 2 * hx, yf1 - yf0, 2.6, overhang=0.35,
+                   mat_roof=3, mat_plaster=9, mat_timber=2, frame=False, loft_windows=0)
+    add_timber_beam(bm, Vector((0, yf0 - 0.05, ze + 0.12)), Vector((0, yf0 - 0.05, ze + 2.4)), width=0.16, depth=0.16, mat_idx=2)
+    add_box(bm, 0, yf0 - 0.36, ze - 0.38, 2.6, 0.06, 0.45, mat_idx=9)              # BLACKSMITH signboard
+    for hxp in (-1.0, 1.0):
+        add_timber_beam(bm, Vector((hxp, yf0 - 0.2, ze - 0.11)), Vector((hxp, yf0 - 0.35, ze - 0.16)), width=0.03, depth=0.03, mat_idx=12)
+    hc = Vector((0.75, yf0 - 0.08, ze + 1.05))                                     # iron horseshoe on the gable
+    pts = [hc + Vector((0.3 * math.cos(math.radians(a)), 0, 0.3 * math.sin(math.radians(a))))
+           for a in range(-50, 231, 40)]
+    for p, q in zip(pts[:-1], pts[1:]):
+        add_timber_beam(bm, p, q, width=0.07, depth=0.05, mat_idx=12)
 
-    # Shingle Roof on main building
-    add_pantile_roof(bm, 0, y_b_offset, 6.8, W_b + 0.3, D_b + 0.3, 4.2, overhang=0.4, courses=8, mat_tile=3, mat_trim=2, mat_plaster=1)
+    # Hearth: stone base, coal bed with glowing fire, brick back and hood, stone chimney
+    fx, fy = 1.6, -2.75
+    add_box(bm, fx, fy, 0.45, 2.2, 1.7, 0.9, mat_idx=0)
+    add_box(bm, fx, fy - 0.2, 0.95, 1.4, 1.0, 0.1, mat_idx=8)
+    add_box(bm, fx, fy - 0.25, 1.03, 0.8, 0.6, 0.06, mat_idx=5)
+    add_box(bm, fx, -2.15, 1.6, 2.0, 0.5, 1.3, mat_idx=1)
+    add_box(bm, fx, -2.7, 2.5, 2.0, 1.4, 0.5, mat_idx=1)
+    add_box(bm, fx, -2.5, 3.0, 1.4, 1.0, 0.5, mat_idx=1)
+    add_ashlar_chimney(bm, fx, -2.5, 3.25, w=1.0, d=1.0, h=7.9, mat_stone=0, mat_soot=6)
 
-    # -------------------------------------------------------------
-    # FRONT OPEN FORGE CANOPY (Forecourt -Y)
-    # -------------------------------------------------------------
-    canopy_w = 7.6
-    canopy_d = 5.6
-    canopy_y_front = y_b_offset - d2_b - canopy_d
-    canopy_h = 4.2
+    # Leather bellows on a stand, nozzle into the hearth
+    add_box(bm, -0.1, -2.6, 0.45, 0.6, 0.9, 0.84, mat_idx=14)
+    add_box(bm, -0.1, -2.6, 0.9, 0.85, 1.2, 0.06, mat_idx=9)
+    add_box(bm, -0.1, -2.65, 1.08, 0.7, 1.0, 0.3, mat_idx=13)
+    add_box(bm, -0.1, -2.6, 1.26, 0.85, 1.2, 0.06, mat_idx=9)
+    add_timber_beam(bm, Vector((0.3, -2.6, 1.05)), Vector((0.72, -2.75, 1.0)), width=0.08, depth=0.08, mat_idx=12)
+    add_timber_beam(bm, Vector((-0.1, -2.0, 1.3)), Vector((-0.1, -1.95, 2.3)), width=0.06, depth=0.06, mat_idx=2)
 
-    # 4 Heavy Corner Timber Posts
-    add_timber_beam(bm, Vector((-canopy_w * 0.5, canopy_y_front, 0)), Vector((-canopy_w * 0.5, canopy_y_front, canopy_h)), width=0.24, depth=0.24, mat_idx=2)
-    add_timber_beam(bm, Vector((canopy_w * 0.5, canopy_y_front, 0)), Vector((canopy_w * 0.5, canopy_y_front, canopy_h)), width=0.24, depth=0.24, mat_idx=2)
-    # Top plate beam & Carved Signboard
-    add_timber_beam(bm, Vector((-canopy_w * 0.5, canopy_y_front, canopy_h)), Vector((canopy_w * 0.5, canopy_y_front, canopy_h)), width=0.24, depth=0.24, mat_idx=2)
-    add_box(bm, 0, canopy_y_front - 0.14, canopy_h - 0.4, 3.2, 0.08, 0.55, mat_idx=9) # "BLACKSMITH" wooden signboard
+    # Coal heap and workbench with vise along the back wall
+    add_beehive_dome(bm, -1.9, -2.7, 0.0, 0.85, 0.65, segs_u=10, segs_v=3, mat_idx=8)
+    add_box(bm, -2.9, -3.6, 0.85, 0.7, 1.8, 0.1, mat_idx=9)
+    for lx in (-3.15, -2.65):
+        for ly in (-4.35, -2.85):
+            add_box(bm, lx, ly, 0.4, 0.1, 0.1, 0.8, mat_idx=2)
+    add_box(bm, -2.7, -4.25, 1.0, 0.18, 0.22, 0.2, mat_idx=12)
+    for ty in (-3.9, -3.4, -3.0):
+        add_timber_beam(bm, Vector((-3.05, ty, 0.93)), Vector((-2.7, ty + 0.1, 0.93)), width=0.04, depth=0.04, mat_idx=2)
+        add_box(bm, -2.68, ty + 0.1, 0.95, 0.08, 0.16, 0.07, mat_idx=12)
 
-    # Diagonal knee braces to posts
-    add_timber_beam(bm, Vector((-canopy_w * 0.5, canopy_y_front, canopy_h - 0.9)), Vector((-canopy_w * 0.5 + 0.8, canopy_y_front, canopy_h)), width=0.14, depth=0.14, mat_idx=2)
-    add_timber_beam(bm, Vector((canopy_w * 0.5, canopy_y_front, canopy_h - 0.9)), Vector((canopy_w * 0.5 - 0.8, canopy_y_front, canopy_h)), width=0.14, depth=0.14, mat_idx=2)
+    # Anvil on an oak stump (base, waist, face, tapering horn)
+    ax, ay = -0.2, -5.4
+    _ws_cyl(bm, (ax, ay, 0.0), (ax, ay, 0.7), 0.42, segs=10, mat=14)
+    add_box(bm, ax, ay, 0.78, 0.42, 0.6, 0.16, mat_idx=4)
+    add_box(bm, ax, ay, 0.96, 0.24, 0.36, 0.2, mat_idx=4)
+    add_box(bm, ax, ay + 0.05, 1.13, 0.3, 0.75, 0.14, mat_idx=4)
+    add_timber_beam(bm, Vector((ax, ay - 0.32, 1.13)), Vector((ax, ay - 0.52, 1.15)), width=0.13, depth=0.12, mat_idx=4)
+    add_timber_beam(bm, Vector((ax, ay - 0.52, 1.15)), Vector((ax, ay - 0.72, 1.18)), width=0.06, depth=0.06, mat_idx=4)
+    add_timber_beam(bm, Vector((ax + 0.05, ay + 0.1, 1.23)), Vector((ax + 0.45, ay + 0.35, 1.23)), width=0.04, depth=0.04, mat_idx=2)
+    add_box(bm, ax + 0.05, ay + 0.1, 1.25, 0.1, 0.18, 0.08, mat_idx=12)
 
-    # Sloped timber plank canopy roof (sloping from building wall to front posts)
-    rafter_z_wall = 5.2
-    add_timber_beam(bm, Vector((-canopy_w * 0.5, y_b_offset - d2_b, rafter_z_wall)), Vector((-canopy_w * 0.5, canopy_y_front, canopy_h)), width=0.18, depth=0.18, mat_idx=2)
-    add_timber_beam(bm, Vector((canopy_w * 0.5, y_b_offset - d2_b, rafter_z_wall)), Vector((canopy_w * 0.5, canopy_y_front, canopy_h)), width=0.18, depth=0.18, mat_idx=2)
-    canopy_mid_y = (canopy_y_front + (y_b_offset - d2_b)) * 0.5
-    canopy_mid_z = (canopy_h + rafter_z_wall) * 0.5 + 0.1
-    add_box(bm, 0, canopy_mid_y, canopy_mid_z, canopy_w + 0.4, canopy_d + 0.4, 0.14, mat_idx=9) # timber roof deck
+    # Quench trough with tongs, under the shed's camera-side front bay
+    add_water_trough(bm, 2.7, -5.6, 0, w=0.9, d=2.2, h=0.7, mat_wood=9, mat_water=7)
+    add_timber_beam(bm, Vector((2.2, -5.2, 0.72)), Vector((3.2, -5.5, 0.72)), width=0.04, depth=0.04, mat_idx=12)
 
-    # -------------------------------------------------------------
-    # FORGE HEARTH & TALL MASONRY CHIMNEY
-    # -------------------------------------------------------------
-    hearth_x = 1.2
-    hearth_y = y_b_offset - d2_b + 0.4
-    hearth_w, hearth_d, hearth_h = 2.4, 2.2, 1.4
+    # A-frame tool rack with blades, axes and a poleaxe leaning on it
+    rx = -2.7
+    for ry in (-7.0, -5.3):
+        add_timber_beam(bm, Vector((rx + 0.35, ry, 0)), Vector((rx, ry, 1.6)), width=0.1, depth=0.1, mat_idx=2)
+        add_timber_beam(bm, Vector((rx - 0.35, ry, 0)), Vector((rx, ry, 1.6)), width=0.1, depth=0.1, mat_idx=2)
+    add_timber_beam(bm, Vector((rx, -7.1, 1.55)), Vector((rx, -5.2, 1.55)), width=0.09, depth=0.09, mat_idx=2)
+    for k, ty in enumerate((-6.8, -6.5, -6.2, -5.9, -5.6)):
+        if k % 2 == 0:   # blade
+            add_timber_beam(bm, Vector((rx + 0.42, ty, 0.05)), Vector((rx + 0.06, ty, 1.75)), width=0.08, depth=0.025, mat_idx=4)
+            add_timber_beam(bm, Vector((rx + 0.12, ty - 0.12, 1.35)), Vector((rx + 0.12, ty + 0.12, 1.35)), width=0.04, depth=0.04, mat_idx=12)
+        else:            # axe / poleaxe
+            add_timber_beam(bm, Vector((rx + 0.42, ty, 0.05)), Vector((rx + 0.04, ty, 1.85)), width=0.045, depth=0.045, mat_idx=9)
+            add_box(bm, rx + 0.07, ty, 1.68, 0.06, 0.28, 0.22, mat_idx=4)
 
-    # Heavy Stone Ashlar Hearth Base
-    add_box(bm, hearth_x, hearth_y, hearth_h * 0.5, hearth_w, hearth_d, hearth_h, mat_idx=0)
-    # Arched furnace mouth with glowing orange fire
-    add_box(bm, hearth_x, hearth_y - hearth_d * 0.5 - 0.1, hearth_h * 0.7, 1.2, 0.4, 0.8, mat_idx=1)
-    add_box(bm, hearth_x, hearth_y - hearth_d * 0.5 - 0.05, hearth_h * 0.65, 0.9, 0.1, 0.5, mat_idx=5) # glowing fire
+    # Iron bar stock and a grindstone on its trestle at the shed front
+    for k in range(3):
+        for i in range(4 - k):
+            add_timber_beam(bm, Vector((-1.9, -7.25 + i * 0.13 + k * 0.065, 0.05 + k * 0.09)),
+                            Vector((-0.9, -7.25 + i * 0.13 + k * 0.065, 0.05 + k * 0.09)), width=0.09, depth=0.09, mat_idx=12)
+    gx, gy = 1.0, -6.7
+    for sy in (-0.3, 0.3):
+        add_timber_beam(bm, Vector((gx - 0.35, gy + sy, 0)), Vector((gx - 0.1, gy + sy, 0.8)), width=0.08, depth=0.08, mat_idx=2)
+        add_timber_beam(bm, Vector((gx + 0.35, gy + sy, 0)), Vector((gx + 0.1, gy + sy, 0.8)), width=0.08, depth=0.08, mat_idx=2)
+    _ws_cyl(bm, (gx, gy - 0.07, 0.82), (gx, gy + 0.07, 0.82), 0.38, segs=14, mat=0)
+    _ws_cyl(bm, (gx, gy - 0.4, 0.82), (gx, gy + 0.45, 0.82), 0.03, segs=6, mat=12)
+    add_timber_beam(bm, Vector((gx, gy + 0.45, 0.82)), Vector((gx, gy + 0.45, 0.6)), width=0.03, depth=0.03, mat_idx=12)
 
-    # Massive Stone Chimney Stack rising through roof
-    add_ashlar_chimney(bm, hearth_x, hearth_y, hearth_h, w=1.3, d=1.3, h=10.2, mat_stone=0, mat_soot=6)
+    # Open coal bunker on the +X flank, barrel by the rack
+    add_water_trough(bm, 4.6, 0.0, 0, w=2.1, d=2.2, h=1.0, mat_wood=9, mat_water=8)
+    add_beehive_dome(bm, 4.6, 0.0, 0.84, 0.8, 0.42, segs_u=10, segs_v=3, mat_idx=8)
+    _ws_barrel(bm, -3.3, -4.4, 0.0, r=0.38, h=0.95, mat_wood=9, mat_hoop=12)
 
-    # -------------------------------------------------------------
-    # OUTDOOR BLACKSMITH EQUIPMENT (Matching front.jpg & side.jpg)
-    # -------------------------------------------------------------
-    # 1. Oak Tree Stump & Cast Iron Anvil
-    stump_x = -0.4
-    stump_y = canopy_y_front + 2.0
-    add_cylinder(bm, stump_x, stump_y, 0.4, radius=0.48, height=0.8, segs=10, mat_idx=2) # tree stump
-    # Anvil (base, waist, horn, flat face)
-    add_box(bm, stump_x, stump_y, 0.85, 0.45, 0.9, 0.12, mat_idx=4) # base
-    add_box(bm, stump_x, stump_y, 1.05, 0.28, 0.5, 0.30, mat_idx=4) # waist
-    add_box(bm, stump_x, stump_y, 1.25, 0.34, 1.1, 0.16, mat_idx=4) # table & horn
+    _ws_finish(bm, mat_list, "Mesh_Blacksmith", "BlacksmithWorkshop", "blacksmith_workshop")
 
-    # 2. Water Quench Trough (Long timber basin filled with water)
-    trough_x = 3.2
-    trough_y = canopy_y_front + 1.4
-    add_water_trough(bm, trough_x, trough_y, 0, w=1.0, d=2.6, h=0.75, mat_wood=9, mat_water=7)
 
-    # 3. A-Frame Weapon & Tool Display Rack
-    rack_x = -2.8
-    rack_y = canopy_y_front + 1.2
-    add_timber_beam(bm, Vector((rack_x - 0.6, rack_y, 0)), Vector((rack_x - 0.6, rack_y, 1.8)), width=0.12, depth=0.12, mat_idx=2)
-    add_timber_beam(bm, Vector((rack_x + 0.6, rack_y, 0)), Vector((rack_x + 0.6, rack_y, 1.8)), width=0.12, depth=0.12, mat_idx=2)
-    add_timber_beam(bm, Vector((rack_x - 0.8, rack_y, 1.4)), Vector((rack_x + 0.8, rack_y, 1.4)), width=0.10, depth=0.10, mat_idx=2)
-    # Displayed broadswords & poleaxes
-    for sx in [-0.4, 0.0, 0.4]:
-        add_box(bm, rack_x + sx, rack_y - 0.08, 1.1, 0.08, 0.04, 1.6, mat_idx=4)
-
-    # 4. Sharpening Grindstone Wheel on Trestle
-    grind_x = -2.6
-    grind_y = canopy_y_front + 3.4
-    add_box(bm, grind_x, grind_y, 0.45, 0.6, 1.1, 0.9, mat_idx=2) # wooden stand
-    add_cylinder(bm, grind_x, grind_y, 0.85, radius=0.38, height=0.14, segs=12, mat_idx=0) # stone wheel
-
-    # 5. Timber Coal Bunker with Black Charcoal (Side +X flank)
-    bunker_x = w2_b + 1.4
-    bunker_y = y_b_offset - 1.2
-    add_box(bm, bunker_x, bunker_y, 0.6, 2.2, 2.4, 1.2, mat_idx=9) # timber bin
-    add_box(bm, bunker_x, bunker_y, 0.95, 1.9, 2.1, 0.5, mat_idx=8) # mound of black coal!
-
-    # 6. Stack of Iron Billets / Ingots
-    add_box(bm, -1.8, canopy_y_front + 1.0, 0.25, 0.8, 1.2, 0.5, mat_idx=4)
-
-    bm.normal_update()
-    mesh = bpy.data.meshes.new("Mesh_Blacksmith")
-    bm.to_mesh(mesh)
-    bm.free()
-    for m in mat_list: mesh.materials.append(m)
-    obj = bpy.data.objects.new("BlacksmithWorkshop", mesh)
-    bpy.context.collection.objects.link(obj)
-    export_object(obj, "blacksmith_workshop")
-
-# ==============================================================================
-# 2. UPGRADED BREWER'S MALTHOUSE (brewer_malthouse/front.jpg)
-# ==============================================================================
-
+# -------------------------------------------------------------
+# 16. Potter's Workshop & Kiln (Garncarnia)
+# -------------------------------------------------------------
 def build_potter_workshop(mats):
+    """Thatched half-timbered cottage (reference_photos/potter_workshop) with a domed brick
+    updraft kiln on a fieldstone ring, a stoked fire mouth and stone flue, a three-tier rack of
+    jugs, amphorae and bowls, a kick wheel and bench, raw clay heaps and firewood."""
     clear_scene()
     bm = bmesh.new()
 
@@ -2379,94 +2723,104 @@ def build_potter_workshop(mats):
         mats["timber_dark"],        # 1
         mats["roof_thatch"],        # 2
         mats["brick_oven"],         # 3
-        mats["stone_limestone"],    # 4
+        mats["stone_limestone"],    # 4  (-> StoneFieldstone)
         mats["pottery_terracotta"], # 5
         mats["fire_orange"],        # 6
         mats["soot_black"],         # 7
         mats["timber_plank"],       # 8
-        mats["clay_mound"]          # 9
+        mats["clay_mound"],         # 9
+        mats["glass_dark"],         # 10
+        mats["birch_bark"],         # 11
+        mats["wood_end_grain"],     # 12
+        mats["water_clean"],        # 13
+        mats["brick_gothic"],       # 14
+        mats["iron_wrought"],       # 15
     ]
 
-    # Thatched Wattle-and-Daub Cottage: 6.8m wide x 9.2m deep x 6.8m high
     W, D = 6.8, 9.2
     w2, d2 = W * 0.5, D * 0.5
-    add_box(bm, 0, 0, 1.8, W, D, 3.6, mat_idx=0) # loam plaster walls
-    # Rustic timber posts & corner crucks
-    for cx in [-w2, w2]:
-        for cy in [-d2, d2]:
-            add_timber_beam(bm, Vector((cx, cy, 0)), Vector((cx, cy, 3.6)), width=0.22, depth=0.22, mat_idx=1)
-    # Heavy thatched roof with cross timbers (kozły)
-    add_pantile_roof(bm, 0, 0, 3.6, W, D, 4.4, overhang=0.55, courses=7, mat_tile=2, mat_trim=1, mat_plaster=0)
+    zp, ze = 0.5, 3.4
 
-    # -------------------------------------------------------------
-    # DOMED BRICK POTTERY KILN (Updraft Kiln in Yard)
-    # -------------------------------------------------------------
-    kiln_x = w2 + 2.6
-    kiln_y = -0.5
-    kiln_radius = 1.6
-    kiln_stone_h = 1.4
-    kiln_dome_h = 1.8
+    # Cottage: fieldstone footing, loam-plaster walls in a timber frame
+    add_box(bm, 0, 0, zp * 0.5, W + 0.12, D + 0.12, zp, mat_idx=4)
+    add_box(bm, 0, 0, (zp + ze) * 0.5, W, D, ze - zp, mat_idx=0)
+    _ws_framed_front(bm, (-w2, -d2), (w2, -d2), zp, ze, (0, -1, 0), 1,
+                     [(1.0, 2.1, zp, zp + 2.1), (4.4, 5.4, zp + 1.0, zp + 2.0)], rail=1.0)
+    add_box(bm, -1.85, -d2 - 0.04, zp + 1.05, 1.06, 0.06, 2.08, mat_idx=8)
+    for zs in (zp + 0.4, zp + 1.7):
+        add_box(bm, -1.9, -d2 - 0.08, zs, 0.75, 0.02, 0.07, mat_idx=15)
+    _ws_glaze(bm, Vector((1.5, -d2, zp + 1.5)), (1, 0, 0), (0, -1, 0), 0.94, 0.94, 10, 1)
+    for (a, b, out), ends in zip(_ws_three_sides(w2, d2), _WS_THREE_SIDE_ENDS):
+        add_half_timber_wall(bm, a, b, zp, ze, Vector(out), mat_timber=1, mat_glass=10, rails=(0.9, 2.3), ends=ends)
 
-    # Circular stone plinth base
-    add_cylinder(bm, kiln_x, kiln_y, kiln_stone_h * 0.5, radius=kiln_radius, height=kiln_stone_h, segs=14, mat_idx=4)
-    # Arched stokehole fire mouth
-    add_box(bm, kiln_x, kiln_y - kiln_radius - 0.1, kiln_stone_h * 0.55, 1.1, 0.4, 0.85, mat_idx=3)
-    add_box(bm, kiln_x, kiln_y - kiln_radius - 0.05, kiln_stone_h * 0.5, 0.7, 0.1, 0.55, mat_idx=6) # glowing fire
+    # Thick thatch with framed gables, loft window and ridge sticks
+    rh, ov = 4.2, 0.55
+    add_gable_roof(bm, 0, 0, ze, W, D, rh, overhang=ov, mat_roof=2, mat_plaster=0, mat_timber=1,
+                   mat_glass=10, loft_windows=1, eave_lip=0.3)
+    _ws_ridge_crosses(bm, 0, (-3.6, -1.2, 1.2, 3.6), ze + rh, rh / (w2 + ov), 1)
 
-    # Domed brick kiln body
-    add_beehive_dome(bm, kiln_x, kiln_y, kiln_stone_h, radius=kiln_radius * 0.95, height=kiln_dome_h, segs_u=14, segs_v=6, mat_idx=3)
-    # Chimney stack puffing smoke behind kiln
-    add_ashlar_chimney(bm, kiln_x, kiln_y + 1.2, kiln_stone_h, w=1.0, d=1.0, h=6.4, mat_stone=4, mat_soot=7)
+    # Updraft kiln: fieldstone ring, brick dome with vent, stokehole arch with fire, stone flue
+    kx, ky = 5.6, -0.5
+    add_cylinder(bm, kx, ky, 0.55, 1.7, 1.1, segs=16, mat_idx=4)
+    add_beehive_dome(bm, kx, ky, 1.1, 1.5, 1.7, segs_u=16, segs_v=6, mat_idx=3)
+    add_cylinder(bm, kx, ky, 2.77, 0.32, 0.14, segs=10, mat_idx=7)
+    add_box(bm, kx, ky - 1.8, 0.6, 1.2, 0.5, 1.2, mat_idx=14)
+    add_box(bm, kx, ky - 1.8, 1.26, 1.35, 0.55, 0.12, mat_idx=14)
+    add_box(bm, kx, ky - 2.08, 0.5, 0.65, 0.04, 0.65, mat_idx=6)
+    for i in range(3):
+        add_box(bm, kx - 0.25 + i * 0.25, ky - 2.12, 0.18, 0.18, 0.04, 0.18, mat_idx=12)
+    add_box(bm, kx, 1.15, 1.5, 0.5, 0.6, 0.5, mat_idx=14)
+    add_ashlar_chimney(bm, kx, 1.75, 0.0, w=1.0, d=1.0, h=7.6, mat_stone=4, mat_soot=7)
 
-    # -------------------------------------------------------------
-    # 3-TIER POTTERY DRYING SHELVES (Filled with Amphorae & Pots)
-    # -------------------------------------------------------------
-    shelf_x = w2 + 4.8
-    shelf_y = -0.5
-    shelf_w, shelf_d, shelf_h = 1.2, 4.5, 2.5
-    # 4 Corner Posts
-    for sx in [-shelf_w * 0.5, shelf_w * 0.5]:
-        for sy in [-shelf_d * 0.5, shelf_d * 0.5]:
-            add_timber_beam(bm, Vector((shelf_x + sx, shelf_y + sy, 0)), Vector((shelf_x + sx, shelf_y + sy, shelf_h)), width=0.12, depth=0.12, mat_idx=1)
-    # 3 Shelves
-    for tier in [0.7, 1.4, 2.1]:
-        add_box(bm, shelf_x, shelf_y, tier, shelf_w, shelf_d, 0.08, mat_idx=8)
-        # Pots & Amphorae on each shelf!
-        for py in [-1.8, -0.9, 0.0, 0.9, 1.8]:
-            add_cylinder(bm, shelf_x - 0.25, shelf_y + py, tier + 0.25, radius=0.18, height=0.45, segs=8, mat_idx=5)
-            add_cylinder(bm, shelf_x + 0.25, shelf_y + py, tier + 0.25, radius=0.16, height=0.38, segs=8, mat_idx=5)
+    # Three-tier drying rack loaded with jugs, amphorae and bowls (+X yard)
+    rx0, rx1, ry0, ry1 = 7.6, 8.7, -4.6, -0.2
+    for x in (rx0, rx1):
+        for y in (ry0, (ry0 + ry1) * 0.5, ry1):
+            add_timber_beam(bm, Vector((x, y, 0)), Vector((x, y, 2.3)), width=0.1, depth=0.1, mat_idx=1)
+    kinds = ("jug", "amphora", "bowl", "jar")
+    for t, tz in enumerate((0.5, 1.1, 1.7)):
+        add_box(bm, (rx0 + rx1) * 0.5, (ry0 + ry1) * 0.5, tz, rx1 - rx0 + 0.1, ry1 - ry0 + 0.1, 0.06, mat_idx=8)
+        for i in range(6):
+            for j, px in enumerate((rx0 + 0.28, rx1 - 0.28)):
+                kind = kinds[(i + j + t) % 3]
+                _ws_pot(bm, px, ry0 + 0.4 + i * 0.72, tz + 0.03, kind, 5, s=1.0 if kind != "bowl" else 1.2)
 
-    # -------------------------------------------------------------
-    # POTTER'S KICK-WHEEL & WORKBENCH
-    # -------------------------------------------------------------
-    bench_x = kiln_x - 1.2
-    bench_y = -3.2
-    add_box(bm, bench_x, bench_y, 0.5, 1.4, 2.2, 0.8, mat_idx=8) # workbench
-    add_cylinder(bm, bench_x, bench_y + 0.5, 0.95, radius=0.32, height=0.08, segs=10, mat_idx=8) # kick wheel
-    add_cylinder(bm, bench_x, bench_y + 0.5, 1.15, radius=0.20, height=0.32, segs=8, mat_idx=5) # clay pot in progress!
-    # Clay mounds & firewood
-    add_cylinder(bm, kiln_x + 1.2, -2.8, 0.35, radius=0.6, height=0.7, segs=8, mat_idx=9)
-    add_cylinder(bm, kiln_x + 2.2, -2.5, 0.3, radius=0.5, height=0.6, segs=8, mat_idx=9)
+    # Kick wheel and work bench, water tub, clay heaps, firewood, storage jars
+    add_box(bm, 4.6, -3.9, 0.75, 1.4, 0.7, 0.08, mat_idx=8)
+    for lx in (4.0, 5.2):
+        for ly in (-4.15, -3.65):
+            add_box(bm, lx, ly, 0.36, 0.08, 0.08, 0.72, mat_idx=1)
+    _ws_pot(bm, 4.2, -3.9, 0.79, "jug", 5, s=0.8)
+    _ws_pot(bm, 4.7, -3.95, 0.79, "bowl", 5)
+    wx, wy = 5.9, -3.9
+    _ws_cyl(bm, (wx, wy, 0.15), (wx, wy, 0.25), 0.42, segs=12, mat=8)
+    _ws_cyl(bm, (wx, wy, 0.25), (wx, wy, 0.8), 0.05, segs=6, mat=1)
+    _ws_cyl(bm, (wx, wy, 0.8), (wx, wy, 0.86), 0.24, segs=10, mat=8)
+    _ws_lathe(bm, wx, wy, 0.86, [(0.12, 0.0), (0.15, 0.1), (0.1, 0.22)], 8, 9)
+    add_box(bm, 6.55, -3.9, 0.25, 0.4, 0.4, 0.5, mat_idx=8)
+    _ws_tub(bm, 5.3, -4.75, 0.0, 0.26, 0.36, mat_wood=8, mat_fill=13, mat_hoop=15, segs=10)
+    for cxm, cym, cr in ((6.8, -4.3, 0.45), (7.0, -3.4, 0.36), (6.5, -4.85, 0.3)):
+        add_beehive_dome(bm, cxm, cym, 0.0, cr, cr * 0.85, segs_u=10, segs_v=3, mat_idx=9)
+    add_prop_firewood_pile(bm, cx=7.9, cy=2.4, cz=0, w=1.5, d=1.0, h=1.1, mat_bark=11, mat_end=12)
+    for jx in (-2.95, -0.75):
+        _ws_pot(bm, jx, -4.95, 0.0, "jar", 5, s=0.8)
 
-    bm.normal_update()
-    mesh = bpy.data.meshes.new("Mesh_Potter")
-    bm.to_mesh(mesh)
-    bm.free()
-    for m in mat_list: mesh.materials.append(m)
-    obj = bpy.data.objects.new("HousePotter", mesh)
-    bpy.context.collection.objects.link(obj)
-    export_object(obj, "house_potter")
+    _ws_finish(bm, mat_list, "Mesh_Potter", "HousePotter", "house_potter")
 
-# ==============================================================================
-# 4. UPGRADED TANNER'S RIVERSIDE WORKSHOP (tanner_workshop/front.jpg)
-# ==============================================================================
 
+# -------------------------------------------------------------
+# 17. Weaver's Workshop & Dye Yard (Tkalnia)
+# -------------------------------------------------------------
 def build_weaver_workshop(mats):
+    """Weaver's house (reference_photos/weaver_workshop): framed ground floor, jettied upper storey
+    densely braced with St. Andrew's crosses, shingle roof with a front-gable loft door and wool
+    hoist, two fired dye vats (madder red, indigo blue), cloth-drying rails, a treadle loom under
+    a lean-to in the forecourt and a handcart of cloth bolts."""
     clear_scene()
     bm = bmesh.new()
 
     mat_list = [
-        mats["plaster_cream"],  # 0
+        mats["plaster_white"],  # 0
         mats["timber_dark"],    # 1
         mats["roof_shingle"],   # 2
         mats["dye_indigo"],     # 3
@@ -2475,78 +2829,146 @@ def build_weaver_workshop(mats):
         mats["cloth_madder"],   # 6
         mats["cloth_violet"],   # 7
         mats["cloth_gold"],     # 8
-        mats["stone_limestone"],# 9
+        mats["stone_limestone"],# 9  (-> StoneFieldstone)
         mats["fire_orange"],    # 10
         mats["timber_plank"],   # 11
-        mats["flour_sack_cloth"]      # 12
+        mats["flour_sack_cloth"], # 12 wool sacks
+        mats["glass_dark"],     # 13
+        mats["iron_wrought"],   # 14
+        mats["birch_bark"],     # 15
+        mats["wood_end_grain"], # 16
+        mats["cloth_red"],      # 17
     ]
 
     W, D = 7.8, 11.5
     w2, d2 = W * 0.5, D * 0.5
+    zp, z1, zt = 0.6, 3.9, 7.3
+    Wu, Du = W + 0.5, D + 0.5
+    wu, du = Wu * 0.5, Du * 0.5
 
-    # 1. Ground Floor (Z: 0 to 4.0m)
-    add_box(bm, 0, 0, 2.0, W, D, 4.0, mat_idx=0)
-    # 2. Jettied Second Floor with PROMINENT ST. ANDREW'S CROSSES (Z: 4.0 to 7.6m)
-    z_u, h_u = 4.0, 3.6
-    add_box(bm, 0, 0, z_u + h_u * 0.5, W + 0.4, D + 0.4, h_u, mat_idx=0)
-    # Side Wall (+X) St. Andrews X-Braces!
-    for sy in [-2.8, 2.8]:
-        add_timber_beam(bm, Vector((w2 + 0.22, sy - 1.4, z_u)), Vector((w2 + 0.22, sy + 1.4, z_u + h_u)), width=0.15, depth=0.15, mat_idx=1)
-        add_timber_beam(bm, Vector((w2 + 0.22, sy - 1.4, z_u + h_u)), Vector((w2 + 0.22, sy + 1.4, z_u)), width=0.15, depth=0.15, mat_idx=1)
-    # St. Andrew's X-Bracing along all bays!
-    w_bay = (W + 0.4) * 0.5
-    for bay_x in [-w_bay * 0.5, w_bay * 0.5]:
-        add_timber_beam(bm, Vector((bay_x - 1.2, -d2 - 0.22, z_u)), Vector((bay_x + 1.2, -d2 - 0.22, z_u + h_u)), width=0.15, depth=0.15, mat_idx=1)
-        add_timber_beam(bm, Vector((bay_x - 1.2, -d2 - 0.22, z_u + h_u)), Vector((bay_x + 1.2, -d2 - 0.22, z_u)), width=0.15, depth=0.15, mat_idx=1)
+    # Fieldstone plinth, framed ground storey: door and two leaded windows on the street
+    add_box(bm, 0, 0, zp * 0.5, W + 0.12, D + 0.12, zp, mat_idx=9)
+    add_box(bm, 0, 0, (zp + z1) * 0.5, W, D, z1 - zp, mat_idx=0)
+    _ws_framed_front(bm, (-w2, -d2), (w2, -d2), zp, z1, (0, -1, 0), 1,
+                     [(0.9, 1.9, zp + 1.0, zp + 2.2), (2.4, 3.5, zp, zp + 2.25), (5.0, 6.6, zp + 1.0, zp + 2.2)], rail=1.0)
+    add_box(bm, -0.95, -d2 - 0.04, zp + 1.12, 1.06, 0.06, 2.23, mat_idx=11)
+    for zs in (zp + 0.45, zp + 1.8):
+        add_box(bm, -1.0, -d2 - 0.08, zs, 0.75, 0.02, 0.07, mat_idx=14)
+    _ws_glaze(bm, Vector((-2.5, -d2, zp + 1.6)), (1, 0, 0), (0, -1, 0), 0.94, 1.14, 13, 1)
+    _ws_glaze(bm, Vector((1.9, -d2, zp + 1.6)), (1, 0, 0), (0, -1, 0), 1.54, 1.14, 13, 1)
+    for (a, b, out), ends in zip(_ws_three_sides(w2, d2), _WS_THREE_SIDE_ENDS):
+        add_half_timber_wall(bm, a, b, zp, z1, Vector(out), mat_timber=1, mat_glass=13, ends=ends)
 
-    # 3. High-Pitched Shingle Roof with Attic Hoist Arm
-    add_pantile_roof(bm, 0, 0, z_u + h_u, W + 0.4, D + 0.4, 4.6, overhang=0.45, courses=8, mat_tile=2, mat_trim=1, mat_plaster=0)
-    # Projecting attic hoist arm & pulley with wool sack
-    hoist_z = z_u + h_u + 3.2
-    add_timber_beam(bm, Vector((0, -d2 - 0.2, hoist_z)), Vector((0, -d2 - 1.8, hoist_z)), width=0.18, depth=0.18, mat_idx=1)
-    add_cylinder(bm, 0, -d2 - 1.6, hoist_z - 0.15, radius=0.22, height=0.08, segs=10, mat_idx=1) # pulley
-    add_box(bm, 0, -d2 - 1.6, hoist_z - 1.4, 0.65, 0.65, 0.8, mat_idx=12) # suspended wool sack
+    # Jetty joists, then the upper storey framed in St. Andrew's crosses on all sides
+    for i in range(12):
+        add_box(bm, -3.6 + i * 0.65, -d2 - 0.16, z1 - 0.11, 0.16, 0.32, 0.2, mat_idx=1)
+    for i in range(15):
+        add_box(bm, w2 + 0.16, -5.25 + i * 0.75, z1 - 0.11, 0.32, 0.16, 0.2, mat_idx=1)
+    add_box(bm, 0, 0, (z1 + zt) * 0.5, Wu, Du, zt - z1, mat_idx=0)
+    for a, b, out in _ws_four_sides(wu, du):
+        _ws_andrew_wall(bm, a, b, z1, zt, Vector(out), mat_timber=1, mat_glass=13, ends=("post", "butt"))
 
-    # -------------------------------------------------------------
-    # 2 MASONRY DYE CAULDRONS (Indigo & Madder Dye Liquors)
-    # -------------------------------------------------------------
-    for idx, (cy, mat_dye) in enumerate([(-2.2, 4), (1.4, 3)]):
-        cx = w2 + 2.2
-        # Circular stone base
-        add_cylinder(bm, cx, cy, 0.65, radius=1.1, height=1.3, segs=12, mat_idx=9)
-        # Fire opening below
-        add_box(bm, cx, cy - 1.1, 0.4, 0.6, 0.2, 0.5, mat_idx=10) # fire
-        # Steaming dye vat liquid
-        add_cylinder(bm, cx, cy, 1.22, radius=0.95, height=0.1, segs=12, mat_idx=mat_dye)
+    # Shingle roof; gable frames drawn here so the front one can carry a loft door and hoist
+    rh, ov = 4.7, 0.4
+    ridge = zt + rh
+    add_gable_roof(bm, 0, 0, zt, Wu, Du, rh, overhang=ov, mat_roof=2, mat_plaster=0, mat_timber=1,
+                   frame=False, loft_windows=0)
+    z_edge = zt + rh * (ov / (wu + ov))
 
-    # -------------------------------------------------------------
-    # CLOTH DRYING RAILS WITH DRAPED WOOL TEXTILES
-    # -------------------------------------------------------------
-    rail_x = w2 + 4.2
-    # 3 Drying Rails
-    for idx, (ry, mat_cloth) in enumerate([(-3.2, 6), (0.0, 5), (3.2, 7)]):
-        add_timber_beam(bm, Vector((rail_x, ry - 1.4, 0)), Vector((rail_x, ry - 1.4, 2.2)), width=0.12, depth=0.12, mat_idx=1)
-        add_timber_beam(bm, Vector((rail_x, ry + 1.4, 0)), Vector((rail_x, ry + 1.4, 2.2)), width=0.12, depth=0.12, mat_idx=1)
-        add_timber_beam(bm, Vector((rail_x, ry - 1.5, 2.1)), Vector((rail_x, ry + 1.5, 2.1)), width=0.10, depth=0.10, mat_idx=1)
-        # Draped cloth textile sheet
-        add_box(bm, rail_x, ry, 1.3, 0.04, 2.6, 1.6, mat_idx=mat_cloth)
+    def gable_half_width(z):
+        return wu * (ridge - z) / (ridge - z_edge)
 
-    # Handcart loaded with rolled colored fabric bolts (Front yard)
-    cart_x = 2.4
-    cart_y = -d2 - 2.4
-    add_box(bm, cart_x, cart_y, 0.5, 1.2, 2.0, 0.4, mat_idx=11)
-    # Fabric bolts
-    for i, m in enumerate([5, 6, 7, 8]):
-        add_cylinder(bm, cart_x - 0.3 + (i % 2) * 0.6, cart_y - 0.5 + (i // 2) * 1.0, 0.85, radius=0.16, height=1.1, segs=8, mat_idx=m)
+    zc = 9.5
+    for sgn in (-1.0, 1.0):
+        yg = sgn * (du + 0.05)
+        P = lambda x, z: Vector((x, yg, z))
+        add_timber_beam(bm, P(-wu - 0.14, zt + 0.09), P(wu + 0.14, zt + 0.09), width=0.18, depth=0.18, mat_idx=1)
+        xc = gable_half_width(zc) - 0.15
+        add_timber_beam(bm, P(-xc, zc), P(xc, zc), width=0.18, depth=0.18, mat_idx=1)
+        add_timber_beam(bm, P(0, zc + 0.09), P(0, ridge - 0.35), width=0.18, depth=0.18, mat_idx=1)
+        for sx in (-1.0, 1.0):
+            add_timber_beam(bm, P(sx * 3.4, zt + 0.18), P(sx * 0.8, zc - 0.09), width=0.15, depth=0.15, mat_idx=1)
+            add_timber_beam(bm, P(sx * 0.65, zt + 0.18), P(sx * 0.65, zc - 0.09), width=0.16, depth=0.16, mat_idx=1)
+            add_timber_beam(bm, P(sx * xc * 0.8, zc + 0.09), P(sx * 0.12, zc + 1.2), width=0.13, depth=0.13, mat_idx=1)
+    add_box(bm, 0, -du - 0.02, (zt + 0.18 + zc - 0.09) * 0.5, 1.1, 0.04, zc - zt - 0.27, mat_idx=13)   # loft door
+    add_box(bm, 0, du + 0.02, (zt + 0.18 + zc - 0.09) * 0.5, 1.1, 0.04, zc - zt - 0.27, mat_idx=13)
+    hz = zc + 0.45                                                                      # hoist beam
+    add_timber_beam(bm, Vector((0, -du + 0.4, hz)), Vector((0, -du - 1.7, hz)), width=0.2, depth=0.2, mat_idx=1)
+    add_timber_beam(bm, Vector((0, -du - 0.1, hz - 0.9)), Vector((0, -du - 0.9, hz - 0.08)), width=0.12, depth=0.12, mat_idx=1)
+    _ws_cyl(bm, (-0.05, -du - 1.5, hz - 0.3), (0.05, -du - 1.5, hz - 0.3), 0.17, segs=10, mat=11)
+    add_timber_beam(bm, Vector((0, -du - 1.5, hz - 0.1)), Vector((0, -du - 1.5, hz - 0.3)), width=0.04, depth=0.04, mat_idx=14)
+    add_timber_beam(bm, Vector((0, -du - 1.67, hz - 0.3)), Vector((0, -du - 1.67, 8.4)), width=0.03, depth=0.03, mat_idx=12)
+    add_box(bm, 0, -du - 1.67, 8.02, 0.62, 0.62, 0.72, mat_idx=12)                    # wool sack
+    add_box(bm, 0, -du - 1.67, 8.43, 0.2, 0.2, 0.1, mat_idx=12)
 
-    bm.normal_update()
-    mesh = bpy.data.meshes.new("Mesh_Weaver")
-    bm.to_mesh(mesh)
-    bm.free()
-    for m in mat_list: mesh.materials.append(m)
-    obj = bpy.data.objects.new("HouseWeaver", mesh)
-    bpy.context.collection.objects.link(obj)
-    export_object(obj, "house_weaver")
+    # Shuttle sign at the camera-facing front corner
+    add_timber_beam(bm, Vector((wu + 0.05, -du - 0.1, 6.4)), Vector((wu + 1.05, -du - 0.1, 6.4)), width=0.05, depth=0.05, mat_idx=14)
+    add_timber_beam(bm, Vector((wu + 0.05, -du - 0.1, 5.9)), Vector((wu + 0.8, -du - 0.1, 6.4)), width=0.04, depth=0.04, mat_idx=14)
+    add_box(bm, wu + 0.65, -du - 0.1, 5.95, 0.75, 0.05, 0.6, mat_idx=11)
+    add_box(bm, wu + 0.65, -du - 0.15, 5.95, 0.5, 0.05, 0.12, mat_idx=8)
+
+    # Two fired dye vats on fieldstone hearths, with stirring paddles
+    for vy, dye in ((-3.2, 4), (0.0, 3)):
+        vx = 5.7
+        add_cylinder(bm, vx, vy, 0.4, 1.0, 0.8, segs=12, mat_idx=9)
+        add_box(bm, vx, vy - 1.0, 0.3, 0.6, 0.12, 0.45, mat_idx=10)
+        for lx in (-0.15, 0.15):
+            add_timber_beam(bm, Vector((vx + lx, vy - 1.5, 0.08)), Vector((vx + lx * 0.5, vy - 0.85, 0.22)), width=0.12, depth=0.12, mat_idx=15)
+        _ws_tub(bm, vx, vy, 0.8, 0.85, 0.6, mat_wood=11, mat_fill=dye, mat_hoop=14, segs=14, fill=0.82)
+        add_timber_beam(bm, Vector((vx + 0.15, vy, 1.0)), Vector((vx + 0.85, vy - 0.45, 2.3)), width=0.06, depth=0.06, mat_idx=11)
+
+    # Cloth-drying rails on the +X flank with dyed broadcloth draped over them
+    rx = 7.7
+    for ry, cloth in ((-4.4, 6), (-1.6, 5), (1.2, 7), (4.0, 8)):
+        for sy in (-1.2, 1.2):
+            add_timber_beam(bm, Vector((rx, ry + sy, 0)), Vector((rx, ry + sy, 2.1)), width=0.12, depth=0.12, mat_idx=1)
+        add_timber_beam(bm, Vector((rx, ry - 1.3, 2.05)), Vector((rx, ry + 1.3, 2.05)), width=0.1, depth=0.1, mat_idx=1)
+        for sx in (-1.0, 1.0):
+            _ws_face(bm, [(rx + sx * 0.06, ry - 1.05, 2.0), (rx + sx * 0.06, ry + 1.05, 2.0),
+                          (rx + sx * 0.18, ry + 1.05, 0.6), (rx + sx * 0.18, ry - 1.05, 0.6)],
+                     cloth, (rx - sx, ry, 1.3))
+
+    # Treadle loom with a madder warp under a shingled lean-to in the forecourt
+    lx0, lx1, ly0, ly1 = -4.3, -1.6, -9.0, -6.4
+    for x in (lx0 + 0.1, lx1 - 0.1):
+        add_timber_beam(bm, Vector((x, ly0 + 0.1, 0)), Vector((x, ly0 + 0.1, 2.2)), width=0.14, depth=0.14, mat_idx=1)
+        add_timber_beam(bm, Vector((x, ly1 - 0.1, 0)), Vector((x, ly1 - 0.1, 2.8)), width=0.14, depth=0.14, mat_idx=1)
+        add_timber_beam(bm, Vector((x, ly0, 2.2)), Vector((x, ly1, 2.8)), width=0.14, depth=0.14, mat_idx=1)
+    _ws_prism(bm, [(lx0 - 0.15, ly0 - 0.15, 2.36), (lx1 + 0.15, ly0 - 0.15, 2.36),
+                   (lx1 + 0.15, ly1 + 0.1, 2.96), (lx0 - 0.15, ly1 + 0.1, 2.96)], 0.07, 2)
+    cx, cy = (lx0 + lx1) * 0.5, (ly0 + ly1) * 0.5
+    for sx in (-0.65, 0.65):
+        for sy in (-0.85, 0.85):
+            add_timber_beam(bm, Vector((cx + sx, cy + sy, 0)), Vector((cx + sx, cy + sy, 1.5)), width=0.09, depth=0.09, mat_idx=11)
+        add_timber_beam(bm, Vector((cx + sx, cy - 0.9, 1.45)), Vector((cx + sx, cy + 0.9, 1.45)), width=0.09, depth=0.09, mat_idx=11)
+    for sy in (-0.85, 0.85):
+        add_timber_beam(bm, Vector((cx - 0.7, cy + sy, 0.85)), Vector((cx + 0.7, cy + sy, 0.85)), width=0.11, depth=0.11, mat_idx=11)
+    add_box(bm, cx, cy, 0.87, 1.1, 1.6, 0.02, mat_idx=6)                                # warp
+    add_box(bm, cx, cy - 0.35, 0.89, 1.1, 0.5, 0.02, mat_idx=17)                       # woven cloth
+    add_timber_beam(bm, Vector((cx - 0.7, cy, 1.25)), Vector((cx + 0.7, cy, 1.25)), width=0.06, depth=0.06, mat_idx=11)
+    add_box(bm, cx, cy - 1.05, 0.45, 1.1, 0.32, 0.08, mat_idx=11)                       # bench
+    for sx in (-0.45, 0.45):
+        add_box(bm, cx + sx, cy - 1.05, 0.2, 0.08, 0.28, 0.4, mat_idx=11)
+
+    # Handcart loaded with bolts of dyed cloth
+    kx, ky = 2.0, -7.6
+    add_box(bm, kx, ky, 0.75, 1.3, 2.0, 0.12, mat_idx=11)
+    for sx in (-0.62, 0.62):
+        add_box(bm, kx + sx, ky, 0.95, 0.06, 2.0, 0.3, mat_idx=11)
+        _ws_cyl(bm, (kx + sx * 1.2, ky + 0.2, 0.45), (kx + sx * 1.2 + sx * 0.1, ky + 0.2, 0.45), 0.45, segs=12, mat=1)
+        add_timber_beam(bm, Vector((kx + sx * 0.5, ky - 1.0, 0.72)), Vector((kx + sx * 0.45, ky - 1.55, 0.45)), width=0.07, depth=0.07, mat_idx=1)
+    _ws_cyl(bm, (kx - 1.25, ky + 0.2, 0.45), (kx + 1.25, ky + 0.2, 0.45), 0.04, segs=6, mat=14)
+    add_box(bm, kx, ky + 0.2, 0.6, 0.3, 0.2, 0.2, mat_idx=11)
+    for k, m in enumerate((5, 6, 7, 8, 17)):
+        _ws_cyl(bm, (kx - 0.55, ky - 0.8 + k * 0.38, 0.95), (kx + 0.55, ky - 0.8 + k * 0.38, 0.95), 0.15, segs=8, mat=m)
+    for k, m in enumerate((8, 5, 17, 6)):
+        _ws_cyl(bm, (kx - 0.5, ky - 0.61 + k * 0.38, 1.22), (kx + 0.5, ky - 0.61 + k * 0.38, 1.22), 0.14, segs=8, mat=m)
+
+    # Firewood for the dye fires, wool sacks by the door
+    add_prop_firewood_pile(bm, cx=5.8, cy=3.5, cz=0, w=1.6, d=1.0, h=1.2, mat_bark=15, mat_end=16)
+    add_prop_flour_sacks(bm, [(0.45, -6.4, 0, 0), (1.05, -6.45, 0, 0)], mat_sack=12)
+
+    _ws_finish(bm, mat_list, "Mesh_Weaver", "HouseWeaver", "house_weaver")
 
 def build_watermill(mats):
     clear_scene()

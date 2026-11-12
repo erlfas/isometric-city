@@ -387,3 +387,21 @@ In the baseline simulation, the 1,500 simulated citizens were represented by rud
    - **Tone mapping**: ACES desaturated the painted textures; Neutral's black-level offset crushed the blue channel of dark brick. The rig is balanced so lit walls show textures near their painted value, with `LinearToneMapping`.
    - **Stretched instances smear metre-based UVs**: curtain walls were one 16 m module scaled up to ~4x per segment; they are now tiled 16 m modules.
    - **Inward-wound roofs ("cream plaster blocks")**: `add_pantile_roof` wound every tile course facing down/inward, so baker, brewer, potter, tanner, weaver, blacksmith and watermill showed their plaster upper storey through a missing roof. Fixed in the helper. Replacement runtime materials must also copy `side` from the glTF material (Blender exports `doubleSided`; three.js defaults to `FrontSide`). Audit winding with a per-material up/down triangle count, never by eye.
+
+---
+
+## 17. Timber Frames & Workshop Yards: Geometry Rules from the House and Workshop Rebuilds
+
+**Context**: The half-timber house showed 0.14 m notches at every corner; the six craft workshops were rebuilt with open yards (ovens, kilns, vats, forges).
+
+1. **Joints**:
+   - **One owner per corner.** Each wall drew its own end post inside its span, so two walls meeting left a notch. Exactly one wall owns the corner post; the other butts against it (`add_half_timber_wall(..., ends=("post","butt"))`, `_ht_end_extent`).
+   - **No coplanar overlaps, even in the same material.** `UV_ALONG_LENGTH` runs the grain along each part's longest edge, so two overlapping timbers z-fight with crossed grain. The same holds for door leaves and inserts: make them a few mm narrower than the opening.
+   - **Size gable members from the roof line.** King posts and collars that stop short of the roof underside float (`add_gable_roof(..., frame_wrap=True)`).
+   - **Braces must skip openings.** `add_half_timber_wall` braces straight across door positions; frame street fronts with openings via `_ws_framed_front` (posts at each opening, braces only on solid panels).
+2. **Winding from a reference point, not vertex order**: `_ws_poly` computes the face normal (Newell) and flips it to point away from a given interior point. Slabs, tubs, lathe shapes and slats built this way were correct first time.
+3. **Liquid inside a closed cylinder is invisible**: a fill disc below the top cap of `add_cylinder` never renders. Open tubs need outer wall, rim, inward-facing inner wall and a liquid surface (`_ws_tub`).
+4. **The ~30° game camera hides what sits under a roof or behind a neighbour**:
+   - A lean-to over the baker's oven hid the dome. Keep signature stations open-air or under small roofs, on the +X side or in the front yard.
+   - Workshops are placed at full template size, so their yards overhang neighbouring parcels and are often covered by the next roof. Before judging a model, pick a less-occluded instance with `__lublin.find(model)` (suburban ones, e.g. baker #1, potter #11, blacksmith #21) or render the GLB alone.
+5. **Parallel agents in worktrees**: the Agent tool's worktrees were created from an old commit, missing shared helpers. Check `git merge-base --is-ancestor main HEAD` before starting, and give each agent its own scratchpad subfolder (one agent overwrote another's script).
