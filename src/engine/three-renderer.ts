@@ -4,6 +4,43 @@ import type { CityPlan, Citizen } from '../types';
 import { TextureLibrary } from './texture-library';
 import { CitizenCrowd } from './citizen-crowd';
 import { parcelHash, parcelKind } from './parcel-kind';
+import { StaticBatches, type Placement, type Tint } from './static-batches';
+
+const UP = new THREE.Vector3(0, 1, 0);
+const hsl = { h: 0, s: 0, l: 0 };
+
+/** Per-building colour multiplier for an untextured material (limewash, timber, roof, brick
+ *  shades vary by building); null for materials that don't vary. r1..r3 in [-1, 1]. */
+function jitterTint(mat: THREE.MeshStandardMaterial, r1: number, r2: number, r3: number): THREE.Color | null {
+  const name = mat.name || '';
+  const c = mat.color.clone();
+  c.getHSL(hsl);
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+  if (name.includes('RoofTileRed')) {
+    // Pantiles: shift between warm terracotta orange and deep burnt tile red
+    c.setHSL(hsl.h + r1 * 0.025, clamp(hsl.s + r2 * 0.08, 0.2, 1), clamp(hsl.l + r3 * 0.06, 0.12, 0.65));
+  } else if (name.includes('RoofThatch')) {
+    // Thatch: golden dry straw vs weathered grey-brown thatch
+    c.setHSL(hsl.h + r1 * 0.02, clamp(hsl.s + r2 * 0.07, 0.15, 1), clamp(hsl.l + r3 * 0.06, 0.2, 0.68));
+  } else if (name.includes('RoofShingle')) {
+    // Wood shingle: grey weathered vs tar-treated
+    c.setHSL(hsl.h, hsl.s, clamp(hsl.l + r1 * 0.06, 0.15, 0.55));
+  } else if (name.includes('Plaster')) {
+    // Limewash: warm chalk vs fresh white
+    c.setHSL(hsl.h + r1 * 0.012, hsl.s, clamp(hsl.l + r2 * 0.04, 0.72, 0.96));
+  } else if (name.includes('Timber')) {
+    // Oak timber: linseed/pitch treated vs weathered
+    c.setHSL(hsl.h, hsl.s, clamp(hsl.l + r1 * 0.04, 0.08, 0.42));
+  } else if (name.includes('Brick')) {
+    // Brick masonry kiln batches
+    c.setHSL(hsl.h + r1 * 0.02, clamp(hsl.s + r2 * 0.05, 0.2, 0.9), clamp(hsl.l + r3 * 0.04, 0.15, 0.55));
+  } else {
+    return null;
+  }
+  // instanceColor multiplies the material colour: tint = jittered / base, per channel.
+  const base = mat.color;
+  return new THREE.Color(base.r > 1e-4 ? c.r / base.r : 1, base.g > 1e-4 ? c.g / base.g : 1, base.b > 1e-4 ? c.b / base.b : 1);
+}
 
 interface LightPreset {
   sun: number; sunI: number;          // directional key light
@@ -64,6 +101,8 @@ export class ThreeIsometricRenderer {
 
   private groundPlane: THREE.Mesh;
   private crowd: CitizenCrowd;
+  /** Buildings, walls, stalls, trees: instanced per chunk (static-batches.ts). */
+  private statics = new StaticBatches();
 
   // Speech bubbles data
   public activeBubbles: { id: string; text: string; x: number; y: number; z: number; timer: number }[] = [];
@@ -441,64 +480,24 @@ export class ThreeIsometricRenderer {
     this.updateGroundWithPlan(plan);
 
     // 1. Place Old Town Hall at Market Square center
-    const townHallTemplate = this.models.get('town_hall');
-    if (townHallTemplate) {
-      const th = townHallTemplate.clone();
-      th.position.set(0, 0, 0);
-      th.rotation.y = 0;
-      this.scene.add(th);
-    }
+    const m = (name: string) => this.models.get(name);
+    this.put(m('town_hall'), 0, 0, 0);
 
     // 2. Place Szmatruz (Cloth Hall)
-    const szmatruzTemplate = this.models.get('szmatruz');
-    if (szmatruzTemplate) {
-      const sz = szmatruzTemplate.clone();
-      sz.position.set(22, 0, -18);
-      sz.rotation.y = Math.PI / 2;
-      this.scene.add(sz);
-    }
+    this.put(m('szmatruz'), 22, 0, -18, Math.PI / 2);
 
     // 3. Place Municipal Well and Pillory in the square
-    const wellTemplate = this.models.get('town_well');
-    if (wellTemplate) {
-      const well = wellTemplate.clone();
-      well.position.set(-14, 0, 10);
-      this.scene.add(well);
-    }
+    this.put(m('town_well'), -14, 0, 10);
 
     // 4. Place Collegiate Parish Church (Fara - Kościół św. Michała)
-    const churchTemplate = this.models.get('church_gothic');
-    if (churchTemplate) {
-      const church = churchTemplate.clone();
-      church.position.set(130, 1.2, 20);
-      church.rotation.y = Math.PI / 2;
-      this.scene.add(church);
-    }
+    this.put(m('church_gothic'), 130, 1.2, 20, Math.PI / 2);
 
     // 5. Place Castle Donjon Keep & Archery Training Yard on Castle Hill
-    const donjonTemplate = this.models.get('castle_donjon');
-    if (donjonTemplate) {
-      const donjon = donjonTemplate.clone();
-      donjon.position.set(275, 2.5, 75);
-      this.scene.add(donjon);
-    }
-
-    const archeryTemplate = this.models.get('archery_yard');
-    if (archeryTemplate) {
-      const yard = archeryTemplate.clone();
-      yard.position.set(245, 2.0, 95);
-      yard.rotation.y = Math.PI / 4;
-      this.scene.add(yard);
-    }
+    this.put(m('castle_donjon'), 275, 2.5, 75);
+    this.put(m('archery_yard'), 245, 2.0, 95, Math.PI / 4);
 
     // 5b. Place Dominican Monastery & Cloister Garden in Friary Quarter
-    const cloisterTemplate = this.models.get('monastery_cloister');
-    if (cloisterTemplate) {
-      const cloister = cloisterTemplate.clone();
-      cloister.position.set(70, 0.5, -60);
-      cloister.rotation.y = 0;
-      this.scene.add(cloister);
-    }
+    this.put(m('monastery_cloister'), 70, 0.5, -60);
 
     // 6. Place Vibrant Royal Fair Market Stalls and Carts across Rynek
     const stallTypes = ['market_stall_red_white', 'market_stall_blue_white', 'market_stall_yellow_white'];
@@ -521,14 +520,7 @@ export class ThreeIsometricRenderer {
     ];
 
     stallCoords.forEach((coord, idx) => {
-      const type = stallTypes[idx % stallTypes.length];
-      const tmpl = this.models.get(type);
-      if (tmpl) {
-        const stall = tmpl.clone();
-        stall.position.set(coord.x, 0, coord.z);
-        stall.rotation.y = coord.rot;
-        this.scene.add(stall);
-      }
+      this.put(m(stallTypes[idx % stallTypes.length]), coord.x, 0, coord.z, coord.rot);
     });
 
     // Market carts with spoked wheels
@@ -541,12 +533,7 @@ export class ThreeIsometricRenderer {
         { x: 6, z: 18, rot: -0.8 },
         { x: -2, z: -20, rot: 1.8 }
       ];
-      cartPositions.forEach(pos => {
-        const cart = cartTemplate.clone();
-        cart.position.set(pos.x, 0, pos.z);
-        cart.rotation.y = pos.rot;
-        this.scene.add(cart);
-      });
+      cartPositions.forEach(pos => this.put(cartTemplate, pos.x, 0, pos.z, pos.rot));
     }
 
     // 7. Build Defensive Curtain Wall and Towers around Perimeter
@@ -580,21 +567,9 @@ export class ThreeIsometricRenderer {
       const p2 = perimeter[(i + 1) % perimeter.length];
 
       // Add Dedicated Fortified Gate or Defense Tower
-      if (p1.id === 'gate_krakow' && krakowGateTmpl) {
-        const gate = krakowGateTmpl.clone();
-        gate.position.set(p1.x, 0, p1.z);
-        gate.rotation.y = Math.PI;
-        this.scene.add(gate);
-      } else if (p1.id === 'gate_grodzka' && grodzkaGateTmpl) {
-        const gate = grodzkaGateTmpl.clone();
-        gate.position.set(p1.x, 0, p1.z);
-        gate.rotation.y = 0;
-        this.scene.add(gate);
-      } else if (towerTemplate) {
-        const tower = towerTemplate.clone();
-        tower.position.set(p1.x, 0, p1.z);
-        this.scene.add(tower);
-      }
+      if (p1.id === 'gate_krakow' && krakowGateTmpl) this.put(krakowGateTmpl, p1.x, 0, p1.z, Math.PI);
+      else if (p1.id === 'gate_grodzka' && grodzkaGateTmpl) this.put(grodzkaGateTmpl, p1.x, 0, p1.z);
+      else this.put(towerTemplate, p1.x, 0, p1.z);
 
       // Add Wall Segment. At a gate the segment stops at the gate body's outer face (tucked in
       // just far enough to hide the wall's end corners) instead of running into the passage.
@@ -620,11 +595,7 @@ export class ThreeIsometricRenderer {
         const fit = segLen / (count * MODULE); // close to 1
         for (let k = 0; k < count; k++) {
           const t = (k + 0.5) / count - 0.5;
-          const wall = wallTemplate.clone();
-          wall.position.set(midX + dx * t, 0, midZ + dz * t);
-          wall.rotation.y = angle + Math.PI / 2;
-          wall.scale.set(fit, 1.0, 1.0);
-          this.scene.add(wall);
+          this.put(wallTemplate, midX + dx * t, 0, midZ + dz * t, angle + Math.PI / 2, fit);
         }
       }
     }
@@ -646,7 +617,6 @@ export class ThreeIsometricRenderer {
     const loggingTmpl = this.models.get('logging_camp');
     const harborTmpl = this.models.get('river_harbor');
 
-    const hsl = { h: 0, s: 0, l: 0 };
 
     for (let i = 0; i < plan.parcels.length; i++) {
       const p = plan.parcels[i];
@@ -690,91 +660,20 @@ export class ThreeIsometricRenderer {
       }
 
       if (tmpl) {
-        const house = tmpl.clone(true);
         const scaleY = 0.95 + ((hash % 11) / 10) * 0.10; // 0.95 to 1.05 height variation
-
-        house.position.set(p.x, p.elevation * 0.3, p.z);
-        house.rotation.y = (p.orientation * Math.PI) / 180;
-        house.scale.set(scaleX, scaleY, scaleZ);
-        house.userData = { parcelId: p.id };
-
-        // Subtle deterministic HSL color variation on materials for organic historical realism
-        const rand1 = ((hash % 31) / 30) * 2 - 1;
-        const rand2 = (((hash >> 3) % 31) / 30) * 2 - 1;
-        const rand3 = (((hash >> 6) % 31) / 30) * 2 - 1;
-
-        house.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh) {
-            const mesh = child as THREE.Mesh;
-            const applyJitter = (mat: THREE.Material): THREE.Material => {
-              // Textured families: shared cached variant (brick a/b + tint) per parcel hash.
-              const textured = this.textures.variant(mat, hash);
-              if (textured) return textured;
-              if (!(mat as THREE.MeshStandardMaterial).isMeshStandardMaterial) return mat;
-              const stdMat = (mat as THREE.MeshStandardMaterial).clone();
-              const mName = stdMat.name || '';
-
-              if (mName.includes('RoofTileRed')) {
-                // Pantiles: shift between warm terracotta orange and deep burnt tile red
-                stdMat.color.getHSL(hsl);
-                stdMat.color.setHSL(
-                  hsl.h + rand1 * 0.025,
-                  Math.max(0.2, Math.min(1.0, hsl.s + rand2 * 0.08)),
-                  Math.max(0.12, Math.min(0.65, hsl.l + rand3 * 0.06))
-                );
-              } else if (mName.includes('RoofThatch')) {
-                // Thatch: golden dry straw vs weathered grey-brown thatch
-                stdMat.color.getHSL(hsl);
-                stdMat.color.setHSL(
-                  hsl.h + rand1 * 0.02,
-                  Math.max(0.15, Math.min(1.0, hsl.s + rand2 * 0.07)),
-                  Math.max(0.2, Math.min(0.68, hsl.l + rand3 * 0.06))
-                );
-              } else if (mName.includes('RoofShingle')) {
-                // Wood shingle: grey weathered vs tar-treated
-                stdMat.color.getHSL(hsl);
-                stdMat.color.setHSL(
-                  hsl.h,
-                  hsl.s,
-                  Math.max(0.15, Math.min(0.55, hsl.l + rand1 * 0.06))
-                );
-              } else if (mName.includes('Plaster')) {
-                // Limewash: warm chalk vs fresh white
-                stdMat.color.getHSL(hsl);
-                stdMat.color.setHSL(
-                  hsl.h + rand1 * 0.012,
-                  hsl.s,
-                  Math.max(0.72, Math.min(0.96, hsl.l + rand2 * 0.04))
-                );
-              } else if (mName.includes('Timber')) {
-                // Oak timber: linseed/pitch treated vs weathered
-                stdMat.color.getHSL(hsl);
-                stdMat.color.setHSL(
-                  hsl.h,
-                  hsl.s,
-                  Math.max(0.08, Math.min(0.42, hsl.l + rand1 * 0.04))
-                );
-              } else if (mName.includes('Brick')) {
-                // Brick masonry kiln batches
-                stdMat.color.getHSL(hsl);
-                stdMat.color.setHSL(
-                  hsl.h + rand1 * 0.02,
-                  Math.max(0.2, Math.min(0.9, hsl.s + rand2 * 0.05)),
-                  Math.max(0.15, Math.min(0.55, hsl.l + rand3 * 0.04))
-                );
-              }
-              return stdMat;
-            };
-
-            if (Array.isArray(mesh.material)) {
-              mesh.material = mesh.material.map(applyJitter);
-            } else if (mesh.material) {
-              mesh.material = applyJitter(mesh.material as THREE.Material);
-            }
-          }
-        });
-
-        this.scene.add(house);
+        // Subtle deterministic colour variation per building (texture variant or HSL jitter).
+        const r1 = ((hash % 31) / 30) * 2 - 1;
+        const r2 = (((hash >> 3) % 31) / 30) * 2 - 1;
+        const r3 = (((hash >> 6) % 31) / 30) * 2 - 1;
+        const tint: Tint = (mat) => {
+          const textured = this.textures.variant(mat, hash);
+          if (textured) return textured;
+          const std = mat as THREE.MeshStandardMaterial;
+          if (!std.isMeshStandardMaterial) return null;
+          const t = jitterTint(std, r1, r2, r3);
+          return t ? { material: mat, tint: t } : null;
+        };
+        this.put(tmpl, p.x, p.elevation * 0.3, p.z, (p.orientation * Math.PI) / 180, scaleX, scaleY, scaleZ, tint, p.id);
       }
     }
 
@@ -784,12 +683,9 @@ export class ThreeIsometricRenderer {
       if (plan.vegetation && plan.vegetation.length > 0) {
         for (let i = 0; i < plan.vegetation.length; i++) {
           const v = plan.vegetation[i];
-          const tree = treeTemplate.clone();
-          tree.position.set(v.x, 0, v.z);
           const s = v.scale ?? 1.0;
-          tree.scale.set(s, s, s);
-          tree.rotation.y = ((v.rotation ?? 0) * Math.PI) / 180;
-          this.scene.add(tree);
+          this.put(treeTemplate, v.x, 0, v.z, ((v.rotation ?? 0) * Math.PI) / 180, s, s, s);
+
         }
         console.log(`[ThreeRenderer] Placed ${plan.vegetation.length} clearance-verified historical trees.`);
       } else {
@@ -823,17 +719,15 @@ export class ThreeIsometricRenderer {
           if (collides) continue;
 
           placedTrees.push({ x: tx, z: tz });
-          const tree = treeTemplate.clone();
-          tree.position.set(tx, 0, tz);
           const s = 0.8 + Math.random() * 0.5;
-          tree.scale.set(s, s, s);
-          tree.rotation.y = Math.random() * Math.PI * 2;
-          this.scene.add(tree);
+          this.put(treeTemplate, tx, 0, tz, Math.random() * Math.PI * 2, s, s, s);
+
         }
       }
     }
 
-    console.log('[ThreeRenderer] Full medieval city populated successfully with 0 building overlaps!');
+    const batches = this.statics.build(this.scene);
+    console.log(`[ThreeRenderer] City populated: ${this.statics.placements.length} models in ${batches} instanced batches.`);
   }
 
   public getCitizenArchetype(c: Citizen): string {
@@ -1015,19 +909,26 @@ export class ThreeIsometricRenderer {
   }
 
   /** World positions of every placed instance of a model, in placement order. */
-  public findInstances(model: string): { x: number; z: number; parcelId?: string }[] {
-    return this.scene.children
-      .filter((c) => c.name === model)
-      .map((c) => ({ x: c.position.x, z: c.position.z, parcelId: c.userData?.parcelId }));
+  public findInstances(model: string): Placement[] {
+    return this.statics.placements.filter((p) => p.name === model);
   }
 
   /** Placed instances per loaded building/prop model; models with none are listed as 0.
-   *  Characters are not scene children (CitizenCrowd instances them), so char_* are left out. */
+   *  Characters are placed by CitizenCrowd, not here, so char_* are left out. */
   public placedCounts(): Record<string, number> {
     const counts: Record<string, number> = {};
     for (const name of this.models.keys()) if (!name.startsWith('char_')) counts[name] = 0;
-    for (const c of this.scene.children) if (c.name in counts) counts[c.name]++;
+    for (const p of this.statics.placements) if (p.name in counts) counts[p.name]++;
     return counts;
+  }
+
+  /** Place a loaded model; drawn once populateCityScene builds the static batches. */
+  private put(tmpl: THREE.Object3D | undefined, x: number, y: number, z: number, rotY = 0,
+    sx = 1, sy = 1, sz = 1, tint?: Tint, parcelId?: string): void {
+    if (!tmpl) return;
+    const world = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z),
+      new THREE.Quaternion().setFromAxisAngle(UP, rotY), new THREE.Vector3(sx, sy, sz));
+    this.statics.place(tmpl, world, tint, parcelId);
   }
 
   public updateDayNightLighting(hour: number): void {

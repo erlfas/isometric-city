@@ -19,7 +19,7 @@ Commands:
 - **Typecheck**: `npm run check`. **Build**: `npm run build`.
 - **Model check**: `$PY scripts/check_models.py` (roof winding, UVs, texture bindings ↔ manifest). Run it after every model build; the pre-commit hook and CI run it too.
 - **Visual check**: with `npm run dev` running, `node scripts/shoot.mjs out.png "model=house_timber_log,0,14&pause&hour=12"` screenshots the n-th placed instance of a model. Hash syntax and `window.__lublin`: [`src/debug-hooks.ts`](src/debug-hooks.ts).
-- **Runtime numbers** (draw calls, triangles, citizens per model, placed instances per building model, any `__lublin` expression): `node scripts/probe.mjs "<hash>" "__lublin.stats()"`.
+- **Runtime numbers** (draw calls, triangles, citizens per model, placed instances per building model, any `__lublin` expression): `node scripts/probe.mjs "<hash>" "__lublin.stats()"`. Before/after a performance change: `node scripts/perf.mjs` (fps + draw calls over three views; header says how to measure another commit).
 - **Audio mix** (you can't listen; this is the check): `node scripts/audio_levels.mjs [scene ...]` prints level per bus.
 
 ---
@@ -38,7 +38,7 @@ Commands:
 ## 3. Directory Navigation Map
 
 - **3D Runtime Engine**:
-  - [`src/engine/three-renderer.ts`](src/engine/three-renderer.ts): Three.js orthographic renderer, dynamic parcel dispatch, citizen archetype instancing, shadows.
+  - [`src/engine/three-renderer.ts`](src/engine/three-renderer.ts): Three.js orthographic renderer, dynamic parcel dispatch, citizen archetype instancing, shadows. Buildings and props are drawn as one `BatchedMesh` per material ([`static-batches.ts`](src/engine/static-batches.ts)): place them with `put()`, not `scene.add(clone)`.
   - [`src/engine/simulation.ts`](src/engine/simulation.ts): 1,500-citizen clockwork schedule, spatial hash grid.
   - [`src/engine/audio.ts`](src/engine/audio.ts): music (`music/`) and the synthesised positional soundscape (recipes in `sound-recipes.ts`). Which building a parcel is drawn as (shared by renderer and audio): `parcel-kind.ts`.
   - [`src/types.ts`](src/types.ts): TypeScript interfaces for `Parcel`, `Citizen`, `CityPlan`.

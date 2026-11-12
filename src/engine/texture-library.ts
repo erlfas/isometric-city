@@ -59,7 +59,6 @@ export class TextureLibrary {
   private albedo = new Map<string, THREE.Texture>();
   private normal = new Map<string, THREE.Texture>();
   private baseMaterials = new Map<string, THREE.MeshStandardMaterial>();
-  private variantCache = new Map<string, THREE.MeshStandardMaterial>();
   private maxAnisotropy = 1;
   public ready = false;
 
@@ -157,33 +156,29 @@ export class TextureLibrary {
   }
 
   /**
-   * Cached per-building variant of a textured material. `hash` is the parcel hash:
-   * it picks the texture family (brick a/b) and one of VARIANTS tints.
+   * Per-building variant of a textured material: the shared base material of the texture
+   * family `hash` picks (brick a/b), and a colour multiplier (one of VARIANTS tints) for
+   * the instance. `hash` is the parcel hash.
    */
-  public variant(mat: THREE.Material, hash: number): THREE.MeshStandardMaterial | null {
+  public variant(mat: THREE.Material, hash: number): { material: THREE.MeshStandardMaterial; tint: THREE.Color } | null {
     const b = BINDINGS[mat.name];
     if (!b || !this.ready) return null;
     const h = Math.abs(hash | 0);
     const famIdx = (h >>> 5) % b.families.length;
+    const base = this.base(mat, famIdx);
+    if (!base) return null;
     const v = h % VARIANTS;
-    const key = `${mat.name}|${famIdx}|${v}`;
-    let out = this.variantCache.get(key);
-    if (!out) {
-      const base = this.base(mat, famIdx);
-      if (!base) return null;
-      out = base.clone();
-      const j = b.jitter ?? 0;
-      if (j > 0) {
-        // Deterministic spread across the variants: brightness and a slight warm/cool shift.
-        const r1 = ((v * 37) % VARIANTS) / (VARIANTS - 1) * 2 - 1;
-        const r2 = ((v * 53 + 3) % VARIANTS) / (VARIANTS - 1) * 2 - 1;
-        const k = 1 - j + j * r1;                     // <= 1: tints only darken a full-range texture
-        out.color.multiplyScalar(k);
-        out.color.r *= 1 + r2 * j * 0.35;
-        out.color.b *= 1 - r2 * j * 0.35;
-      }
-      this.variantCache.set(key, out);
+    const tint = new THREE.Color(1, 1, 1);
+    const j = b.jitter ?? 0;
+    if (j > 0) {
+      // Deterministic spread across the variants: brightness and a slight warm/cool shift.
+      const r1 = ((v * 37) % VARIANTS) / (VARIANTS - 1) * 2 - 1;
+      const r2 = ((v * 53 + 3) % VARIANTS) / (VARIANTS - 1) * 2 - 1;
+      const k = 1 - j + j * r1;                     // <= 1: tints only darken a full-range texture
+      tint.multiplyScalar(k);
+      tint.r *= 1 + r2 * j * 0.35;
+      tint.b *= 1 - r2 * j * 0.35;
     }
-    return out;
+    return { material: base, tint };
   }
 }
