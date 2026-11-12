@@ -4,7 +4,7 @@ description: Add or change a citizen character (trade kit, costume, variants, co
 ---
 # Character kits
 
-A character is a **kit**: one shared body plus per-trade pieces, exported as one GLB of many meshes. `src/engine/citizen-crowd.ts` instances every mesh, picks one look per citizen from its id, and swings the parts. Format and runtime contract: the header of `citizen-crowd.ts` and "Kit pipeline (v2)" in `build_characters.py`. Background: `KEY_FINDINGS.md` §18.
+A character is a **kit**: one shared body plus per-trade pieces, exported as one GLB of many meshes. `src/engine/citizen-crowd.ts` merges each part's meshes into one instanced batch, picks one look per citizen from its id, and swings the parts. Format and runtime contract: the header of `citizen-crowd.ts` and "Kit pipeline (v2)" in `build_characters.py`. Background: `KEY_FINDINGS.md` §18.
 
 Each kit is `characters/char_<trade>.py` defining `build(kit)`; it runs with `build_characters.py`'s globals (`kit_body`, `kit_heads`, `kit_bib_apron`, primitives, palettes) and replaces the legacy builder of the same name. Trade-specific helpers stay in the kit file.
 

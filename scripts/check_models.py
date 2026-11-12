@@ -15,7 +15,8 @@ Checks:
      getAlbedo('...') call).
   5. Manifest files exist.
   6. Character kits: every mesh has a valid part, its variant names kit.groups options, every
-     Slot_* material has a palette, triangle budgets hold, metallic <= KIT_MAX_METALLIC.
+     Slot_* material has a palette, triangle budgets hold, metallic <= KIT_MAX_METALLIC,
+     variants per part and colour slots fit the crowd renderer's limits.
 """
 import glob
 import json
@@ -107,6 +108,8 @@ KIT_PARTS = {"body", "head", "arm_L", "arm_R", "leg_L", "leg_R"}
 KIT_BASE_TRIS = 1300      # always-drawn meshes of one kit
 KIT_VARIANT_TRIS = 450    # any single variant mesh
 KIT_MAX_METALLIC = 0.3    # no environment map: more metallic renders near black (KEY_FINDINGS §18.6)
+KIT_MAX_VARIANTS = 48     # distinct variants per part: the crowd's per-instance mask (citizen-crowd.ts)
+KIT_MAX_SLOTS = 31        # colour slots per kit: columns of the crowd's slot texture
 
 
 def check_kit(name, gltf):
@@ -124,7 +127,10 @@ def check_kit(name, gltf):
         metal = m.get("pbrMetallicRoughness", {}).get("metallicFactor", 1.0)  # glTF default is 1
         if metal > KIT_MAX_METALLIC + 1e-3:  # exported as float32
             fail(f"{name}: material {m.get('name')} metallic {metal:.2f} > {KIT_MAX_METALLIC} (renders black)")
+    if len(slots) > KIT_MAX_SLOTS:
+        fail(f"{name}: {len(slots)} colour slots (max {KIT_MAX_SLOTS})")
     base = 0
+    variants = {}
     for node in gltf.get("nodes", []):
         if "mesh" not in node:
             continue
@@ -144,10 +150,14 @@ def check_kit(name, gltf):
             acc = prim.get("indices", prim["attributes"]["POSITION"])
             tris += gltf["accessors"][acc]["count"] // 3
         if variant:
+            variants.setdefault(part, set()).add(variant)
             if tris > KIT_VARIANT_TRIS:
                 fail(f"{name}: variant mesh '{node.get('name')}' has {tris} tris (budget {KIT_VARIANT_TRIS})")
         else:
             base += tris
+    for part, vs in variants.items():
+        if len(vs) > KIT_MAX_VARIANTS:
+            fail(f"{name}: part {part} has {len(vs)} variants (max {KIT_MAX_VARIANTS})")
     if base > KIT_BASE_TRIS:
         fail(f"{name}: kit base meshes have {base} tris (budget {KIT_BASE_TRIS})")
     for g, opts in groups.items():
