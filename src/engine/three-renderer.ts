@@ -546,6 +546,25 @@ export class ThreeIsometricRenderer {
     const grodzkaGateTmpl = this.models.get('gate_grodzka');
     const perimeter = plan.defense.perimeterPoints;
 
+    // Gate body half-extents in world X (road axis) and Z (wall axis): L/2 and W/2 of
+    // build_krakow_gate / build_grodzka_gate in build_assets.py. Keep in sync.
+    const GATE_HALF: Record<string, [number, number]> = {
+      gate_krakow: [5.25, 5.0],
+      gate_grodzka: [4.75, 4.5],
+    };
+    const WALL_HALF_THICK = 1.3; // curtain_wall plinth is 2.6 m deep
+    // Distance from a gate centre along unit direction (ux, uz) at which a wall segment should start.
+    const gateTrim = (id: string, ux: number, uz: number): number => {
+      const half = GATE_HALF[id];
+      if (!half) return 0;
+      const ax = Math.abs(ux), az = Math.abs(uz);
+      const tx = ax > 1e-6 ? half[0] / ax : Infinity;
+      const tz = az > 1e-6 ? half[1] / az : Infinity;
+      // Inset so the wall's end face corners stay inside the gate body.
+      const inset = tz <= tx ? WALL_HALF_THICK * ax / az : WALL_HALF_THICK * az / ax;
+      return Math.max(0, Math.min(tx, tz) - inset - 0.2);
+    };
+
     for (let i = 0; i < perimeter.length; i++) {
       const p1 = perimeter[i];
       const p2 = perimeter[(i + 1) % perimeter.length];
@@ -567,12 +586,20 @@ export class ThreeIsometricRenderer {
         this.scene.add(tower);
       }
 
-      // Add Wall Segment (leave openings for gates)
-      if (wallTemplate && p1.id !== 'gate_grodzka' && p1.id !== 'gate_krakow') {
-        const midX = (p1.x + p2.x) * 0.5;
-        const midZ = (p1.z + p2.z) * 0.5;
-        const dx = p2.x - p1.x;
-        const dz = p2.z - p1.z;
+      // Add Wall Segment. At a gate the segment stops at the gate body's outer face (tucked in
+      // just far enough to hide the wall's end corners) instead of running into the passage.
+      if (wallTemplate) {
+        const len0 = Math.hypot(p2.x - p1.x, p2.z - p1.z);
+        const ux = (p2.x - p1.x) / len0;
+        const uz = (p2.z - p1.z) / len0;
+        const t0 = gateTrim(p1.id, ux, uz);
+        const t1 = len0 - gateTrim(p2.id, ux, uz);
+        const ax = p1.x + ux * t0, az = p1.z + uz * t0;
+        const bx = p1.x + ux * t1, bz = p1.z + uz * t1;
+        const midX = (ax + bx) * 0.5;
+        const midZ = (az + bz) * 0.5;
+        const dx = bx - ax;
+        const dz = bz - az;
         const segLen = Math.hypot(dx, dz);
         const angle = Math.atan2(dx, dz);
 
