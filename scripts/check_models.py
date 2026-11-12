@@ -14,6 +14,8 @@ Checks:
      family it names is in the manifest, and every manifest family is used (BINDINGS or a
      getAlbedo('...') call).
   5. Manifest files exist.
+  6. Character kits: every mesh has a valid part, its variant names kit.groups options, every
+     Slot_* material has a palette, triangle budgets hold.
 """
 import glob
 import json
@@ -101,6 +103,54 @@ def roof_areas(pos, idx):
     return up, down
 
 
+KIT_PARTS = {"body", "head", "arm_L", "arm_R", "leg_L", "leg_R"}
+KIT_BASE_TRIS = 1300      # always-drawn meshes of one kit
+KIT_VARIANT_TRIS = 450    # any single variant mesh
+
+
+def check_kit(name, gltf):
+    """Character kits (build_characters.py export_kit): metadata matches the meshes."""
+    scenes = gltf.get("scenes", [])
+    raw = scenes[0].get("extras", {}).get("kit") if scenes else None
+    if raw is None:
+        return
+    kit = json.loads(raw)
+    groups, slots = kit.get("groups", {}), kit.get("slots", {})
+    if set(kit.get("pivots", {})) != KIT_PARTS:
+        fail(f"{name}: kit pivots {sorted(kit.get('pivots', {}))} != {sorted(KIT_PARTS)}")
+    mats = gltf.get("materials", [])
+    base = 0
+    for node in gltf.get("nodes", []):
+        if "mesh" not in node:
+            continue
+        ex = node.get("extras", {})
+        part, variant = ex.get("part"), ex.get("variant", "")
+        if part not in KIT_PARTS:
+            fail(f"{name}: node '{node.get('name')}' has no valid extras.part ({part})")
+        for cond in filter(None, variant.split("+")):
+            g, _, o = cond.partition(":")
+            if o not in groups.get(g, {}):
+                fail(f"{name}: node '{node.get('name')}' variant {cond} is not an option in kit.groups")
+        tris = 0
+        for prim in gltf["meshes"][node["mesh"]]["primitives"]:
+            mname = mats[prim["material"]].get("name", "") if "material" in prim else ""
+            if mname.startswith("Slot_") and mname[5:] not in slots:
+                fail(f"{name}: material {mname} has no palette in kit.slots")
+            acc = prim.get("indices", prim["attributes"]["POSITION"])
+            tris += gltf["accessors"][acc]["count"] // 3
+        if variant:
+            if tris > KIT_VARIANT_TRIS:
+                fail(f"{name}: variant mesh '{node.get('name')}' has {tris} tris (budget {KIT_VARIANT_TRIS})")
+        else:
+            base += tris
+    if base > KIT_BASE_TRIS:
+        fail(f"{name}: kit base meshes have {base} tris (budget {KIT_BASE_TRIS})")
+    for g, opts in groups.items():
+        for o, w in opts.items():
+            if len(w) != 2:
+                fail(f"{name}: kit.groups.{g}.{o} weights must be [male, female]")
+
+
 def parse_bindings():
     src = open(TEXLIB, encoding="utf-8").read()
     block = re.search(r"const BINDINGS[^{]*\{(.*?)\n\};", src, re.S)
@@ -134,6 +184,7 @@ def main():
 
         mats = gltf.get("materials", [])
         seen_materials.update(m.get("name", "") for m in mats)
+        check_kit(name, gltf)
         roof = {}
         for mesh in gltf.get("meshes", []):
             for prim in mesh["primitives"]:

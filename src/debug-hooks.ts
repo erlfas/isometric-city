@@ -8,8 +8,11 @@ import type { SimulationEngine } from './engine/simulation';
  *   #cam=x,z[,zoom[,quadrant]]        world position; zoom = world units visible (8-90); quadrant 0-3
  *   #model=house_timber_log[,n[,zoom[,quadrant]]]   n-th placed instance of a model (default 0)
  *   append &pause to pause the simulation, &hour=12 to set the sim clock
+ *   &lineup=char_tanner[,n[,work|walk]]   stand n citizens of a character model in a row at the
+ *                                    view centre (needs &pause); work loop or walk in place
  *
- * window.__lublin: { renderer, sim, ready, snapTo(x,z,zoom?,q?), find(model) }
+ * window.__lublin: { renderer, sim, ready, snapTo(x,z,zoom?,q?), find(model), stats() }
+ * Read any of it from a script: node scripts/probe.mjs "<hash>" "__lublin.stats()"
  * `ready` turns true after the first frame with the scene populated.
  */
 export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: SimulationEngine): void {
@@ -19,6 +22,16 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
     ready: false,
     snapTo: (x: number, z: number, zoom?: number, q?: number) => renderer.snapTo(x, z, zoom, q),
     find: (model: string) => renderer.findInstances(model),
+    /** Last frame's draw calls and triangles (incl. shadow pass), citizens per character model. */
+    stats: () => {
+      const { calls, triangles } = renderer.renderer.info.render;
+      const models: Record<string, number> = {};
+      for (const c of sim.citizens) {
+        const m = renderer.getCitizenArchetype(c);
+        models[m] = (models[m] ?? 0) + 1;
+      }
+      return { calls, triangles, citizens: sim.citizens.length, models };
+    },
   };
   (window as unknown as { __lublin: typeof api }).__lublin = api;
 
@@ -41,6 +54,13 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
     if (params.has('pause') && !sim.isPaused) sim.togglePause();
     const hour = num(params.get('hour') ?? undefined);
     if (hour !== undefined) sim.simTimeHours = hour;
+    const lineup = params.get('lineup');
+    if (lineup) {
+      const [arch, n, mode] = lineup.split(',');
+      const m = mode === 'work' || mode === 'walk' ? mode : 'idle';
+      const got = renderer.lineup(sim.citizens, arch, num(n) ?? 8, m);
+      if (!got) console.warn(`[debug] lineup: no citizens use "${arch}"`);
+    }
   };
 
   window.addEventListener('hashchange', apply);

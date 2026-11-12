@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { CityPlan, Citizen } from '../types';
 import { TextureLibrary } from './texture-library';
+import { CitizenCrowd } from './citizen-crowd';
 
 interface LightPreset {
   sun: number; sunI: number;          // directional key light
@@ -55,7 +56,7 @@ export class ThreeIsometricRenderer {
   public textures = new TextureLibrary();
 
   private groundPlane: THREE.Mesh;
-  private citizenMeshes: Map<string, THREE.Group> = new Map();
+  private crowd: CitizenCrowd;
 
   // Speech bubbles data
   public activeBubbles: { id: string; text: string; x: number; y: number; z: number; timer: number }[] = [];
@@ -71,6 +72,7 @@ export class ThreeIsometricRenderer {
     this.canvas = canvas;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x4a6572); // Medieval daylight sky
+    this.crowd = new CitizenCrowd(this.scene);
 
     // Orthographic Isometric Camera
     const aspect = canvas.clientWidth / canvas.clientHeight || 16 / 9;
@@ -412,7 +414,8 @@ export class ThreeIsometricRenderer {
             child.receiveShadow = true;
           }
         });
-        if (!name.startsWith('char_')) this.textures.applyToTemplate(gltf.scene);
+        if (name.startsWith('char_')) this.crowd.addArchetype(name, gltf.scene);
+        else this.textures.applyToTemplate(gltf.scene);
         gltf.scene.name = name; // clones keep it: findInstances() looks placed models up by name
         this.models.set(name, gltf.scene);
       } catch (err) {
@@ -893,7 +896,7 @@ export class ThreeIsometricRenderer {
     console.log('[ThreeRenderer] Full medieval city populated successfully with 0 building overlaps!');
   }
 
-  private getCitizenArchetype(c: Citizen): string {
+  public getCitizenArchetype(c: Citizen): string {
     const trade = (c.trade || '').toLowerCase();
     const rank = (c.guildRank || '').toLowerCase();
     const wealth = c.wealthClass || '';
@@ -902,7 +905,7 @@ export class ThreeIsometricRenderer {
     if (trade.includes('tanner') || trade.includes('shoemaker') || trade.includes('furrier') || trade.includes('butcher')) return 'char_tanner';
     if (trade.includes('carpenter') || trade.includes('joiner') || trade.includes('wheelwright')) return 'char_carpenter';
     if (trade.includes('blacksmith') || trade.includes('armorer') || trade.includes('goldsmith')) return 'char_blacksmith';
-    if (trade.includes('brewer') || trade.includes('cooper') || trade.includes('wine')) return 'char_brewer';
+    if (trade.includes('brewer') || trade.includes('cooper')) return 'char_brewer';
     if (trade.includes('potter')) return 'char_potter';
     if (trade.includes('weaver') || trade.includes('tailor') || trade.includes('roper')) return 'char_weaver';
     if (trade.includes('stone') || trade.includes('mason') || trade.includes('quarry')) return 'char_stonemason';
@@ -916,92 +919,27 @@ export class ThreeIsometricRenderer {
     return 'char_carpenter';
   }
 
-  public updateCitizens(citizens: Citizen[], _dt: number): void {
-    const nowSec = performance.now() * 0.001;
+  /** Debug: stand the first n citizens of an archetype in a row at the view centre,
+   *  three-quarter facing the camera, idle or working. Pause the sim first. */
+  public lineup(citizens: Citizen[], archetype: string, n: number, mode: 'idle' | 'work' | 'walk'): number {
+    const camYaw = this.currentRotationAngle + Math.PI / 4;
+    const rx = Math.cos(camYaw), rz = -Math.sin(camYaw); // screen right on the ground
+    const picked = citizens.filter((c) => this.getCitizenArchetype(c) === archetype).slice(0, n);
+    // Stand 1.4 m toward the camera so chest height, not the feet, is at the view centre.
+    const bx = this.targetPos.x + Math.sin(camYaw) * 1.4, bz = this.targetPos.z + Math.cos(camYaw) * 1.4;
+    picked.forEach((c, k) => {
+      const off = (k - (picked.length - 1) / 2) * 1.1;
+      c.currentX = bx + rx * off;
+      c.currentZ = bz + rz * off;
+      c.isMoving = false;
+      c.state = mode === 'work' ? 'WORKING' : 'IDLE';
+    });
+    this.crowd.pose(new Set(picked.map((c) => c.id)), camYaw - 0.45, mode === 'walk');
+    return picked.length;
+  }
 
-    // Maintain 3D citizen group objects with authentic models & individual variation
-    for (let i = 0; i < citizens.length; i++) {
-      const c = citizens[i];
-      let group = this.citizenMeshes.get(c.id);
-      const archetypeName = this.getCitizenArchetype(c);
-
-      // Check if we need to spawn or upgrade placeholder to 3D archetype model
-      if (!group || (this.isLoaded && group.userData?.modelType !== archetypeName && this.models.has(archetypeName))) {
-        if (group) {
-          this.scene.remove(group);
-        }
-
-        group = new THREE.Group();
-        const template = this.models.get(archetypeName);
-
-        // Deterministic hash seed from citizen ID for individual variation
-        let seed = 0;
-        for (let j = 0; j < c.id.length; j++) {
-          seed = (seed * 31 + c.id.charCodeAt(j)) >>> 0;
-        }
-
-        if (template) {
-          const clone = template.clone(true);
-          // Individual variation jitter: height and width scaling
-          const heightJitter = 1.0 + ((seed % 13) - 6) * 0.012; // 0.93x - 1.07x
-          const girthJitter = 1.0 + (((seed * 7) % 13) - 6) * 0.012; // 0.93x - 1.07x
-          clone.scale.set(girthJitter, heightJitter, girthJitter);
-
-          clone.traverse((child) => {
-            if ((child as THREE.Mesh).isMesh) {
-              child.castShadow = true;
-              child.receiveShadow = true;
-            }
-          });
-          group.add(clone);
-        } else {
-          // Fallback while loading
-          const color = c.gender === 'female' ? 0x2e7d32 : 0x8d6e63;
-          const bodyGeo = new THREE.CylinderGeometry(0.22, 0.30, 1.2, 8);
-          const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.8 });
-          const body = new THREE.Mesh(bodyGeo, bodyMat);
-          body.position.y = 0.6;
-          group.add(body);
-        }
-
-        group.userData = { citizenId: c.id, modelType: archetypeName, seed };
-        this.scene.add(group);
-        this.citizenMeshes.set(c.id, group);
-      }
-
-      // Update position
-      const cx = c.currentX ?? 0;
-      const cz = c.currentZ ?? 0;
-      group.position.x = cx;
-      group.position.z = cz;
-
-      // Dynamic facing rotation and locomotion animation
-      if (c.isMoving) {
-        const tx = c.targetX ?? cx;
-        const tz = c.targetZ ?? cz;
-        const dx = tx - cx;
-        const dz = tz - cz;
-        if (Math.abs(dx) > 0.01 || Math.abs(dz) > 0.01) {
-          const targetAngle = Math.atan2(dx, dz);
-          // Smoothly rotate towards heading
-          let diff = targetAngle - group.rotation.y;
-          while (diff < -Math.PI) diff += Math.PI * 2;
-          while (diff > Math.PI) diff -= Math.PI * 2;
-          group.rotation.y += diff * Math.min(1.0, _dt * 12.0);
-        }
-
-        // Walking bob and stride sway
-        const walkCycle = (c.animFrame ?? 0) * Math.PI;
-        group.position.y = Math.abs(Math.sin(walkCycle)) * 0.07;
-        group.rotation.z = Math.sin(walkCycle) * 0.035;
-      } else {
-        // Idle breathing / working animation at workshop
-        const seedOffset = (group.userData?.seed || 0) % 100;
-        const idlePulse = Math.sin(nowSec * 2.2 + seedOffset);
-        group.position.y = idlePulse * 0.015;
-        group.rotation.z = 0;
-      }
-    }
+  public updateCitizens(citizens: Citizen[], dt: number): void {
+    this.crowd.update(citizens, (c) => this.getCitizenArchetype(c), dt, performance.now() * 0.001);
   }
 
   public updateCamera(dt: number): void {

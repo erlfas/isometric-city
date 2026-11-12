@@ -542,6 +542,34 @@ These multi-view character turnaround model sheets provide exact orthographic si
 
 ---
 
+### Character Kit Reference Sheets (to generate)
+
+Inputs for the kit pipeline (`build_characters.py`, "Kit pipeline (v2)"). The turnarounds above bake a held tool into the pose; a kit animates arms and attaches tools to the hand, so these sheets show **empty hands in a relaxed A-pose**. Save each as `reference_photos/workers/kit/<file>`. All sheets share this tail, which keeps them consistent with the turnarounds:
+
+```text
+neutral solid beige parchment background, crisp silhouette, even studio lighting, orthographic, no perspective, no text labels, late 1990s PC strategy game sprite reference, no UI
+```
+
+**1. Base bodies, 4 sheets, 16:9** (`body_man.jpg`, `body_woman.jpg`, `body_old_man.jpg`, `body_youth.jpg`). They drive the shared body proportions.
+
+```text
+Orthographic 3-view character model sheet showing front view, side profile view, and rear view side-by-side of the same person, 14th-century Central European [adult craftsman of average build, about 35 years old | adult townswoman, about 30, wearing an ankle-length plain kirtle | elderly man, about 65, slightly stooped | youth apprentice, about 15], standing in a relaxed A-pose with arms angled 20 degrees away from the body, empty open hands, feet shoulder-width apart, plain undyed wool tunic, hose and leather turnshoes, bare head with short hair, [tail]
+```
+
+**2. Face sheets, 2 sheets, 16:9** (`faces_men.jpg`, `faces_women.jpg`). These guide the eyes, brows, nose and beard shapes at about 25 px tall.
+
+```text
+Character face reference sheet, grid of 8 heads, each shown as a front view and a side profile, 14th-century Central European [working men of varied ages 18 to 70: clean-shaven, stubble, short beard, full beard, moustache, balding, grey-haired | working women of varied ages 18 to 65, hair covered by a white linen kerchief, a wimple and veil, or a linen coif], strong readable features, simple shapes, earthy skin tones, [tail]
+```
+
+**3. Variation lineups, 1 sheet per trade, 16:9** (`lineup_<trade>.jpg`). They define what stays fixed in a trade (its signature) and what varies. Tanner and blacksmith come first, since they are the kit pilot.
+
+```text
+Character lineup sheet, five different 14th-century [tanners | blacksmiths] standing side by side in front view, same trade signature on all five [tanner: dark oiled leather apron, high greased boots, curved two-handled fleshing knife | blacksmith: long leather apron, linen shirt with rolled sleeves, cross-peen hammer], varied in every other way: two women and three men, ages from apprentice to old master, different builds, different hair, beards and head coverings (linen coif, felt skullcap, wool hood, bare head, kerchief), tunics in different undyed and plant-dyed wool colours (madder red, woad blue, weld yellow, undyed brown and grey), [tail]
+```
+
+---
+
 These panoramic concept artworks define the regional geography, atmospheric lighting, and architectural hierarchy of Lublin Anno Domini 1392.
 
 ---
