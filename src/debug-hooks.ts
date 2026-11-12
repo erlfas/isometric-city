@@ -1,5 +1,6 @@
 import type { ThreeIsometricRenderer } from './engine/three-renderer';
 import type { SimulationEngine } from './engine/simulation';
+import type { Soundscape } from './engine/audio';
 
 /**
  * Dev-only camera hooks for screenshots and debugging (installed only under `vite dev`).
@@ -13,7 +14,8 @@ import type { SimulationEngine } from './engine/simulation';
  *                                    view centre (needs &pause); work loop or walk in place.
  *                                    Without cam/model it frames open ground at face zoom.
  *
- * window.__lublin: { renderer, sim, ready, snapTo(x,z,zoom?,q?), find(model), stats() }
+ * window.__lublin: { renderer, sim, audio, ready, snapTo(x,z,zoom?,q?), find(model), stats() }
+ *   audio.debugState(): context state, music, crowd level, audible workshops
  * Read any of it from a script: node scripts/probe.mjs "<hash>" "__lublin.stats()"
  * `ready` turns true after the first frame with the scene populated.
  */
@@ -21,10 +23,11 @@ import type { SimulationEngine } from './engine/simulation';
  *  rotation (checked by screenshot); zoom close enough to judge faces. */
 const LINEUP_SPOT = [-15.5, -25.5, 3.5] as const;
 
-export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: SimulationEngine): void {
+export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: SimulationEngine, audio: Soundscape): void {
   const api = {
     renderer,
     sim,
+    audio,
     ready: false,
     snapTo: (x: number, z: number, zoom?: number, q?: number) => renderer.snapTo(x, z, zoom, q),
     find: (model: string) => renderer.findInstances(model),

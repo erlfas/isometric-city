@@ -39,6 +39,7 @@ Commands:
 - **3D Runtime Engine**:
   - [`src/engine/three-renderer.ts`](src/engine/three-renderer.ts): Three.js orthographic renderer, dynamic parcel dispatch, citizen archetype instancing, shadows.
   - [`src/engine/simulation.ts`](src/engine/simulation.ts): 1,500-citizen clockwork schedule, spatial hash grid.
+  - [`src/engine/audio.ts`](src/engine/audio.ts): music (`music/`) and the synthesised positional soundscape (recipes in `sound-recipes.ts`). Levels: `__lublin.audio.debugState()`.
   - [`src/types.ts`](src/types.ts): TypeScript interfaces for `Parcel`, `Citizen`, `CityPlan`.
 - **Reference Photos & Artwork**:
   - `reference_photos/<building_id>/`: Architectural 3-view sets (`front.jpg`, `side.jpg`, `back.jpg`).

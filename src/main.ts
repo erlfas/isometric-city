@@ -2,7 +2,7 @@ import type { CityPlan } from './types';
 import { ThreeIsometricRenderer } from './engine/three-renderer';
 import { SpatialHashGrid } from './engine/spatial-hash';
 import { SimulationEngine } from './engine/simulation';
-import { ProceduralAudioEngine } from './engine/audio';
+import { Soundscape, type Listener } from './engine/audio';
 import { UIController } from './ui/inspector';
 import { IsometricCamera } from './engine/camera';
 import { TouchGestureManager } from './engine/touch';
@@ -42,7 +42,12 @@ async function bootstrap() {
   // 4. Initialize Simulation & Audio Engines
   const spatialGrid = new SpatialHashGrid(24.0);
   const sim = new SimulationEngine(plan, spatialGrid);
-  const audio = new ProceduralAudioEngine();
+  const audio = new Soundscape();
+  audio.configure(plan);
+  const listener: Listener = {
+    x: 0, z: 0, zoom: 40,
+    pan: (x, z) => (threeRenderer.worldToScreen(x, 0, z).x / webglCanvas.clientWidth) * 2 - 1,
+  };
 
   // Dummy fallback camera for UIController
   const dummyCamera = new IsometricCamera(window.innerWidth, window.innerHeight);
@@ -53,33 +58,38 @@ async function bootstrap() {
 
   // Bell Toll notification binding
   sim.onBellToll = (bellName: string, hour: number) => {
-    audio.init();
-    audio.tollBell(hour === 12 ? 185.0 : 220.0, hour === 21 ? 9 : 3);
+    audio.tollHour(hour);
     ui.showEventNotification(`🔔 Church Bells Toll: ${bellName} — All burghers proceed according to civic duty.`);
   };
 
   // Systemic Fair Event notification binding
   sim.onEventTriggered = (event) => {
+    audio.herald();
     ui.showEventNotification(`📜 [Royal Fair Event] ${event.name}: ${event.description}`);
   };
 
   // Audio Toggle (Desktop & Mobile buttons)
   const audioBtn = document.getElementById('btn-audio-mute');
   const mobileAudioBtn = document.getElementById('btn-mobile-audio');
-  const toggleAudio = () => {
-    audio.init();
-    const isMuted = audio.toggleMute();
+  const musicBtns = [document.getElementById('btn-music'), document.getElementById('btn-mobile-music')];
+  const showAudioState = () => {
+    const muted = audio.isMuted;
     if (audioBtn) {
-      audioBtn.textContent = isMuted ? '🔇 Muted' : '🔊 Sound';
-      audioBtn.classList.toggle('active', !isMuted);
+      audioBtn.textContent = muted ? '🔇 Muted' : '🔊 Sound';
+      audioBtn.classList.toggle('active', !muted);
     }
     if (mobileAudioBtn) {
-      mobileAudioBtn.textContent = isMuted ? '🔇' : '🔊';
-      mobileAudioBtn.classList.toggle('active', !isMuted);
+      mobileAudioBtn.textContent = muted ? '🔇' : '🔊';
+      mobileAudioBtn.classList.toggle('active', !muted);
     }
+    for (const b of musicBtns) b?.classList.toggle('active', audio.musicOn && !muted);
   };
+  const toggleAudio = () => { audio.toggleMute(); showAudioState(); };
+  const toggleMusic = () => { audio.toggleMusic(); showAudioState(); };
   audioBtn?.addEventListener('click', toggleAudio);
   mobileAudioBtn?.addEventListener('click', toggleAudio);
+  for (const b of musicBtns) b?.addEventListener('click', toggleMusic);
+  showAudioState();
 
   // Cluster fair citizens in Market Square around stalls (matching reference images)
   for (let i = 0; i < Math.min(80, sim.citizens.length); i++) {
@@ -115,6 +125,7 @@ async function bootstrap() {
     const randCit = sim.citizens[Math.floor(Math.random() * sim.citizens.length)];
     const text = medievalBarks[Math.floor(Math.random() * medievalBarks.length)];
     threeRenderer.triggerSpeechBubble(randCit.id, text, randCit.currentX ?? 0, randCit.currentZ ?? 0);
+    audio.voice(randCit.currentX ?? 0, randCit.currentZ ?? 0, randCit.gender === 'female');
   }, 3800);
 
   // Resize handler
@@ -321,6 +332,10 @@ async function bootstrap() {
     threeRenderer.updateDayNightLighting(sim.simTimeHours);
     threeRenderer.updateCitizens(sim.citizens, dt);
     threeRenderer.updateSpeechBubbles(dt);
+    listener.x = threeRenderer.targetPos.x;
+    listener.z = threeRenderer.targetPos.z;
+    listener.zoom = threeRenderer.zoom;
+    audio.update(listener, sim.simTimeHours, sim.citizens);
 
     // 3. Render 3D Scene with PCF soft shadows
     threeRenderer.render();
@@ -417,7 +432,7 @@ async function bootstrap() {
   requestAnimationFrame(animate);
   if (import.meta.env.DEV) {
     const { installDebugHooks } = await import('./debug-hooks');
-    installDebugHooks(threeRenderer, sim);
+    installDebugHooks(threeRenderer, sim, audio);
   }
   console.log('[Lublin 1392] High-fidelity simulation running with Blender 3D assets & soft shadows!');
 }
