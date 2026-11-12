@@ -12,7 +12,8 @@ This guide provides high-signal navigation pointers and commands for coding agen
 - **Blender Binary Path**: `/home/antigravity/blender/blender` (or `~/.local/bin/blender`).
   - *Never* run unbounded `find /` across the filesystem.
 - **Windows workstation**: Blender 5.3 at `C:\Program Files\Blender Foundation\Blender 5.3\blender.exe` (verified to produce identical geometry/materials to the 3.6 builds).
-  - Build: `& "C:\Program Files\Blender Foundation\Blender 5.3\blender.exe" --background --factory-startup --python build_assets.py`
+  - Build: `& "C:\Program Files\Blender Foundation\Blender 5.3\blender.exe" --background --factory-startup --python build_assets.py` — append `-- house_half_timber town_hall` (GLB names) to build only those models.
+- **Visual check**: with `npm run dev` running, `node scripts/shoot.mjs out.png "model=house_timber_log,0,14&pause&hour=12"` screenshots the n-th placed instance of a model. Hash syntax and `window.__lublin`: [`src/debug-hooks.ts`](src/debug-hooks.ts).
   - No standalone Python; use Blender's bundled interpreter: `C:\Program Files\Blender Foundation\Blender 5.3\5.3\python\bin\python.exe`.
 
 ---

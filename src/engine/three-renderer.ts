@@ -413,6 +413,7 @@ export class ThreeIsometricRenderer {
           }
         });
         if (!name.startsWith('char_')) this.textures.applyToTemplate(gltf.scene);
+        gltf.scene.name = name; // clones keep it: findInstances() looks placed models up by name
         this.models.set(name, gltf.scene);
       } catch (err) {
         console.warn(`[ThreeRenderer] Failed loading /models/${name}.glb:`, err);
@@ -1085,6 +1086,23 @@ export class ThreeIsometricRenderer {
     this.followingCitizen = null;
     this.targetPos.set(x, 0, z);
     if (zoomLevel) this.targetZoom = zoomLevel;
+  }
+
+  /** Jump without the lerp (debug hook / screenshots). quadrant: 0=SW 1=NW 2=NE 3=SE. */
+  public snapTo(x: number, z: number, zoomLevel?: number, quadrant?: number): void {
+    this.jumpTo(x, z, zoomLevel);
+    if (quadrant !== undefined) this.setRotationQuadrant(quadrant);
+    this.currentPos.copy(this.targetPos);
+    this.zoom = this.targetZoom;
+    this.currentRotationAngle = this.targetRotationAngle;
+    this.updateCameraTransform();
+  }
+
+  /** World positions of every placed instance of a model, in placement order. */
+  public findInstances(model: string): { x: number; z: number; parcelId?: string }[] {
+    return this.scene.children
+      .filter((c) => c.name === model)
+      .map((c) => ({ x: c.position.x, z: c.position.z, parcelId: c.userData?.parcelId }));
   }
 
   public updateDayNightLighting(hour: number): void {

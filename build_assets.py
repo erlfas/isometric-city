@@ -2431,51 +2431,59 @@ def main():
     print("==================================================")
     mats = get_materials()
 
-    # Civic & Religious
-    build_town_hall(mats)
-    build_szmatruz(mats)
-    build_church_gothic(mats)
-    build_monastery_cloister(mats)
+    # Output GLB name -> builder. Order is the build order.
+    builders = {
+        # Civic & Religious
+        "town_hall": build_town_hall,
+        "szmatruz": build_szmatruz,
+        "church_gothic": build_church_gothic,
+        "monastery_cloister": build_monastery_cloister,
+        # Fortifications & Military
+        "castle_donjon": build_castle_donjon,
+        "gate_krakow": build_krakow_gate,
+        "gate_grodzka": build_grodzka_gate,
+        "archery_yard": build_archery_yard,
+        "curtain_wall": build_curtain_wall,
+        "curtain_tower": build_defense_tower,
+        # Industrial & Resource Production
+        "watermill": build_watermill,
+        "windmill": build_windmill,
+        "stone_quarry": build_stone_quarry,
+        "logging_camp": build_logging_camp,
+        "river_harbor": build_river_harbor,
+        "blacksmith_workshop": build_blacksmith_workshop,
+        # Specialized Artisan Guild Workshops
+        "house_baker": build_baker_house,
+        "house_tanner": build_tanner_workshop,
+        "house_brewer": build_brewer_malthouse,
+        "house_potter": build_potter_workshop,
+        "house_weaver": build_weaver_workshop,
+        # Residential & Vernacular
+        "house_patrician_brick": build_house_patrician_brick,
+        "house_half_timber": build_house_half_timber,
+        "house_timber_log": build_house_timber_log,
+        "shed_timber": build_shed_timber,
+        # Market & Clutter Infrastructure
+        "market_stall_red_white": lambda m: build_market_stall(m, "awning_red_white", "red_white"),
+        "market_stall_blue_white": lambda m: build_market_stall(m, "awning_blue_white", "blue_white"),
+        "market_stall_yellow_white": lambda m: build_market_stall(m, "awning_yellow_white", "yellow_white"),
+        "market_cart": build_market_cart,
+        "town_well": build_town_well,
+        "tree_oak": build_tree_oak,
+    }
 
-    # Fortifications & Military
-    build_castle_donjon(mats)
-    build_krakow_gate(mats)
-    build_grodzka_gate(mats)
-    build_archery_yard(mats)
-    build_curtain_wall(mats)
-    build_defense_tower(mats)
+    # Optional model filter after "--": blender ... --python build_assets.py -- house_half_timber town_hall
+    wanted = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    unknown = [w for w in wanted if w not in builders]
+    if unknown:
+        raise SystemExit(f"Unknown model(s): {', '.join(unknown)}. Known: {', '.join(builders)}")
 
-    # Industrial & Resource Production
-    build_watermill(mats)
-    build_windmill(mats)
-    build_stone_quarry(mats)
-    build_logging_camp(mats)
-    build_river_harbor(mats)
-    build_blacksmith_workshop(mats)
-
-    # Specialized Artisan Guild Workshops
-    build_baker_house(mats)
-    build_tanner_workshop(mats)
-    build_brewer_malthouse(mats)
-    build_potter_workshop(mats)
-    build_weaver_workshop(mats)
-
-    # Residential & Vernacular
-    build_house_patrician_brick(mats)
-    build_house_half_timber(mats)
-    build_house_timber_log(mats)
-    build_shed_timber(mats)
-
-    # Market & Clutter Infrastructure
-    build_market_stall(mats, "awning_red_white", "red_white")
-    build_market_stall(mats, "awning_blue_white", "blue_white")
-    build_market_stall(mats, "awning_yellow_white", "yellow_white")
-    build_market_cart(mats)
-    build_town_well(mats)
-    build_tree_oak(mats)
+    for name, build in builders.items():
+        if not wanted or name in wanted:
+            build(mats)
 
     print("==================================================")
-    print("  All 31 3D Assets Successfully Compiled to GLB!  ")
+    print(f"  {len(wanted) or len(builders)} 3D asset(s) compiled to GLB")
     print("==================================================")
 
 if __name__ == "__main__":

@@ -415,6 +415,10 @@ async function bootstrap() {
   }
 
   requestAnimationFrame(animate);
+  if (import.meta.env.DEV) {
+    const { installDebugHooks } = await import('./debug-hooks');
+    installDebugHooks(threeRenderer, sim);
+  }
   console.log('[Lublin 1392] High-fidelity simulation running with Blender 3D assets & soft shadows!');
 }
 
