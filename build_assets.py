@@ -280,8 +280,26 @@ def add_pantile_roof(bm, cx, cy, z_base, w, d, h, overhang=0.45, courses=8, mat_
 
     add_box(bm, cx, cy, r_z + 0.08, 0.32, d2 * 2.0, 0.16, mat_idx=mat_tile)
 
+def _ht_end_extent(kind, timber, proud):
+    """How far (m) a wall's plates run past its plaster end, for one end joint kind.
+
+    Each framed wall's timbers occupy the band [proud - t/2, proud + t/2] in front of its
+    plaster. At an outside corner the neighbour's band crosses this wall's line at
+    s in [-(proud + t/2), -(proud - t/2)], so:
+      "flush": plates stop at the plaster end (legacy; a free-standing wall end)
+      "post":  this wall owns the corner: plates run through to the neighbour's outer face
+      "butt":  the neighbour owns the corner: plates stop against its post/plates
+    """
+    if kind == "post":
+        return proud + timber * 0.5
+    if kind == "butt":
+        return proud - timber * 0.5
+    return 0.0
+
+
 def add_half_timber_wall(bm, a, b, z0, z1, outward, mat_timber, mat_glass=None,
-                         bay=1.5, timber=0.18, proud=0.05, rails=(1.0, 2.5), windows=True):
+                         bay=1.5, timber=0.18, proud=0.05, rails=(1.0, 2.5), windows=True,
+                         ends=("flush", "flush")):
     """Timber frame (szachulec) over a plaster wall running from a to b, between z0 and z1.
 
     a, b: (x, y) corners on the plaster face; outward: unit vector out of the wall.
@@ -290,6 +308,14 @@ def add_half_timber_wall(bm, a, b, z0, z1, outward, mat_timber, mat_glass=None,
     Layout: sill and head plates, posts every ~`bay` m, long corner braces in the two
     end bays, and in the inner bays two rails (window sill / lintel) with a St. Andrew's
     cross below and a glazed window between them in alternate bays.
+
+    ends: joint at (a, b), each "flush" (default, free wall end), "post" or "butt".
+    Where two framed walls meet at an outside corner, exactly one of them must use "post"
+    there and the other "butt". The owner then draws one square corner post on the outer
+    corner (centred `proud` beyond the plaster line on both walls) and runs its plates
+    through, so the two frames close into one solid corner instead of leaving a
+    proud x proud notch between two separate end posts. Walls listed head-to-tail around
+    a footprint simply use ends=("post", "butt").
     """
     a = Vector((a[0], a[1], 0.0))
     b = Vector((b[0], b[1], 0.0))
@@ -301,6 +327,7 @@ def add_half_timber_wall(bm, a, b, z0, z1, outward, mat_timber, mat_glass=None,
     step = length / n
     h = timber * 0.5
     z_sill, z_lintel = z0 + rails[0], z0 + rails[1]
+    end_a, end_b = ends
 
     def P(s, z):
         return a + t * s + off + Vector((0.0, 0.0, z))
@@ -308,14 +335,25 @@ def add_half_timber_wall(bm, a, b, z0, z1, outward, mat_timber, mat_glass=None,
     def beam(p, q, size=timber):
         add_timber_beam(bm, p, q, width=size, depth=size, mat_idx=mat_timber)
 
-    beam(P(0.0, z0 + h), P(length, z0 + h))                  # sill plate
-    beam(P(0.0, z1 - h), P(length, z1 - h))                  # head plate
+    s_lo = -_ht_end_extent(end_a, timber, proud)
+    s_hi = length + _ht_end_extent(end_b, timber, proud)
+    beam(P(s_lo, z0 + h), P(s_hi, z0 + h))                   # sill plate
+    beam(P(s_lo, z1 - h), P(s_hi, z1 - h))                   # head plate
     for i in range(n + 1):                                    # posts
         s = min(max(i * step, h), length - h)
+        end = end_a if i == 0 else end_b if i == n else None
+        if end == "butt":
+            continue                                          # the neighbour's corner post
+        if end == "post":
+            s = -proud if i == 0 else length + proud          # one post on the outer corner
         beam(P(s, z0 + timber), P(s, z1 - timber))
 
     for i in range(n):
         s0, s1 = i * step + h, (i + 1) * step - h
+        if i == 0 and end_a != "flush":
+            s0 = h - proud                                    # inner face of the corner post
+        if i == n - 1 and end_b != "flush":
+            s1 = length - (h - proud)
         if i == 0:                                            # corner brace, foot at the corner
             beam(P(s0, z0 + timber), P(s1, z1 - timber), timber * 0.85)
             continue
@@ -342,17 +380,21 @@ def add_half_timber_wall(bm, a, b, z0, z1, outward, mat_timber, mat_glass=None,
 
 def add_gable_roof(bm, cx, cy, z_base, w, d, h, overhang, mat_roof, mat_plaster, mat_timber,
                    mat_glass=None, timber=0.18, proud=0.05, frame=True, loft_windows=2,
-                   bargeboards=True, eave_lip=0.0):
+                   bargeboards=True, eave_lip=0.0, frame_wrap=False):
     """Saddle roof (ridge along Y) with proper gable walls instead of tiled gable ends.
 
     Slopes follow add_sloped_roof (eaves at z_base, extended by `overhang`). The gables sit
     on the wall planes y = cy +/- d/2 as pentagons in `mat_plaster` (plaster, boards or
     brick) that close up under the eaves.
-      frame:        timber frame on the gable (sill, king post, collar, struts)
+      frame:        timber frame on the gable (sill, king post, collar, struts); the king
+                    post and collar run up to the underside of the roof
       loft_windows: 0, 1 (centred) or 2 small gable windows (needs mat_glass)
       bargeboards:  timber verge boards along the gable edges
       eave_lip:     thickness (m) of a roof-material fascia under each eave, so thatch
                     reads as a thick bundle instead of a paper-thin sheet
+      frame_wrap:   the walls below are framed with add_half_timber_wall corner posts
+                    (same timber/proud): run the gable sill out over those posts so the
+                    corner column is capped instead of stepping in at the wall line
     """
     w2, d2 = w * 0.5 + overhang, d * 0.5 + overhang
     ridge = z_base + h
@@ -387,10 +429,16 @@ def add_gable_roof(bm, cx, cy, z_base, w, d, h, overhang, mat_roof, mat_plaster,
         yb = y + sgn * proud
         zc = z_base + h * 0.42                                   # collar height
         if frame:                                                # gable frame, proud of the infill
-            xc = (w2 * (1.0 - (zc - z_base) / h)) - 0.25         # collar reaches the roof line
-            add_timber_beam(bm, Vector((cx - hw, yb, z_base + timber * 0.5)), Vector((cx + hw, yb, z_base + timber * 0.5)),
+            ht = timber * 0.5
+            # Collar and king post end where their upper corners touch the roof plane
+            # (roof line at height z is x = w2 * (1 - (z - z_base) / h)), so no plaster
+            # sliver shows between the frame and the verge.
+            xc = w2 * (1.0 - (zc + ht - z_base) / h)
+            z_king = ridge - h * ht / w2
+            xs = hw + (proud + ht if frame_wrap else 0.0)        # sill over the corner posts
+            add_timber_beam(bm, Vector((cx - xs, yb, z_base + ht)), Vector((cx + xs, yb, z_base + ht)),
                             width=timber, depth=timber, mat_idx=mat_timber)
-            add_timber_beam(bm, Vector((cx, yb, z_base + timber)), Vector((cx, yb, ridge - 0.3)),
+            add_timber_beam(bm, Vector((cx, yb, z_base + timber)), Vector((cx, yb, z_king)),
                             width=timber, depth=timber, mat_idx=mat_timber)
             add_timber_beam(bm, Vector((cx - xc, yb, zc)), Vector((cx + xc, yb, zc)),
                             width=timber, depth=timber, mat_idx=mat_timber)
@@ -1017,14 +1065,18 @@ def build_house_half_timber(mats):
                       ((x2, -y2), (x2, y2), (1, 0, 0)),      # camera-facing flank (+X)
                       ((x2, y2), (-x2, y2), (0, 1, 0)),
                       ((-x2, y2), (-x2, -y2), (-1, 0, 0))]:
-        add_half_timber_wall(bm, a, b, z0, z1, Vector(out), mat_timber=1, mat_glass=6)
+        # Walls run head-to-tail, so each owns the corner at its start (one solid corner
+        # post, plates through) and butts against its neighbour's at its end.
+        add_half_timber_wall(bm, a, b, z0, z1, Vector(out), mat_timber=1, mat_glass=6,
+                             ends=("post", "butt"))
 
     # Carved wooden corbels under jetty
     for cx in [-4.0, -2.0, 0.0, 2.0, 4.0]:
         add_box(bm, cx, -6.2, 4.3, 0.35, 0.5, 0.7, mat_idx=1)
 
     # Clay tiled medieval gable roof (framed plaster gables) with attic dormer
-    add_gable_roof(bm, 0, 0, z1, W, D, 5.5, overhang=0.4, mat_roof=2, mat_plaster=0, mat_timber=1, mat_glass=6)
+    add_gable_roof(bm, 0, 0, z1, W, D, 5.5, overhang=0.4, mat_roof=2, mat_plaster=0, mat_timber=1, mat_glass=6,
+                   frame_wrap=True)
     add_box(bm, 2.2, -2.0, 11.2, 1.6, 2.2, 1.8, mat_idx=0)
     add_sloped_roof(bm, 2.2, -2.0, 12.1, 1.6, 2.2, 1.0, overhang=0.2, mat_idx=2)
 
