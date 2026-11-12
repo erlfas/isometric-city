@@ -368,3 +368,21 @@ In the baseline simulation, the 1,500 simulated citizens were represented by rud
      - Stride sway: $R_Z = \sin(\text{walkCycle}) \times 0.035\text{ rad}$.
      - Idle workstation breathing: stationary craftspeople at workshops exhibit subtle breathing/working oscillations based on their individual seed offset.
 
+
+---
+
+## 16. Texture Pipeline & Lighting: From Flat Colours to Painted Materials
+
+**Context**: Every material was a flat Principled-BSDF colour with no UVs; the city read as pastel boxes with no visible shadows. Full plan, board and before/after: [`docs/material_board/`](docs/material_board/index.html), [`docs/texture_pilot/`](docs/texture_pilot/index.html).
+
+1. **Pipeline** (`scripts/textures/build_textures.ps1` rebuilds `public/textures/` in ~90 s):
+   - 7 hero textures are image-generated from concept-art crops + prompts (originals in git-ignored `texture_sources/`), then delit, mean-matched to the style-guide palette, seam-repaired, and given derived normal maps. 12 are procedural (numpy, FFT-based, tileable by construction).
+   - `public/textures/manifest.json` records each family's real-world tile size in metres.
+2. **UVs are in metres** (`add_world_uvs` in `build_assets.py`): walls project with v = world up, roofs with v = up-slope (ridge at image top), horizontal faces planar X/Y, `TimberDark` along each part's longest edge. Runtime sets `texture.repeat = 1 / tile_m`, so a brick course is 10 cm on every building.
+3. **Textures bind by material name** (`src/engine/texture-library.ts` `BINDINGS`). New flat-colour materials keep working; to texture one, add a binding. Shared semantic materials were split per model at export (`MODEL_MATERIAL_OVERRIDES`): `Limestone -> StoneFieldstone` on vernacular plinths, `TimberDark -> TimberLog` on the log-house body.
+4. **Pitfalls found (all verified in-engine)**:
+   - **Sun behind the camera**: the key light sat at a fixed world offset ~8° from the camera direction, so every visible face was lit alike and every shadow fell behind its object. The sun is now locked to the view (45° up, from screen-left). Shade/lit went 0.75 -> 0.52 (style guide: 0.45–0.55).
+   - **Normal-map green is inverted** for these glTF exports (Blender writes v' = 1 - v): `normalScale.y = -1`, otherwise bricks read as lit from below.
+   - **AI "seamless" textures tiled left-right but not top-bottom** (5 of 7): measure the wrap edge against the image's own internal edges (`seam_rank`) instead of trusting thumbnails; repair with a best-row crop or a whole-course offset blend.
+   - **Tone mapping**: ACES desaturated the painted textures; Neutral's black-level offset crushed the blue channel of dark brick. The rig is balanced so lit walls show textures near their painted value, with `LinearToneMapping`.
+   - **Stretched instances smear metre-based UVs**: curtain walls were one 16 m module scaled up to ~4x per segment; they are now tiled 16 m modules.

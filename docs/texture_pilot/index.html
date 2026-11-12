@@ -1,0 +1,174 @@
+<title>Lublin 1392 Texture Pilot</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; full-width screenshot comparisons; close-ups in a 2-up grid that stacks on phones. Same token set as the material board. */
+:root {
+  --bg: #eceae4;
+  --surface: #f7f6f2;
+  --ink: #26241f;
+  --muted: #6b665b;
+  --line: #d3cfc4;
+  --accent: #8c3b2b;
+  --accent-ink: #ffffff;
+  --good: #2f5d50;
+  --warn: #8a5a12;
+  --code-bg: #e3e0d7;
+  --f-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Inter", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #1b1a17; --surface: #24221e; --ink: #ebe7dd; --muted: #a39d8f; --line: #3a3731;
+  --accent: #d0765f; --accent-ink: #1b1a17; --good: #7fb8a5; --warn: #d9a44a; --code-bg: #2e2b26; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #1b1a17; --surface: #24221e; --ink: #ebe7dd; --muted: #a39d8f; --line: #3a3731;
+  --accent: #d0765f; --accent-ink: #1b1a17; --good: #7fb8a5; --warn: #d9a44a; --code-bg: #2e2b26; color-scheme: dark; }
+
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-block: 40px 80px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; line-height: 1.2; margin: 0; }
+h1 { font-size: 2rem; }
+h2 { font-size: 1.35rem; margin-top: 52px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 1.02rem; }
+p { margin: 0; max-width: 70ch; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.meta { font-family: var(--f-mono); font-size: 12.5px; color: var(--muted); letter-spacing: .02em; }
+.lede { color: var(--muted); }
+code { font-family: var(--f-mono); font-size: 12.5px; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
+
+.ask { margin-top: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 18px 20px; }
+.ask ul { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px; }
+
+/* before / after comparison */
+.compare { position: relative; margin-top: 18px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line);
+  aspect-ratio: 16 / 9; max-width: 100%; background: var(--code-bg); user-select: none; }
+.compare img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.compare .after { clip-path: inset(0 0 0 var(--split, 50%)); }
+.compare .divider { position: absolute; top: 0; bottom: 0; left: var(--split, 50%); width: 2px; background: #fff;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.35); pointer-events: none; }
+.compare .tag { position: absolute; top: 10px; font: 600 12px var(--f-body); letter-spacing: .06em; text-transform: uppercase;
+  color: #fff; background: rgba(20,18,15,.72); padding: 3px 8px; border-radius: 3px; pointer-events: none; }
+.compare .tag.l { left: 10px; } .compare .tag.r { right: 10px; }
+.slider { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.slider input { flex: 1; min-width: 0; accent-color: var(--accent); }
+.slider label { font-size: 13px; color: var(--muted); white-space: nowrap; }
+
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 18px; }
+figure { margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+figure img { width: 100%; max-width: 100%; border-radius: 4px; border: 1px solid var(--line); display: block; }
+figcaption { font-size: 13.5px; color: var(--muted); }
+figcaption b { color: var(--ink); font-weight: 600; }
+.wide { grid-column: 1 / -1; }
+
+.tablewrap { overflow-x: auto; margin-top: 16px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 560px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--f-display); font-weight: 500; color: var(--muted); font-size: 13px; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -1px; margin-right: 6px; border: 1px solid var(--line); }
+.ok { color: var(--good); font-weight: 600; }
+.bad { color: var(--warn); font-weight: 600; }
+
+.issues { display: grid; gap: 14px; margin-top: 16px; }
+.issue { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; background: var(--surface);
+  border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 4px; padding: 14px; }
+.issue img { width: 100%; border-radius: 3px; }
+
+@media (max-width: 720px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .issue { grid-template-columns: minmax(0, 1fr); }
+  h1 { font-size: 1.6rem; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="stack">
+    <span class="meta">PHASE 6 · PILOT SIGN-OFF · LUBLIN ANNO DOMINI 1392</span>
+    <h1>Texture pilot</h1>
+    <p class="lede">All 31 building, wall, prop and tree models now use the 19 texture families from the material board. The ground blends grass, dirt and cobblestone, and the lighting has been rebalanced to the style guide. Every image below is the live game, captured from the default camera or a landmark button.</p>
+  </header>
+
+  <section class="ask">
+    <h3>What I need from you</h3>
+    <ul>
+      <li>Sign off on the look, or tell me what to change: texture scale, colour, contrast, or the light angle.</li>
+      <li>Decide whether to fix the two modelling problems at the bottom of this page next. They are outside texturing, and they are now the most visible gaps from the concept art.</li>
+    </ul>
+  </section>
+
+  <h2>Default view, before and after</h2>
+  <div class="compare" id="cmp" style="--split: 50%">
+    <img src="img/before_default.jpg" alt="Before: flat-colour city at the default camera, Gemini build">
+    <img class="after" src="img/after_default.jpg" alt="After: textured city with rebalanced lighting at the same camera">
+    <div class="divider"></div>
+    <span class="tag l">Before</span><span class="tag r">After</span>
+  </div>
+  <div class="slider">
+    <label for="split">Before</label>
+    <input type="range" id="split" min="0" max="100" value="50" aria-label="Move the before/after divider">
+    <label for="split">After</label>
+  </div>
+
+  <h2>What changed, measured</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Check</th><th>Before</th><th>After</th><th>Target</th></tr></thead>
+      <tbody>
+        <tr><td>Shaded wall brightness vs. lit wall (town hall brick, linear)</td><td class="bad">0.75</td><td class="ok">0.52</td><td>0.45–0.55 (style guide §3)</td></tr>
+        <tr><td>Lit brick colour on screen</td>
+            <td><span class="sw" style="background:rgb(134,97,84)"></span>134, 97, 84</td>
+            <td><span class="sw" style="background:rgb(130,70,54)"></span>130, 70, 54</td>
+            <td><span class="sw" style="background:rgb(135,69,55)"></span>texture 135, 69, 55</td></tr>
+        <tr><td>Sun direction relative to camera</td><td class="bad">8° from straight behind (no visible shadows)</td><td class="ok">top-left, 45° up, fixed to the view</td><td>top-left, 45° (style guide §3)</td></tr>
+        <tr><td>Textures that tile without a seam</td><td>none existed</td><td class="ok">19 / 19</td><td>all</td></tr>
+        <tr><td>Brick course height / log diameter</td><td>n/a</td><td class="ok">10 cm / 25 cm</td><td>next to a 1.75 m citizen</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Close-ups</h2>
+  <div class="grid">
+    <figure>
+      <img src="img/before_rynek.jpg" alt="Town hall close-up with textures but the old lighting">
+      <figcaption><b>Town hall, textures with the old lighting.</b> Both walls are lit almost equally and the colours are washed out.</figcaption>
+    </figure>
+    <figure>
+      <img src="img/after_rynek.jpg" alt="Town hall close-up with textures and the new lighting">
+      <figcaption><b>Same view, new lighting.</b> Lit and shaded faces separate, the brick keeps its painted red, and citizens cast shadows on the cobbles.</figcaption>
+    </figure>
+    <figure>
+      <img src="img/after_gate.jpg" alt="Kraków Gate: limestone ashlar base, brick tower, crenellated curtain wall, clay roof">
+      <figcaption><b>Kraków Gate.</b> Ashlar base, Gothic brick, monk-and-nun roof tiles. Wall segments are now tiled 16 m modules, so bricks and crenellations stay true to size (they used to stretch up to 4×).</figcaption>
+    </figure>
+    <figure>
+      <img src="img/after_workshop.jpg" alt="Workshop yard: shingle hip roof, plank shed, grass blending into cobblestone">
+      <figcaption><b>Workshop yard.</b> Wood-shingle hip roof, plank boards, and grass fading into cobblestone along a soft edge.</figcaption>
+    </figure>
+    <figure class="wide">
+      <img src="img/times.jpg" alt="Four times of day: dawn, noon, dusk, night">
+      <figcaption><b>Time of day.</b> Dawn, High Fair, Dusk and Curfew each set their own sun, sky and ground colours. At night the city stays readable under cool moonlight.</figcaption>
+    </figure>
+  </div>
+
+  <h2>Two modelling problems that texturing can't fix</h2>
+  <p style="margin-top:14px">Both are visible in the Gemini screenshot too. They come from the Blender geometry, not the textures.</p>
+  <div class="issues">
+    <div class="issue">
+      <img src="img/issue_houses.jpg" alt="Half-timber houses with a solid dark upper floor, and a cream plaster block covering a roof">
+      <div class="stack" style="min-width:0">
+        <h3>1. Half-timber houses have a solid dark upper floor</h3>
+        <p>The most common house type covers its whole upper storey with 12 cm timber slabs (<code>build_assets.py</code>, <code>build_house_half_timber</code>), so it reads as a dark band instead of white plaster crossed by dark beams. The fix is to model posts, rails and braces over the plaster, which <code>KEY_FINDINGS.md</code> §13 already describes. Because this house repeats across hundreds of parcels, it is the biggest remaining difference from the concept art.</p>
+        <h3>2. A cream plaster block buries a roof</h3>
+        <p>In the centre of the crop, a plaster block covers its own roof, so only a gable edge shows. I still need to identify which model it is.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const cmp = document.getElementById('cmp');
+const split = document.getElementById('split');
+split.addEventListener('input', () => cmp.style.setProperty('--split', split.value + '%'));
+</script>

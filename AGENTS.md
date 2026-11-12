@@ -23,6 +23,7 @@ This guide provides high-signal navigation pointers and commands for coding agen
 |---|---|---|---|
 | **Building Models** | [`build_assets.py`](build_assets.py) | `public/models/*.glb` (31 models) | `/home/antigravity/blender/blender --background --python build_assets.py` |
 | **Character Models** | [`build_characters.py`](build_characters.py) | `public/models/characters/*.glb` (14 models) | `/home/antigravity/blender/blender --background --python build_characters.py` |
+| **Textures** | [`scripts/textures/build_textures.ps1`](scripts/textures/build_textures.ps1) | `public/textures/*.jpg` + `manifest.json` (19 families) | `powershell -ExecutionPolicy Bypass -File scripts\textures\build_textures.ps1` (needs git-ignored `texture_sources/`) |
 | **Urban Parcellation** | [`generate_city_plan.py`](generate_city_plan.py) | `city_plan.json` (580 parcels, 0 overlaps) | `python3 generate_city_plan.py` |
 
 ---
@@ -39,7 +40,8 @@ This guide provides high-signal navigation pointers and commands for coding agen
   - `concept_art/`: Panoramic district concept paintings and style guide.
 - **Specifications & Post-Mortem Documentation**:
   - [`BUILDINGS_AND_WORKERS_CATALOG.md`](BUILDINGS_AND_WORKERS_CATALOG.md): Master building & worker specification.
-  - [`KEY_FINDINGS.md`](KEY_FINDINGS.md): Critical post-mortem findings (Sections 1–15).
+  - [`KEY_FINDINGS.md`](KEY_FINDINGS.md): Critical post-mortem findings (Sections 1–16; §16 = textures & lighting).
+  - [`docs/material_board/`](docs/material_board/index.html), [`docs/texture_pilot/`](docs/texture_pilot/index.html): texture families, prompts, and the before/after sign-off.
   - [`docs/IMAGE_GENERATION_PROMPTS_AND_GALLERY.md`](docs/IMAGE_GENERATION_PROMPTS_AND_GALLERY.md): Exact prompts and visual gallery.
   - [`skills/`](skills/): Reusable procedural pipeline skills (`blender-procedural-asset-pipeline`, `blender-procedural-character-pipeline`, `procedural-model-creation-pipeline`).
 
@@ -50,3 +52,5 @@ This guide provides high-signal navigation pointers and commands for coding agen
 - **glTF / Three.js Coordinates**: Blender models must be exported with `export_yup=True` (+Y is up in Three.js).
 - **Humanoid Character Proportions**: Standardized at $1.75\text{m}$ overall height with a $1:6.5$ RTS strategy game readability ratio. Triangle budget: $140 - 220$ polygons per character.
 - **File Transfers**: Use Python `shutil.copyfile()` for atomic copying across workspace and artifact paths.
+- **Textures bind by material name**: `src/engine/texture-library.ts` `BINDINGS` maps glTF material names to texture families. UVs are generated at export in metres (`add_world_uvs`); never scale a textured instance non-uniformly by large factors (it stretches the texture) - tile modules instead.
+- **Lighting**: tune via `LIGHT_PRESETS` in `three-renderer.ts`; the sun is locked to the camera view. Keep shaded walls at 45–55% of lit (style guide §3).
