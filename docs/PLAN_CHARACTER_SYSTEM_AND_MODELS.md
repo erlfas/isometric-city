@@ -1,3 +1,5 @@
+> **Superseded (2026-11-12).** This plan produced the legacy single-mesh characters. The current system is the kit pipeline: see `KEY_FINDINGS.md` §18 and `skills/blender-procedural-character-pipeline/SKILL.md`.
+
 # Implementation Plan: Realistic & Differentiated Character System
 ## Lublin Anno Domini 1392 — Visual Character Architecture & 3D Asset Pipeline
 
