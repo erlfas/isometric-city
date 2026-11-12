@@ -8,6 +8,7 @@ This guide provides high-signal navigation pointers and commands for coding agen
 
 - **Initial Setup**: Run `./scripts/setup_environment.sh` (installs `node_modules` and verifies Blender 3.6 LTS).
 - **Typecheck**: `npm run check` (runs `tsc --noEmit` without bundling).
+- **Model check**: `scripts/check_models.py` (stdlib; roof winding, UVs, texture bindings ↔ manifest). Runs with `npm run check` in the pre-commit hook (`git config core.hooksPath .githooks` once per clone) and in CI. Run it after every model build.
 - **Build**: `npm run build` (typechecks and bundles Vite client).
 - **Blender Binary Path**: `/home/antigravity/blender/blender` (or `~/.local/bin/blender`).
   - *Never* run unbounded `find /` across the filesystem.

@@ -28,3 +28,4 @@ texture_sources/
 
 # Python bytecode
 __pycache__/
+.claude/worktrees/

@@ -1,0 +1,31 @@
+#!/bin/sh
+# Pre-commit guardrail: typecheck + model/texture checks.
+# Enable once per clone:  git config core.hooksPath .githooks
+set -e
+
+# Node: PATH, else the default Windows install.
+if ! command -v npm >/dev/null 2>&1 && [ -d "/c/Program Files/nodejs" ]; then
+  PATH="/c/Program Files/nodejs:$PATH"
+fi
+
+# Python: python3 / python, else Blender's bundled interpreter (the only Python on the Windows workstation).
+PY=""
+for c in python3 python; do
+  if command -v "$c" >/dev/null 2>&1 && "$c" -c "import sys" >/dev/null 2>&1; then PY="$c"; break; fi
+done
+if [ -z "$PY" ]; then
+  for c in "/c/Program Files/Blender Foundation"/Blender*/*/python/bin/python.exe; do
+    [ -x "$c" ] && PY="$c"
+  done
+fi
+
+echo "pre-commit: tsc --noEmit (npm run check)"
+# Call tsc via node: the npm shim needs bash, which Git for Windows' minimal sh may lack.
+node node_modules/typescript/bin/tsc --noEmit
+
+if [ -n "$PY" ]; then
+  echo "pre-commit: check_models"
+  "$PY" scripts/check_models.py
+else
+  echo "pre-commit: no Python found, skipping scripts/check_models.py" >&2
+fi
