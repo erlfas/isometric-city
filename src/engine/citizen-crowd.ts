@@ -592,9 +592,9 @@ export class CitizenCrowd {
           m.yaw += diff * k;
         }
         const speed = moved / Math.max(dt, 1e-3);
-        const runT = THREE.MathUtils.clamp((speed - 2.2) / 1.3, 0, 1);
+        const runT = c.gait ?? THREE.MathUtils.clamp((speed - 2.2) / 1.3, 0, 1);
         m.run += (runT - m.run) * Math.min(1, dt * 5);
-        const stride = STRIDE + (RUN_STRIDE - STRIDE) * m.run;
+        const stride = (STRIDE + (RUN_STRIDE - STRIDE) * m.run) * (c.strideScale ?? 1);
         if (moved < 3) m.phase += (moved / stride) * Math.PI * 2;
       } else if (c.faceYaw !== undefined) {
         let diff = c.faceYaw - m.yaw;
@@ -635,7 +635,8 @@ export class CitizenCrowd {
         const breathe = Math.sin(t * 2.2) * 0.03;
         const wp = _pose;
         wp.armL = breathe; wp.armR = -breathe; wp.headPitch = 0; wp.headYaw = Math.sin(t * 0.37) * 0.35; wp.lean = 0;
-        if (c.state === 'WORKING' || c.state === 'PATROLLING' || c.activityAnim === 'work') this.workAnim[i]?.(t, wp);
+        const anim = c.activityAnim ?? (c.state === 'WORKING' || c.state === 'PATROLLING' ? 'work' : 'idle');
+        if (anim === 'work') this.workAnim[i]?.(t, wp);
         armL = armL * m.amp + wp.armL * still;
         armR = armR * m.amp + wp.armR * still;
         headPitch = wp.headPitch * still;

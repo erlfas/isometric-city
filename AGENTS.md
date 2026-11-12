@@ -20,6 +20,7 @@ Commands:
 - **Model check**: `$PY scripts/check_models.py` (roof winding, UVs, texture bindings ↔ manifest). Run it after every model build; the pre-commit hook and CI run it too.
 - **Visual check**: with `npm run dev` running, `node scripts/shoot.mjs out.png "model=house_timber_log,0,14&pause&hour=12"` screenshots the n-th placed instance of a model. Hash syntax and `window.__lublin`: [`src/debug-hooks.ts`](src/debug-hooks.ts).
 - **Runtime numbers** (draw calls, triangles, citizens per model, placed instances per building model, any `__lublin` expression): `node scripts/probe.mjs "<hash>" "__lublin.stats()"`. Before/after a performance change: `node scripts/perf.mjs` (fps + draw calls over three views; header says how to measure another commit).
+- **Navigation** (walkable grid from the placed models, door anchors, routing): `node scripts/nav_check.mjs [out.png] [x0,z0,x1,z1]` draws the grid with doors/spots and routes 400 door pairs (fails if >2% unreachable). Live numbers: `__lublin.nav()`; watch someone: hash `hour=6.95&follow=walk` with `shoot.mjs --wait 8000`.
 - **Audio mix** (you can't listen; this is the check): `node scripts/audio_levels.mjs [scene ...]` prints level per bus.
 
 ---

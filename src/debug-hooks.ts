@@ -13,6 +13,8 @@ import type { Soundscape } from './engine/audio';
  *   &lineup=char_tanner[,n[,work|walk]]   stand n citizens of a character model in rows of 6 at
  *                                    the view centre (needs &pause); work loop or walk in place.
  *                                    Without cam/model it frames open ground, zoomed to fit all n.
+ *   &follow=walk[,zoom]               camera follows the first visible walking citizen (polls
+ *                                    until one walks); or follow=<index|id>[,zoom]
  *
  * window.__lublin: { renderer, sim, audio, ready, snapTo(x,z,zoom?,q?), find(model), stats() }
  *   audio.debugState(): context state, music, crowd level, audible workshops
@@ -42,7 +44,17 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
         models[m] = (models[m] ?? 0) + 1;
       }
       return { calls, triangles, citizenTrianglesPerPass: renderer.citizenTriangles(),
-        crowd: renderer.crowdStats(), citizens: sim.citizens.length, models, placed: renderer.placedCounts() };
+        crowd: renderer.crowdStats(), citizens: sim.citizens.length, models, placed: renderer.placedCounts(),
+        nav: sim.navStats() };
+    },
+    /** Navigation only: grid build, routes (computed / cached / straight / failed), phases. */
+    nav: () => sim.navStats(),
+    /** One citizen's runtime state (index or id). */
+    citizen: (k: number | string) => {
+      const c = typeof k === 'number' ? sim.citizens[k] : sim.citizens.find((x) => x.id === k);
+      if (!c) return null;
+      const { id, name, trade, state, currentTask, currentX, currentZ, y, hidden, isMoving, gait, activityAnim } = c;
+      return { id, name, trade, state, currentTask, currentX, currentZ, y, hidden, isMoving, gait, activityAnim };
     },
   };
   (window as unknown as { __lublin: typeof api }).__lublin = api;
@@ -65,7 +77,23 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
     }
     if (params.has('pause') && !sim.isPaused) sim.togglePause();
     const hour = num(params.get('hour') ?? undefined);
-    if (hour !== undefined) sim.simTimeHours = hour;
+    if (hour !== undefined) sim.setTime(hour);
+    const follow = params.get('follow');
+    if (follow) {
+      // A citizen index / id, or "walk" = the first visible citizen walking (waits for one).
+      const [who, zoom] = follow.split(',');
+      const pick = () => (who === 'walk'
+        ? sim.citizens.find((c) => c.isMoving && !c.hidden)
+        : /^\d+$/.test(who) ? sim.citizens[Number(who)] : sim.citizens.find((c) => c.id === who));
+      let tries = 0;
+      const t = setInterval(() => {
+        const c = pick();
+        if (c || ++tries > 120) clearInterval(t);
+        if (!c) return;
+        renderer.snapTo(c.currentX ?? 0, c.currentZ ?? 0, num(zoom) ?? 16);
+        renderer.followingCitizen = c;
+      }, 250);
+    }
     const lineup = params.get('lineup');
     if (lineup) {
       if (!cam && !model) renderer.snapTo(LINEUP_SPOT[0], LINEUP_SPOT[1], LINEUP_SPOT[2]);

@@ -93,8 +93,12 @@ export interface Citizen {
   faceYaw?: number;
   /** Extra vertical offset this frame (stepping up a stair). */
   stepBob?: number;
-  /** 'work' plays the kit's work loop whatever the schedule state. */
+  /** 'work' plays the kit's work loop, 'idle' stands; unset = by schedule state. */
   activityAnim?: string;
+  /** 0 walk .. 1 run (unset: from measured speed). */
+  gait?: number;
+  /** Stride length factor: travel is shown sped up, so steps lengthen with it. */
+  strideScale?: number;
 }
 
 export interface StreetNode {

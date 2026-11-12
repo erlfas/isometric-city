@@ -33,8 +33,13 @@ function layout(g: THREE.BufferGeometry): string {
   return `${attrs.join(',')}|${g.index ? 'i' : 'n'}`;
 }
 
+/** A placement with its template and world matrix (navigation grid, building anchors). */
+export interface PlacedModel { template: THREE.Object3D; matrix: THREE.Matrix4; parcelId?: string }
+
 export class StaticBatches {
   readonly placements: Placement[] = [];
+  /** Same order as placements; kept apart so placements stay plain data (debug hooks print them). */
+  readonly placed: PlacedModel[] = [];
   private parts = new Map<THREE.Object3D, Part[]>();
   private batches = new Map<string, Batch>();
   private tmp = new THREE.Vector3();
@@ -43,6 +48,7 @@ export class StaticBatches {
   place(template: THREE.Object3D, world: THREE.Matrix4, tint?: Tint, parcelId?: string): void {
     this.tmp.setFromMatrixPosition(world);
     this.placements.push({ name: template.name, x: this.tmp.x, z: this.tmp.z, parcelId });
+    this.placed.push({ template, matrix: world.clone(), parcelId });
     for (const part of this.partsOf(template)) {
       const got = tint?.(part.material);
       const material = got?.material ?? part.material;

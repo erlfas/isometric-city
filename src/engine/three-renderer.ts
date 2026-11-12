@@ -4,7 +4,7 @@ import type { CityPlan, Citizen } from '../types';
 import { TextureLibrary } from './texture-library';
 import { CitizenCrowd } from './citizen-crowd';
 import { parcelHash, parcelKind } from './parcel-kind';
-import { StaticBatches, type Placement, type Tint } from './static-batches';
+import { StaticBatches, type PlacedModel, type Placement, type Tint } from './static-batches';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const hsl = { h: 0, s: 0, l: 0 };
@@ -912,6 +912,11 @@ export class ThreeIsometricRenderer {
     this.zoom = this.targetZoom;
     this.currentRotationAngle = this.targetRotationAngle;
     this.updateCameraTransform();
+  }
+
+  /** Every placed model with its template and world matrix (navigation, building anchors). */
+  public placedModels(): PlacedModel[] {
+    return this.statics.placed;
   }
 
   /** World positions of every placed instance of a model, in placement order. */

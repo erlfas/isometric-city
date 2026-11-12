@@ -2,6 +2,8 @@ import type { CityPlan } from './types';
 import { ThreeIsometricRenderer } from './engine/three-renderer';
 import { SpatialHashGrid } from './engine/spatial-hash';
 import { SimulationEngine } from './engine/simulation';
+import { NavGrid } from './engine/nav-grid';
+import { BuildingIndex } from './engine/building-anchors';
 import { Soundscape, type Listener } from './engine/audio';
 import { UIController } from './ui/inspector';
 import { IsometricCamera } from './engine/camera';
@@ -41,7 +43,12 @@ async function bootstrap() {
 
   // 4. Initialize Simulation & Audio Engines
   const spatialGrid = new SpatialHashGrid(24.0);
-  const sim = new SimulationEngine(plan, spatialGrid);
+  const placed = threeRenderer.placedModels();
+  const buildings = new BuildingIndex(placed);
+  // Ground plane is 700 x 550 m around the origin; seed the market square as open ground too.
+  const nav = new NavGrid(-350, -275, 350, 275, placed, [...buildings.seeds(), { x: -15.5, z: -25.5 }]);
+  console.log(`[Lublin 1392] Navigation grid ${nav.w}x${nav.h} built in ${nav.buildMs.toFixed(0)} ms (${buildings.all.length} buildings with doors/spots).`);
+  const sim = new SimulationEngine(plan, spatialGrid, nav, buildings);
   const audio = new Soundscape();
   audio.configure(plan);
   const listener: Listener = {
@@ -90,15 +97,6 @@ async function bootstrap() {
   mobileAudioBtn?.addEventListener('click', toggleAudio);
   for (const b of musicBtns) b?.addEventListener('click', toggleMusic);
   showAudioState();
-
-  // Cluster fair citizens in Market Square around stalls (matching reference images)
-  for (let i = 0; i < Math.min(80, sim.citizens.length); i++) {
-    const c = sim.citizens[i];
-    c.currentX = (Math.random() - 0.5) * 36.0;
-    c.currentZ = (Math.random() - 0.5) * 32.0;
-    c.targetX = c.currentX + (Math.random() - 0.5) * 8.0;
-    c.targetZ = c.currentZ + (Math.random() - 0.5) * 8.0;
-  }
 
   // Initial speech bubbles (matching images 3 & 4)
   threeRenderer.triggerSpeechBubble('b1', 'Hello, carpenter!', -12, -14);
