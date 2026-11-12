@@ -17,6 +17,8 @@ Checks:
   6. Character kits: every mesh has a valid part, its variant names kit.groups options, every
      Slot_* material has a palette, triangle budgets hold, metallic <= KIT_MAX_METALLIC,
      variants per part and colour slots fit the crowd renderer's limits.
+  7. Work loops: every kit.anim name is a file in src/engine/work-anims/ (or "idle"), each file
+     is used by exactly one kit (parallel kit authors overwrite a shared name).
 """
 import glob
 import json
@@ -30,6 +32,7 @@ MODELS = os.path.join(ROOT, "public", "models")
 TEXTURES = os.path.join(ROOT, "public", "textures")
 TEXLIB = os.path.join(ROOT, "src", "engine", "texture-library.ts")
 SRC = os.path.join(ROOT, "src")
+WORK_ANIMS = os.path.join(SRC, "engine", "work-anims")
 
 ROOF_MATERIALS = {"RoofTileRed", "RoofShingle", "RoofThatch"}
 COMP = {5126: ("f", 4), 5125: ("I", 4), 5123: ("H", 2), 5121: ("B", 1)}
@@ -112,6 +115,9 @@ KIT_MAX_VARIANTS = 48     # distinct variants per part: the crowd's per-instance
 KIT_MAX_SLOTS = 31        # colour slots per kit: columns of the crowd's slot texture
 
 
+anim_users = {}  # work-anim name -> kits using it
+
+
 def check_kit(name, gltf):
     """Character kits (build_characters.py export_kit): metadata matches the meshes."""
     scenes = gltf.get("scenes", [])
@@ -120,6 +126,9 @@ def check_kit(name, gltf):
         return
     kit = json.loads(raw)
     groups, slots = kit.get("groups", {}), kit.get("slots", {})
+    for anim in kit.get("anim", {}).values():
+        if anim != "idle":
+            anim_users.setdefault(anim, []).append(name)
     if set(kit.get("pivots", {})) != KIT_PARTS:
         fail(f"{name}: kit pivots {sorted(kit.get('pivots', {}))} != {sorted(KIT_PARTS)}")
     mats = gltf.get("materials", [])
@@ -219,6 +228,15 @@ def main():
                 print(f"  {name:28s} {mname:12s} up {u:8.1f} m2  down {d:8.1f} m2")
             if d > u:
                 fail(f"{name}: {mname} faces mostly down (up {u:.1f} m2, down {d:.1f} m2) - roof wound inward")
+
+    anim_files = {os.path.splitext(f)[0] for f in os.listdir(WORK_ANIMS) if f.endswith(".ts")}
+    for anim, kits in sorted(anim_users.items()):
+        if anim not in anim_files:
+            fail(f"{', '.join(kits)}: kit.anim '{anim}' has no src/engine/work-anims/{anim}.ts")
+        if len(kits) > 1:
+            fail(f"work-anims/{anim}.ts is used by {len(kits)} kits ({', '.join(kits)}); give each kit its own loop")
+    for anim in sorted(anim_files - set(anim_users)):
+        fail(f"work-anims/{anim}.ts is used by no kit (kit.anim); delete it or reference it")
 
     manifest_path = os.path.join(TEXTURES, "manifest.json")
     manifest = json.load(open(manifest_path, encoding="utf-8")) if os.path.exists(manifest_path) else {}

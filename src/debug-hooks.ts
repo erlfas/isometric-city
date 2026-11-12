@@ -1,4 +1,4 @@
-import type { ThreeIsometricRenderer } from './engine/three-renderer';
+import { LINEUP_ROW, LINEUP_ROW_GAP, LINEUP_STEP, type ThreeIsometricRenderer } from './engine/three-renderer';
 import type { SimulationEngine } from './engine/simulation';
 import type { Soundscape } from './engine/audio';
 
@@ -10,9 +10,9 @@ import type { Soundscape } from './engine/audio';
  *                                    (mouse wheel allows 8-90; here anything, e.g. 3.5 for faces)
  *   #model=house_timber_log[,n[,zoom[,quadrant]]]   n-th placed instance of a model (default 0)
  *   append &pause to pause the simulation, &hour=12 to set the sim clock
- *   &lineup=char_tanner[,n[,work|walk]]   stand n citizens of a character model in a row at the
- *                                    view centre (needs &pause); work loop or walk in place.
- *                                    Without cam/model it frames open ground at face zoom.
+ *   &lineup=char_tanner[,n[,work|walk]]   stand n citizens of a character model in rows of 6 at
+ *                                    the view centre (needs &pause); work loop or walk in place.
+ *                                    Without cam/model it frames open ground, zoomed to fit all n.
  *
  * window.__lublin: { renderer, sim, audio, ready, snapTo(x,z,zoom?,q?), find(model), stats() }
  *   audio.debugState(): context state, music, crowd level, audible workshops
@@ -73,6 +73,15 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
       const m = mode === 'work' || mode === 'walk' ? mode : 'idle';
       const got = renderer.lineup(sim.citizens, arch, num(n) ?? 8, m);
       if (!got) console.warn(`[debug] lineup: no citizens use "${arch}"`);
+      else if (!cam && !model) {
+        // Zoom out until the whole block fits: the widest row across, and each row behind
+        // the first rises LINEUP_ROW_GAP * sin(35°) on screen.
+        const aspect = innerWidth / innerHeight || 16 / 9;
+        const cols = Math.min(got, LINEUP_ROW), rows = Math.ceil(got / LINEUP_ROW);
+        const zoom = Math.max(LINEUP_SPOT[2], ((cols - 1) * LINEUP_STEP + 1.2) / aspect,
+          LINEUP_SPOT[2] + (rows - 1) * LINEUP_ROW_GAP * 0.6);
+        renderer.snapTo(LINEUP_SPOT[0], LINEUP_SPOT[1], zoom);
+      }
     }
   };
 

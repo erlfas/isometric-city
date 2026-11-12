@@ -16,7 +16,7 @@ Each kit is `characters/char_<trade>.py` defining `build(kit)`; it runs with `bu
 - **Colours**: dyeable surfaces use `kit.mat("slot:<name>")` plus `kit.slot(name, palette)`; palette rows are `[sRGB hex, weight, tiers]` with tiers `p a b r` = plebeian, artisan, burgher, patrician. Fixed materials (`FIXED_MATS`) are sRGB too; `create_mat` linearises. A material only one kit needs: `kit.mat("flour", "#e8e2d4", roughness=0.9)`.
 - **Readability**: every head cloth gets `add_fringe`, or white linen reads as white hair (`KEY_FINDINGS.md` §18.6).
 - **Trade signature first**: everything a viewer uses to recognise the trade (apron, tool, boots) is base geometry; everything else varies.
-- **Work loop**: set `kit.anim = {"work": "<name>"}` and add `src/engine/work-anims/<name>.ts` (contract: `src/engine/work-anims.ts`). Arms only pitch about the shoulder, so a tool's working angle comes from where the hand holds it. Lean only the upper body.
+- **Work loop**: set `kit.anim = {"work": "<name>"}` and add `src/engine/work-anims/<name>.ts` (contract: `src/engine/work-anims.ts`). Each file belongs to one kit; pick a name no file has yet (`check_models.py` fails on a shared or unused loop). Arms only pitch about the shoulder, so a tool's working angle comes from where the hand holds it. Lean only the upper body.
 - **Budget**: `check_models.py` enforces base and per-variant triangle limits.
 
 ## Loop
@@ -26,4 +26,4 @@ Each kit is `characters/char_<trade>.py` defining `build(kit)`; it runs with `bu
 3. `$PY scripts/check_models.py` and `npm run check`.
 4. With `npm run dev` running, screenshot idle, work and walk (the lineup frames itself):
    `node scripts/shoot.mjs out.png "pause&hour=11&lineup=char_<trade>,6,work"`
-   Done when, across 8 citizens, the trade reads at a glance, no two look alike, and nothing clips or floats in any of the three poses.
+   Ask for 12 to see rarer options. Done when, across 8 citizens, the trade reads at a glance, no two look alike, and nothing clips or floats in any of the three poses.

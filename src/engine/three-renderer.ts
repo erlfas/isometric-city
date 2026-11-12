@@ -31,6 +31,12 @@ const LIGHT_PRESETS: Record<'dawn' | 'noon' | 'dusk' | 'night', LightPreset> = {
   night: { sun: 0x6f8fc4, sunI: 0.9, sky: 0x40507a, ground: 0x15161e, hemiI: 0.9, amb: 0x181e28, ambI: 0.3, bg: 0x0a1018 },
 };
 
+/** Debug lineup: metres between neighbours, citizens per row, metres between rows (back rows
+ *  stand clear of the front row's heads on screen). debug-hooks frames the block from these. */
+export const LINEUP_STEP = 1.1;
+export const LINEUP_ROW = 6; // wider rows run behind the walls around debug-hooks' LINEUP_SPOT
+export const LINEUP_ROW_GAP = 3.5;
+
 export class ThreeIsometricRenderer {
   public scene: THREE.Scene;
   public camera: THREE.OrthographicCamera;
@@ -859,12 +865,18 @@ export class ThreeIsometricRenderer {
     const camYaw = this.currentRotationAngle + Math.PI / 4;
     const rx = Math.cos(camYaw), rz = -Math.sin(camYaw); // screen right on the ground
     const picked = citizens.filter((c) => this.getCitizenArchetype(c) === archetype).slice(0, n);
-    // Stand 1.4 m toward the camera so chest height, not the feet, is at the view centre.
-    const bx = this.targetPos.x + Math.sin(camYaw) * 1.4, bz = this.targetPos.z + Math.cos(camYaw) * 1.4;
+    // Stand 1.4 m toward the camera so chest height, not the feet, is at the view centre;
+    // rows of LINEUP_ROW, each LINEUP_ROW_GAP further back, centred as a block.
+    const rows = Math.ceil(picked.length / LINEUP_ROW);
+    const fwd = 1.4 + ((rows - 1) / 2) * LINEUP_ROW_GAP;
+    const bx = this.targetPos.x + Math.sin(camYaw) * fwd, bz = this.targetPos.z + Math.cos(camYaw) * fwd;
     picked.forEach((c, k) => {
-      const off = (k - (picked.length - 1) / 2) * 1.1;
-      c.currentX = bx + rx * off;
-      c.currentZ = bz + rz * off;
+      const row = Math.floor(k / LINEUP_ROW);
+      const inRow = Math.min(LINEUP_ROW, picked.length - row * LINEUP_ROW);
+      const off = (k % LINEUP_ROW - (inRow - 1) / 2) * LINEUP_STEP;
+      const back = row * LINEUP_ROW_GAP;
+      c.currentX = bx + rx * off - Math.sin(camYaw) * back;
+      c.currentZ = bz + rz * off - Math.cos(camYaw) * back;
       c.isMoving = false;
       c.state = mode === 'work' ? 'WORKING' : 'IDLE';
     });
