@@ -37,6 +37,7 @@ All models exported as optimized GLTF/GLB models to public/models/
 import os
 import sys
 import math
+import json
 
 import bpy
 import bmesh
@@ -737,11 +738,49 @@ def add_world_uvs(obj):
             uv[li].uv = (co.dot(t), co.dot(b))
 
 
+# -------------------------------------------------------------
+# Navigation anchors: where citizens enter a building and where they stand to work.
+# Build functions call anchor_door / anchor_spot (Blender coordinates, model space) next to
+# the geometry they describe; export_object writes them to the GLB as scene extras
+# "anchors" = JSON in glTF coordinates (Y up), read by src/engine/building-anchors.ts.
+#   doors: p = sill centre on the outer wall face, n = outward normal, w = clear width,
+#          stair = optional path [foot on the ground, ..., landing in front of the door]
+#   spots: p = where to stand (on the ground or a deck), yaw = facing (radians, glTF
+#          atan2(x, z) convention), tag = what happens there (work | sell | stand | guard)
+# -------------------------------------------------------------
+_ANCHORS = {"doors": [], "spots": []}
+
+
+def _gl(v):
+    """Blender (x, y, z) -> glTF (x, z, -y), rounded."""
+    return [round(v[0], 3), round(v[2], 3), round(-v[1], 3)]
+
+
+def anchor_door(p, n, w, stair=None):
+    d = {"p": _gl(p), "n": _gl((n[0], n[1], 0.0)), "w": w}
+    if stair:
+        d["stair"] = [_gl(s) for s in stair]
+    _ANCHORS["doors"].append(d)
+
+
+def anchor_spot(p, face, tag="work"):
+    """face: Blender (x, y) direction the citizen looks in."""
+    fx, fz = face[0], -face[1]                       # glTF ground-plane direction
+    p = (p[0], p[1], p[2] if len(p) > 2 else 0.0)
+    _ANCHORS["spots"].append({"p": _gl(p), "yaw": round(math.atan2(fx, fz), 4), "tag": tag})
+
+
 def export_object(obj, name):
     apply_material_overrides(obj, name)
     add_world_uvs(obj)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     filepath = os.path.join(OUTPUT_DIR, f"{name}.glb")
+    scene = bpy.context.scene
+    if _ANCHORS["doors"] or _ANCHORS["spots"]:
+        scene["anchors"] = json.dumps(_ANCHORS)
+    elif "anchors" in scene:
+        del scene["anchors"]
+    _ANCHORS["doors"], _ANCHORS["spots"] = [], []
     bpy.ops.object.select_all(action='DESELECT')
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
@@ -749,7 +788,8 @@ def export_object(obj, name):
         filepath=filepath,
         export_format='GLB',
         use_selection=True,
-        export_apply=True
+        export_apply=True,
+        export_extras=True
     )
     print(f"Exported: {filepath} ({os.path.getsize(filepath):,} bytes)")
 
@@ -1205,6 +1245,15 @@ def build_town_hall(mats):
     add_box(bm, (sx0 + sx1 + 0.25) * 0.5, y_end + 0.125, (Z1 + 0.9) * 0.5, sx1 - sx0 + 0.25, 0.25, Z1 + 0.9, mat_idx=LS)
     _lm_lancet(bm, Vector((x2, 3.6, Z1)), Y, X, 1.2, 2.0, TP, LS, frame=0.2, sill=False)
 
+    # Anchors: two ground doors at the back of the loggia; the council door up the stair
+    for i in (1, 4):
+        anchor_door((bays[i], yb, 0.0), (0, -1), 1.2)
+    sxm = (sx0 + sx1) * 0.5
+    anchor_door((x2, 3.6, Z1), (1, 0), 1.1,
+                stair=[(sxm, y0 - 0.8, 0.0), (sxm, y0, 0.0), (sxm, y_land, Z1), (sxm, 3.6, Z1)])
+    for i in (0, 2, 3, 5):                                         # under the loggia arches
+        anchor_spot((bays[i], (-y2 + yb) * 0.5), (0, -1), "sell" if i in (0, 5) else "stand")
+
     _lm_finish(bm, mat_list, "town_hall", "TownHall")
 
 # -------------------------------------------------------------
@@ -1266,6 +1315,9 @@ def build_szmatruz(mats):
                 add_timber_beam(bm, Vector((bx + px, s * 1.95, 0.0)), Vector((bx + px, s * 1.95, 2.4)),
                                 width=0.08, depth=0.08, mat_idx=TD)
             add_box(bm, bx, s * 2.4, 2.44, 1.9, 1.2, 0.08, mat_idx=AR if i % 2 == 0 else AB)
+            # Open hall, no door: sellers behind the counters, buyers in the aisle
+            anchor_spot((bx, s * 3.25), (0, -s), "sell")
+            anchor_spot((bx, s * 1.4), (0, s), "stand")
 
     _lm_finish(bm, mat_list, "szmatruz", "Szmatruz")
 
@@ -1430,6 +1482,9 @@ def build_house_timber_log(mats):
 
     # Plank door and small framed windows with open board shutters
     add_box(bm, 0, -D * 0.5 - 0.05, 0.8 + 1.05, 1.1, 0.12, 2.1, mat_idx=1)
+    anchor_door((0, -D * 0.5, z0), (0, -1), 1.0)
+    anchor_spot((-4.8, -2.3), (0, 1))                           # firewood stack
+    anchor_spot((5.2, -3.6), (0, 1))                            # cabbage bed
     front, flank = Vector((0, -1, 0)), Vector((1, 0, 0))
     for wx in (-2.4, 2.4):
         add_wall_window(bm, Vector((wx, -D * 0.5, 2.5)), (1, 0, 0), front, 0.8, 0.8,
@@ -1482,6 +1537,9 @@ def build_house_half_timber(mats):
     add_box(bm, -1.8, -6.05, 1.8, 1.4, 0.15, 2.6, mat_idx=1)
     add_box(bm, 1.8, -6.05, 2.0, 2.2, 0.15, 1.6, mat_idx=5) # shutter
     add_box(bm, 1.8, -6.3, 1.3, 2.4, 0.5, 0.1, mat_idx=5) # display shelf
+    anchor_door((-1.8, -6.0, 0.0), (0, -1), 1.2)
+    anchor_spot((1.8, -7.2), (0, -1), "sell")
+    anchor_spot((-4.8, -2.4), (1, 0))                           # firewood cord
 
     # Overhanging 2nd floor jetty: lime-plaster infill (recessed) in a timber frame on all
     # four sides. Previously four solid TimberDark slabs hid the plaster entirely, so the
@@ -1555,6 +1613,9 @@ def build_house_patrician_brick(mats):
     add_wall_window(bm, portal, (1, 0, 0), (0, -1, 0), 1.5, 2.7, mat_glass=6, mat_frame=3,
                     frame=0.28, pointed=True)
     add_box(bm, 2.8, -7.6, 0.2, 1.6, 1.2, 0.3, mat_idx=4) # cellar iron hatch
+    anchor_door((0.0, -y2, 0.7), (0, -1), 1.3)
+    anchor_spot((2.8, -8.8), (0, 1))                            # at the cellar hatch
+    anchor_spot((-2.4, -8.2), (0, -1), "stand")
 
     # Lancet windows with limestone surrounds: street facade, +X flank (camera side), -X, back
     def lancet(c, along, out, w=1.0, h=1.8):
@@ -1691,6 +1752,8 @@ def build_shed_timber(mats):
             add_box(bm, cx, cy, 1.8, 0.35, 0.35, 2.8, mat_idx=0)
     add_box(bm, 0, -2.95, 1.2, 1.2, 0.1, 2.0, mat_idx=0)
     add_box(bm, 2.7, 0, 0.8, 0.6, 3.2, 1.2, mat_idx=0)
+    anchor_door((0, -2.9, 0.4), (0, -1), 1.0)
+    anchor_spot((3.5, -0.4), (-1, 0))                           # at the side bench
 
     add_sloped_roof(bm, 0, 0, 3.2, 4.8, 5.8, 2.4, overhang=0.35, mat_idx=2)
 
@@ -1758,6 +1821,8 @@ def build_church_gothic(mats):
     _lm_gable_wall(bm, (px0, py), Y, -X, 5.2, 3.0, 2.0, 0.3, BR)
     _lm_blind(bm, Vector((px0, py, 5.45)), Y, -X, 0.4, 0.6, PL)
     _lm_lancet(bm, Vector((px0, py, 0.0)), Y, -X, 1.5, 2.6, TP, LS, frame=0.3, sill=False)
+    anchor_door((px0, py, 0.0), (-1, 0), 1.4)
+    anchor_door((0.0, TC.y - T2, 0.0), (0, -1), 1.8)                                    # west tower portal
 
     # Steep nave roof between two crow-stepped gables with blind niches
     _lm_saddle_roof(bm, 0, (YW + YE) * 0.5, NH, (YE - YW) - 1.0, 2 * NX, NR, 'y', RT, overhang=0.5)
@@ -1885,6 +1950,11 @@ def build_castle_donjon(mats):
         add_timber_beam(bm, Vector((sx0, yy, 7.05)), Vector((sx0 + (n_st + 1) * run, yy, 0.05)), width=0.14, depth=0.2, mat_idx=TD)
     for k in range(n_st):
         add_box(bm, sx0 + (k + 0.5) * run, -8.8, 7.2 - (k + 1) * rise + 0.04, 0.5, 1.0, 0.08, mat_idx=TP)
+    sxf = sx0 + (n_st + 1) * run                                                 # stair foot
+    anchor_door((0.0, -FL, 7.2), (0, -1), 1.2,
+                stair=[(sxf + 0.8, -8.8, 0.0), (sxf, -8.8, 0.0), (sx0, -8.8, 7.2), (0.0, -7.9, 7.2)])
+    anchor_spot((-5.0, -12.6), (0, 1), "guard")                                  # guardhouse
+    anchor_spot((sxf + 1.2, -10.2), (0, 1), "guard")                             # stair foot
     add_timber_beam(bm, Vector((5.0, -8.8, 0.0)), Vector((5.0, -8.8, 3.6)), width=0.18, depth=0.18, mat_idx=TD)
     for yy, wx in ((-8.35, 1.0), (-9.25, 1.4)):                                  # lifting chains
         add_timber_beam(bm, Vector((sx0 + 0.3, yy, 6.7)), Vector((wx, -math.sqrt(R * R - wx * wx) + 0.05, 9.6)),
@@ -2275,6 +2345,9 @@ def build_baker_house(mats):
     _ws_framed_front(bm, (-w2, -d2), (w2, -d2), z0, z1, (0, -1, 0), 1,
                      [(1.25, 2.35, z0, z0 + 2.2), (4.1, 6.7, z0 + 0.95, z0 + 2.35)], rail=1.0)
     add_box(bm, -2.0, -d2 - 0.04, z0 + 1.1, 1.06, 0.06, 2.18, mat_idx=5)            # door leaf
+    anchor_door((-2.0, -d2, z0), (0, -1), 1.0)
+    anchor_spot((3.4, -d2 - 0.9), (0, -1), "sell")                                    # by the bread counter
+    anchor_spot((5.6, -3.3), (0, 1))                                                  # at the oven mouth
     for zs in (z0 + 0.45, z0 + 1.75):                                                # strap hinges
         add_box(bm, -2.05, -d2 - 0.08, zs, 0.8, 0.02, 0.07, mat_idx=9)
     add_box(bm, -1.62, -d2 - 0.09, z0 + 1.05, 0.08, 0.03, 0.14, mat_idx=9)          # latch
@@ -2392,6 +2465,9 @@ def build_tanner_workshop(mats):
     # Plank door with frame, small shuttered windows (street and camera flank)
     dx = -1.6
     add_box(bm, dx, -d2 - 0.04, zp + 1.05, 1.0, 0.06, 2.1, mat_idx=7)
+    anchor_door((dx, -d2, zp), (0, -1), 0.95)
+    anchor_spot((6.05, -3.15), (1, 0))                          # plank walk between the vats
+    anchor_spot((6.05, -0.85), (-1, 0))
     for sx in (-1.0, 1.0):
         add_timber_beam(bm, Vector((dx + sx * 0.6, -d2 - 0.07, zp)), Vector((dx + sx * 0.6, -d2 - 0.07, zp + 2.25)), width=0.14, depth=0.14, mat_idx=0)
     add_timber_beam(bm, Vector((dx - 0.75, -d2 - 0.07, zp + 2.25)), Vector((dx + 0.75, -d2 - 0.07, zp + 2.25)), width=0.16, depth=0.16, mat_idx=0)
@@ -2484,6 +2560,11 @@ def build_brewer_malthouse(mats):
     add_wall_window(bm, Vector((0.0, -d2, 0.6 + 1.25)), (1, 0, 0), (0, -1, 0), 1.5, 2.5, mat_glass=4,
                     mat_frame=0, frame=0.26, pointed=True)
     add_box(bm, 0, -d2 - 0.45, 0.15, 2.2, 0.9, 0.3, mat_idx=0)
+    anchor_door((0.0, -d2, 0.6), (0, -1), 1.3)
+    anchor_spot((4.6, -4.6), (1, 0))                            # cask-washing troughs
+    anchor_spot((4.6, -1.9), (1, 0))
+    anchor_spot((-3.8, -d2 - 2.8), (1, 0), "stand")             # forecourt drinking tables
+    anchor_spot((3.8, -d2 - 2.8), (-1, 0), "stand")
 
     def lancet(c, along, out):
         add_wall_window(bm, c, along, out, 0.8, 1.3, mat_glass=7, mat_frame=0, frame=0.16, pointed=True)
@@ -2599,6 +2680,10 @@ def build_blacksmith_workshop(mats):
 
     # +X flank: plank door, shuttered windows
     add_box(bm, wb + 0.04, 2.8, 1.05 + 0.25, 0.06, 1.0, 2.1, mat_idx=9)
+    anchor_door((wb, 2.8, 0.25), (1, 0), 0.95)
+    anchor_spot((-0.2, -6.4), (0, 1))                           # at the anvil
+    anchor_spot((1.6, -4.0), (0, 1))                            # at the hearth
+    anchor_spot((1.7, -6.2), (1, 0))                            # quench trough
     for sy in (-1.0, 1.0):
         add_timber_beam(bm, Vector((wb + 0.07, 2.8 + sy * 0.6, 0.25)), Vector((wb + 0.07, 2.8 + sy * 0.6, 2.5)), width=0.14, depth=0.14, mat_idx=2)
     add_timber_beam(bm, Vector((wb + 0.07, 2.05, 2.5)), Vector((wb + 0.07, 3.55, 2.5)), width=0.16, depth=0.16, mat_idx=2)
@@ -2747,6 +2832,9 @@ def build_potter_workshop(mats):
     _ws_framed_front(bm, (-w2, -d2), (w2, -d2), zp, ze, (0, -1, 0), 1,
                      [(1.0, 2.1, zp, zp + 2.1), (4.4, 5.4, zp + 1.0, zp + 2.0)], rail=1.0)
     add_box(bm, -1.85, -d2 - 0.04, zp + 1.05, 1.06, 0.06, 2.08, mat_idx=8)
+    anchor_door((-1.85, -d2, zp), (0, -1), 1.0)
+    anchor_spot((5.6, -2.8), (0, 1))                            # kiln stokehole
+    anchor_spot((7.0, -2.4), (1, 0))                            # drying rack
     for zs in (zp + 0.4, zp + 1.7):
         add_box(bm, -1.9, -d2 - 0.08, zs, 0.75, 0.02, 0.07, mat_idx=15)
     _ws_glaze(bm, Vector((1.5, -d2, zp + 1.5)), (1, 0, 0), (0, -1, 0), 0.94, 0.94, 10, 1)
@@ -2852,6 +2940,10 @@ def build_weaver_workshop(mats):
     _ws_framed_front(bm, (-w2, -d2), (w2, -d2), zp, z1, (0, -1, 0), 1,
                      [(0.9, 1.9, zp + 1.0, zp + 2.2), (2.4, 3.5, zp, zp + 2.25), (5.0, 6.6, zp + 1.0, zp + 2.2)], rail=1.0)
     add_box(bm, -0.95, -d2 - 0.04, zp + 1.12, 1.06, 0.06, 2.23, mat_idx=11)
+    anchor_door((-0.95, -d2, zp), (0, -1), 1.0)
+    anchor_spot((-2.95, -8.8), (0, 1))                          # at the forecourt loom
+    anchor_spot((4.6, -3.2), (1, 0))                            # dye vats
+    anchor_spot((4.6, 0.0), (1, 0))
     for zs in (zp + 0.45, zp + 1.8):
         add_box(bm, -1.0, -d2 - 0.08, zs, 0.75, 0.02, 0.07, mat_idx=14)
     _ws_glaze(bm, Vector((-2.5, -d2, zp + 1.6)), (1, 0, 0), (0, -1, 0), 0.94, 1.14, 13, 1)
@@ -3053,6 +3145,10 @@ def build_watermill(mats):
     # Barrels on dock
     add_barrel(bm, dock_x + 1.2, dock_y - 1.2, dock_h + 0.55, radius=0.42, height=1.05, mat_wood=5, mat_iron=6)
     add_barrel(bm, dock_x + 1.2, dock_y + 0.2, dock_h + 0.55, radius=0.42, height=1.05, mat_wood=5, mat_iron=6)
+    # No ground door (the mill room sits on a 4.2 m race foundation): millers work outside
+    anchor_spot((3.2, -6.4), (-1, 0))                           # loading dock
+    anchor_spot((-3.2, -6.4), (1, 0))
+    anchor_spot((7.0, -3.2), (-1, 1))                           # watching the wheel
 
     bm.normal_update()
     mesh = bpy.data.meshes.new("Mesh_Watermill")
@@ -3106,6 +3202,9 @@ def build_windmill(mats):
     add_box(bm, 0, 5.5, 3.0, 0.3, 6.5, 0.3, mat_idx=0)
     # Rear access ladder
     add_box(bm, 0, 3.8, 2.2, 1.2, 0.2, 4.4, mat_idx=2)
+    anchor_spot((0.0, 4.8), (0, -1))                            # foot of the ladder
+    anchor_spot((-4.4, 0.0), (1, 0))
+    anchor_spot((4.4, -1.0), (-1, 0))
 
     bm.normal_update()
     mesh = bpy.data.meshes.new("Mesh_Windmill")
@@ -3141,6 +3240,10 @@ def build_stone_quarry(mats):
 
     # Masons' outdoor timber work trestles
     add_box(bm, -3.0, -4.5, 0.5, 1.0, 2.4, 0.8, mat_idx=2)
+    anchor_spot((-3.0, -6.2), (0, 1))                           # at the trestle
+    anchor_spot((0.6, -5.0), (0, 1))                            # by the counterweight
+    anchor_spot((5.0, -0.6), (0, 1))                            # under the hanging block
+    anchor_spot((-1.6, -2.0), (1, 0))
     # Rows of dressed limestone ashlar blocks
     for bx in [-2.0, -0.5, 1.0]:
         for by in [-4.5, -3.0]:
@@ -3194,6 +3297,10 @@ def build_logging_camp(mats):
     # Chopping tree stumps with felling axes
     add_cylinder(bm, 2.0, -4.5, 0.4, radius=0.45, height=0.8, segs=8, mat_idx=0)
     add_cylinder(bm, -2.0, -4.5, 0.35, radius=0.4, height=0.7, segs=8, mat_idx=0)
+    anchor_spot((5.5, -3.3), (0, 1))                            # pit-saw trestle
+    anchor_spot((2.0, -5.4), (0, 1))                            # chopping stumps
+    anchor_spot((-2.0, -5.4), (0, 1))
+    anchor_spot((-4.0, -1.5), (-1, 0))                          # log stacks
 
     bm.normal_update()
     mesh = bpy.data.meshes.new("Mesh_LoggingCamp")
@@ -3238,6 +3345,9 @@ def build_river_harbor(mats):
     for bx in [2.0, 3.5, 5.0]:
         add_cylinder(bm, bx, 2.0, 1.4, radius=0.45, height=1.0, segs=8, mat_idx=0)
     add_box(bm, 7.0, 1.5, 1.3, 1.6, 2.0, 1.0, mat_idx=5) # flour sacks
+    # Landward side (+Y) of the wharf (the cog lies on the river side, -Y)
+    for sx in (-4.0, 3.5, 7.0):
+        anchor_spot((sx, 4.7), (0, -1))
 
     bm.normal_update()
     mesh = bpy.data.meshes.new("Mesh_RiverHarbor")
@@ -3270,6 +3380,8 @@ def build_krakow_gate(mats):
     ZS, ZT, TOP = 3.8, 7.0, 17.0           # passage springing, vault top, tower-body top
     hl, hw = L * 0.5, W * 0.5
     _lm_gate_passage(bm, L, W, PW, ZS, ZT, BR, LS, LS)
+    anchor_spot((hl + 1.4, PW * 0.5 + 1.0), (0, -1), "guard")   # watch at both portals
+    anchor_spot((-hl - 1.4, -PW * 0.5 - 1.0), (0, 1), "guard")
 
     # Half-raised iron portcullis behind the outer portal; oak leaves opened against the walls
     gx = hl - 0.7
@@ -3368,6 +3480,8 @@ def build_grodzka_gate(mats):
     ZS, ZT, TOP = 3.4, 6.6, 13.6
     hl, hw = L * 0.5, W * 0.5
     _lm_gate_passage(bm, L, W, PW, ZS, ZT, BR, LS, LS, frame=0.4)
+    anchor_spot((L * 0.5 + 1.4, PW * 0.5 + 1.0), (0, -1), "guard")
+    anchor_spot((-L * 0.5 - 1.4, -PW * 0.5 - 1.0), (0, 1), "guard")
 
     # Heavy oak portcullis with iron-shod spikes; open gate leaves
     gx = hl - 0.6
@@ -3488,6 +3602,8 @@ def build_monastery_cloister(mats):
             _lm_lancet(bm, Vector((s * O, wy, 4.4)), Y, s * X, 0.9, 1.7, GL, LS, frame=0.14)
     _lm_blind(bm, Vector((0, -O, 0.0)), X, -Y, 2.4, 2.6, LS, proud=0.2)                 # gate portal
     _lm_lancet(bm, Vector((0, -O - 0.2, 0.0)), X, -Y, 1.5, 2.3, TP, LS, frame=0.22, sill=False)
+    anchor_door((0.0, -O - 0.2, 0.0), (0, -1), 1.3)
+    anchor_spot((-3.0, -O - 1.8), (0, -1), "stand")
 
     # Roofs: N/S saddles between crow-stepped gables; E/W saddles dying into them
     for s in (-1.0, 1.0):
@@ -3533,8 +3649,13 @@ def build_archery_yard(mats):
     ]
 
     # Perimeter split-rail fence: 14m wide x 22m long
-    for py in [-10.0, 10.0]:
-        add_box(bm, 0, py, 0.6, 14.0, 0.15, 0.8, mat_idx=0)
+    add_box(bm, 0, -10.0, 0.6, 14.0, 0.15, 0.8, mat_idx=0)
+    for sx in (-1.0, 1.0):                         # +Y fence with a 2.4 m gate gap (walk-in)
+        add_box(bm, sx * 4.1, 10.0, 0.6, 5.8, 0.15, 0.8, mat_idx=0)
+    anchor_spot((2.5, -5.4), (0, 1))               # shooting line, targets downrange (+Y)
+    anchor_spot((0.8, -5.4), (0, 1))
+    anchor_spot((-2.5, 0.6), (0, 1))               # quintain
+    anchor_spot((-3.7, -6.5), (-1, 0), "guard")    # weapon rack
     for px in [-6.8, 6.8]:
         add_box(bm, px, 0, 0.6, 0.15, 20.0, 0.8, mat_idx=0)
 
