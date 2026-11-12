@@ -22,6 +22,13 @@ import { hashId, mulberry32 } from './citizen-crowd';
  *   SCRIPT    a scripted leg off the grid: through a door, up or down a stair
  *   INSIDE    in a building: simulated, hidden
  *   SPOT      standing at a building's work / sell / guard spot, facing it
+ *   QUEUE     waiting in line outside a door
+ *
+ * Doors (M4): a door opens when someone wants through, stays open while anyone is passing
+ * and closes DOOR_HOLD s after the last. People pass one lane at a time (wide portals have
+ * two or three), DOOR_GAP apart when following in the same direction; people coming out
+ * go first, the ones going in queue outside, QUEUE_STEP apart. Someone inside waiting to
+ * come out stays hidden until it is their turn. onDoor reports opening / shutting (sound).
  *
  * Walking (M3) is steered, not replayed: each step a walker's velocity relaxes toward its
  * next waypoint and is pushed by
@@ -65,7 +72,16 @@ const GHOST = 1;                // s ignoring other people after STUCK_ASIDE
 const PAIR_JOIN = 20;           // m: a household member this close can walk along
 const STROLL = 0.72, PATROL = 0.8, BRISK = 1.08;
 
-const Phase = { IDLE: 0, ROUTE: 1, WALK: 2, SCRIPT: 3, INSIDE: 4, SPOT: 5 } as const;
+// Doors (M4), real seconds.
+const DOOR_OPEN = 0.4;          // closed -> open, eased by the renderer
+const DOOR_CLOSE = 0.6;
+const DOOR_HOLD = 0.5;          // stays open after the last person through
+const DOOR_GAP = 0.55;          // s between two people through one lane, same direction
+const DOOR_PASS = 0.85;         // open enough to walk through
+const QUEUE_STEP = 0.75;        // m between people queueing at a door
+const STAIR_STRIDE = 0.55;      // stride on steps, fraction of the walking stride
+
+const Phase = { IDLE: 0, ROUTE: 1, WALK: 2, SCRIPT: 3, INSIDE: 4, SPOT: 5, QUEUE: 6 } as const;
 type Phase = (typeof Phase)[keyof typeof Phase];
 
 interface Dest {
@@ -111,6 +127,8 @@ interface Agent {
   lead: number; followers: number;
   /** Has walked at the leader's side on this trip. */
   paired: boolean;
+  /** Door being walked through now (counted in its users); door being waited at. */
+  gate: Door | null; qDoor: Door | null;
 }
 
 export interface NavStats {
@@ -121,6 +139,8 @@ export interface NavStats {
   phases: Record<string, number>; running: number;
   /** Walkers now: stuck (> STUCK_ASIDE), pairs walking together; totals since start. */
   stuckNow: number; pairs: number; replans: number; asides: number; stepMs: number;
+  /** Doors now open or moving, people queueing outside / waiting inside; totals since start. */
+  doorsOpen: number; queueing: number; waitingInside: number; doorOpenings: number;
 }
 
 export class SimulationEngine {
@@ -149,6 +169,10 @@ export class SimulationEngine {
   public activeEvents: FairEvent[] = [];
   public onBellToll: ((bellName: string, hour: number) => void) | null = null;
   public onEventTriggered: ((event: FairEvent) => void) | null = null;
+  /** A door starts opening (true) or has just shut (false). */
+  public onDoor: ((door: Door, opening: boolean) => void) | null = null;
+  /** Doors open or moving (the renderer draws their leaves). */
+  readonly activeDoors: Door[] = [];
 
   private lastTriggeredBellHour: number = 9;
   private lastTriggeredEvents: Set<string> = new Set();
@@ -165,7 +189,8 @@ export class SimulationEngine {
   private marketSpots: Spot[] = [];
   private offGridDoors = 0;
   private stat = { routes: 0, cacheHits: 0, straight: 0, failures: 0, expanded: 0, routeMs: 0,
-    replans: 0, asides: 0, stepMs: 0 };
+    replans: 0, asides: 0, stepMs: 0, doorOpenings: 0 };
+  private realT = 0; // real seconds of simulated stepping
   // Steering velocity (m/s, shown speed) per agent.
   private vx: Float32Array; private vz: Float32Array;
   // Neighbour grid: linked lists of agents per NB cell, rebuilt every step.
@@ -215,6 +240,7 @@ export class SimulationEngine {
         active: 0, phase: Phase.IDLE, dest: null, heldSpot: null, inB: null, inDoor: null,
         pts: null, wp: 0, script: [], sp: 0, scriptInside: false, queued: false, running: false, early: false, nextWander: 0,
         gaitPace: 1, stuck: 0, ghost: 0, replans: 0, noClip: false, lead: -1, followers: 0, paired: false,
+        gate: null, qDoor: null,
       });
       c.animFrame = rng() * 10;
       const h = this.household.get(c.homeParcelId);
@@ -287,10 +313,18 @@ export class SimulationEngine {
 
   private seatEveryone(): void {
     this.queue.length = 0;
-    for (const b of this.buildings.all) for (const s of b.spots) s.taken = 0;
+    for (const b of this.buildings.all) {
+      for (const s of b.spots) s.taken = 0;
+      for (const d of b.doors) {
+        d.open = 0; d.users = 0; d.dir = 0; d.hold = 0; d.active = false;
+        d.queue.length = 0; d.exitQ.length = 0;
+      }
+    }
+    this.activeDoors.length = 0;
     for (let i = 0; i < this.agents.length; i++) {
       const ag = this.agents[i];
       ag.queued = false;
+      ag.gate = null; ag.qDoor = null;
       ag.heldSpot = null;
       ag.early = false;
       ag.inB = null;
@@ -364,6 +398,7 @@ export class SimulationEngine {
     ag.c.state = item.state;
     ag.c.currentTask = item.task;
     if (ag.heldSpot) { ag.heldSpot.taken--; ag.heldSpot = null; }
+    this.releaseDoor(i);
     const d = this.destFor(ag, item, ag.inB);
     ag.dest = d;
     // Same building as now and going indoors again: stay put.
@@ -524,23 +559,166 @@ export class SimulationEngine {
     this.setPhase(ag, Phase.SPOT);
   }
 
-  /** Walk out through the door (and down the stair), then route on. */
+  /** Come out through the door when it is our turn (and down the stair), then route on. */
   private leave(i: number): void {
     const ag = this.agents[i];
     const d = ag.inDoor!;
+    if (!this.gateFree(d, -1)) { this.wait(i, d, d.exitQ); return; }
+    this.takeGate(i, d, -1);
     const s: number[] = [d.x, d.y, d.z];
     if (d.stair) for (let k = d.stair.length - 1; k >= 0; k--) s.push(d.stair[k].x, d.stair[k].y, d.stair[k].z);
     else s.push(d.ax, this.groundAt(d.ax, d.az), d.az);
     ag.inB = null;
     ag.inDoor = null;
+    this.place(i, d.x, d.y, d.z);
     this.startScript(i, s, false);
   }
 
-  private enter(i: number, d: Door): void {
+  /** Up the stair and in through the door, or into the queue outside it. */
+  private enter(i: number, d: Door, headOfQueue = false): void {
+    if ((!headOfQueue && d.queue.length) || !this.gateFree(d, 1)) {
+      this.wait(i, d, d.queue);
+      this.setPhase(this.agents[i], Phase.QUEUE);
+      return;
+    }
+    this.takeGate(i, d, 1);
     const s: number[] = [];
     if (d.stair) for (const p of d.stair) s.push(p.x, p.y, p.z);
     s.push(d.x, d.y, d.z, d.ix, d.y, d.iz);
     this.startScript(i, s, true);
+  }
+
+  // ---------------------------------------------------------------- doors
+
+  /** May someone walk through in direction dir (+1 in, -1 out) now? Coming out goes first. */
+  private gateFree(d: Door, dir: number): boolean {
+    if (d.open < DOOR_PASS) { this.wake(d); return false; }
+    if (dir > 0 && d.exitQ.length) return false;
+    if (d.users === 0) return true;
+    return d.dir === dir && this.realT - d.gateT >= DOOR_GAP / d.lanes;
+  }
+
+  private takeGate(i: number, d: Door, dir: number): void {
+    d.users++; d.dir = dir; d.gateT = this.realT;
+    this.agents[i].gate = d;
+    this.wake(d);
+  }
+
+  private wait(i: number, d: Door, line: number[]): void {
+    line.push(i);
+    this.agents[i].qDoor = d;
+    this.wake(d);
+  }
+
+  /** Debug: hold a door open (or let it shut again). */
+  public pinDoor(d: Door, on: boolean): void {
+    d.pinned = on;
+    this.wake(d);
+  }
+
+  private wake(d: Door): void {
+    if (d.active) return;
+    d.active = true;
+    this.activeDoors.push(d);
+  }
+
+  /** Let go of a door: through it (gate), or no longer waiting (schedule moved on). */
+  private releaseDoor(i: number): void {
+    const ag = this.agents[i];
+    if (ag.gate) { ag.gate.users = Math.max(0, ag.gate.users - 1); ag.gate = null; }
+    const d = ag.qDoor;
+    if (d) {
+      let k = d.queue.indexOf(i);
+      if (k >= 0) d.queue.splice(k, 1);
+      k = d.exitQ.indexOf(i);
+      if (k >= 0) d.exitQ.splice(k, 1);
+      ag.qDoor = null;
+    }
+  }
+
+  /** Where the k-th person in a door's queue stands: back from the approach, away from it. */
+  private queuePoint(d: Door, k: number): [number, number] {
+    let ox = d.nx, oz = d.nz;
+    if (d.stair && d.stair.length > 1) {
+      const a = d.stair[0], b = d.stair[1];
+      const l = Math.hypot(a.x - b.x, a.z - b.z) || 1;
+      ox = (a.x - b.x) / l; oz = (a.z - b.z) / l;
+    }
+    const side = (k & 1 ? 1 : -1) * 0.15; // a loose line, not a column
+    let x = d.ax + ox * QUEUE_STEP * k - oz * side, z = d.az + oz * QUEUE_STEP * k + ox * side;
+    if (k > 0 && !this.nav.isFree(x, z)) {
+      // Facing a wall or a street edge: line up along the front instead.
+      const s = k & 1 ? 1 : -1;
+      x = d.ax - oz * QUEUE_STEP * Math.ceil(k / 2) * s;
+      z = d.az + ox * QUEUE_STEP * Math.ceil(k / 2) * s;
+    }
+    return [x, z];
+  }
+
+  /** Shuffle up in the queue toward our place in it. */
+  private queueStep(i: number, ag: Agent, dist: number): void {
+    const d = ag.qDoor;
+    const k = d ? d.queue.indexOf(i) : -1;
+    if (!d || k < 0) { this.requestRoute(i); return; }
+    const [tx, tz] = this.queuePoint(d, k);
+    const x = this.px[i], z = this.pz[i];
+    const l = Math.hypot(tx - x, tz - z);
+    const c = ag.c;
+    if (l < 0.03) {
+      c.isMoving = false;
+      // Face the door.
+      c.faceYaw = Math.atan2(d.x - x, d.z - z);
+      return;
+    }
+    const f = Math.min(1, dist / l);
+    this.px[i] = x + (tx - x) * f;
+    this.pz[i] = z + (tz - z) * f;
+    this.py[i] = this.groundAt(this.px[i], this.pz[i]);
+    c.isMoving = true;
+    c.gait = 0;
+    c.targetX = tx; c.targetZ = tz;
+  }
+
+  /** Swing doors, let the next person through, report openings and shuttings. */
+  private updateDoors(dt: number): void {
+    const list = this.activeDoors;
+    for (let k = list.length - 1; k >= 0; k--) {
+      const d = list[k];
+      const want = d.users > 0 || d.queue.length > 0 || d.exitQ.length > 0 || !!d.pinned;
+      if (want) {
+        if (d.open === 0) { this.stat.doorOpenings++; this.onDoor?.(d, true); }
+        d.open = Math.min(1, d.open + dt / DOOR_OPEN);
+        d.hold = DOOR_HOLD;
+      } else if (d.hold > 0) {
+        d.hold -= dt;
+      } else {
+        d.open -= dt / DOOR_CLOSE;
+        if (d.open <= 0) {
+          d.open = 0;
+          d.active = false;
+          list[k] = list[list.length - 1];
+          list.pop();
+          this.onDoor?.(d, false);
+        }
+        continue;
+      }
+      // One person a step: out first, then the head of the queue.
+      if (d.exitQ.length && this.gateFree(d, -1)) {
+        const i = d.exitQ.shift()!;
+        this.agents[i].qDoor = null;
+        this.leave(i);
+      } else if (d.queue.length && this.gateFree(d, 1) && d.exitQ.length === 0) {
+        const i = d.queue[0];
+        const ag = this.agents[i];
+        const [qx, qz] = this.queuePoint(d, 0);
+        // Not at the front yet (still shuffling up): next step.
+        if (Math.hypot(this.px[i] - qx, this.pz[i] - qz) > 0.3) continue;
+        d.queue.shift();
+        ag.qDoor = null;
+        ag.c.faceYaw = undefined;
+        this.enter(i, d, true);
+      }
+    }
   }
 
   private startScript(i: number, pts: number[], inside: boolean): void {
@@ -658,6 +836,9 @@ export class SimulationEngine {
         case Phase.IDLE:
           if (ag.dest && ag.dest.wander > 0 && this.clock >= ag.nextWander) this.wander(i, ag);
           break;
+        case Phase.QUEUE:
+          this.queueStep(i, ag, walk * ag.pace * STROLL * 0.6 * dt);
+          break;
         default:
           break;
       }
@@ -667,8 +848,11 @@ export class SimulationEngine {
         c.animFrame = ((c.animFrame ?? 0) + dt * 8.0) % 8;
       } else {
         this.vx[i] = 0; this.vz[i] = 0;
+        if (ag.phase === Phase.QUEUE) { c.vx = 0; c.vz = 0; }
       }
     }
+    this.realT += dt;
+    this.updateDoors(dt);
     this.stat.stepMs = performance.now() - t0;
   }
 
@@ -912,11 +1096,16 @@ export class SimulationEngine {
       x += (tx - x) * f; y += (ty - y) * f; z += (tz - z) * f;
       dist = 0;
     }
+    const climbing = Math.abs(y - this.py[i]) > 1e-4;
     this.px[i] = x; this.py[i] = y; this.pz[i] = z;
     if (ag.sp * 3 < s.length) {
       ag.c.targetX = s[ag.sp * 3]; ag.c.targetZ = s[ag.sp * 3 + 2];
+      // Short steps on a stair, one per tread.
+      ag.c.strideScale = Math.sqrt(this.walkSpeed / WALK) * (climbing ? STAIR_STRIDE : 1);
       return;
     }
+    ag.c.strideScale = Math.sqrt(this.walkSpeed / WALK);
+    this.releaseDoor(i);
     const d = ag.dest;
     if (ag.scriptInside && d?.b && d.door) {
       this.goInside(i, d.b, d.door);
@@ -950,7 +1139,9 @@ export class SimulationEngine {
   // ---------------------------------------------------------------- stats
 
   public navStats(): NavStats {
-    const names = ['IDLE', 'ROUTE', 'WALK', 'SCRIPT', 'INSIDE', 'SPOT'];
+    const names = ['IDLE', 'ROUTE', 'WALK', 'SCRIPT', 'INSIDE', 'SPOT', 'QUEUE'];
+    let queueing = 0, waitingInside = 0;
+    for (const d of this.activeDoors) { queueing += d.queue.length; waitingInside += d.exitQ.length; }
     const phases: Record<string, number> = {};
     let running = 0, stuckNow = 0, pairs = 0;
     for (const ag of this.agents) {
@@ -971,6 +1162,7 @@ export class SimulationEngine {
       queue: this.queue.length, avgExpanded: s.routes ? Math.round(s.expanded / s.routes) : 0,
       routeMsLastFrame: Math.round(s.routeMs * 100) / 100, phases, running,
       stuckNow, pairs, replans: s.replans, asides: s.asides, stepMs: Math.round(s.stepMs * 100) / 100,
+      doorsOpen: this.activeDoors.length, queueing, waitingInside, doorOpenings: s.doorOpenings,
     };
   }
 

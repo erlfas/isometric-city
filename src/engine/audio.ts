@@ -55,6 +55,8 @@ function soundOf(p: Parcel, index: number): EmitterKind | 'water' | null {
 /** Reference distance (m) per kind: full volume within it, falling off beyond (see reach). */
 const EMITTER_REF: Record<EmitterKind, number> = { forge: 14, cooper: 9, saw: 7, loom: 7 };
 const MAX_ACTIVE_EMITTERS = 5;
+const DOOR_RATE = 3;   // door sounds per second, sustained
+const DOOR_BURST = 4;
 const MUSIC_LEVEL = 0.35;
 const KEY_MUTED = 'lublin.audio.muted';
 const KEY_MUSIC = 'lublin.audio.music';
@@ -228,6 +230,26 @@ export class Soundscape {
     const pitch = female ? rand(185, 245) : rand(95, 140);
     R.phrase(ctx, this.spot(r.gain * 0.6, r.pan, 0.25), ctx.currentTime + 0.05, pitch, 0.3);
   }
+
+  /** A door opening or shutting (sim.onDoor): only within earshot, a few per second at most
+   *  (a whole street's doors open together at the morning commute). */
+  public door(x: number, z: number, opening: boolean): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+    const t = ctx.currentTime;
+    this.doorTokens = Math.min(DOOR_BURST, this.doorTokens + (t - this.doorT) * DOOR_RATE);
+    this.doorT = t;
+    if (this.doorTokens < 1) return;
+    const r = this.reach(x, z, 5);
+    if (!r) return;
+    this.doorTokens--;
+    const out = this.spot(r.gain * 0.55, r.pan, 0.3);
+    const at = t + 0.02 + Math.random() * 0.05;
+    if (opening) R.doorOpen(ctx, out, at, this.noise, 0.5);
+    else R.doorClose(ctx, out, at, this.noise, 0.5);
+  }
+  private doorTokens = DOOR_BURST;
+  private doorT = 0;
 
   /** For scripts: node scripts/probe.mjs "pause" "__lublin.audio.debugState()". */
   public debugState() {

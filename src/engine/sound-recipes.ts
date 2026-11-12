@@ -288,6 +288,54 @@ export function owl(ctx: BaseAudioContext, out: AudioNode, t: number, noise: Noi
   }
 }
 
+// ---------------------------------------------------------------- doors
+
+/** Iron latch lifting or dropping: a bright click with a short ring. */
+function latch(ctx: BaseAudioContext, out: AudioNode, t: number, noise: Noise, peak: number): void {
+  noiseBurst(ctx, out, t, noise.white, 'bandpass', 3200, 3, peak * 0.6, 0.03, 0.001);
+  tone(ctx, out, t, 'triangle', 1750 + Math.random() * 300, peak * 0.12, 0.001, 0.06);
+}
+
+/** door_open: the latch, then the hinge creak (stick-slip: a buzzy tone chopped ~30 times a
+ *  second, gliding up as the leaf swings). */
+export function doorOpen(ctx: BaseAudioContext, out: AudioNode, t: number, noise: Noise, peak: number): void {
+  latch(ctx, out, t, noise, peak);
+  if (Math.random() < 0.35) return; // well-greased hinges
+  const at = t + 0.05 + Math.random() * 0.04;
+  const dur = 0.25 + Math.random() * 0.2;
+  const f0 = 120 + Math.random() * 80;
+  const o = ctx.createOscillator();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(f0, at);
+  o.frequency.exponentialRampToValueAtTime(f0 * (1.3 + Math.random() * 0.4), at + dur);
+  const bp = filtered(ctx, 'bandpass', 1100 + Math.random() * 500, 2.5);
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0, at);
+  env.gain.linearRampToValueAtTime(peak * 0.35, at + 0.06);
+  env.gain.setTargetAtTime(0, at + dur * 0.7, dur * 0.15);
+  // Stick-slip chop: a square LFO on a second gain stage.
+  const chop = ctx.createGain();
+  chop.gain.value = 0.5;
+  const lfo = ctx.createOscillator();
+  lfo.type = 'square';
+  lfo.frequency.value = 24 + Math.random() * 14;
+  const depth = ctx.createGain();
+  depth.gain.value = 0.5;
+  lfo.connect(depth).connect(chop.gain);
+  o.connect(bp).connect(chop).connect(env).connect(out);
+  o.start(at); lfo.start(at);
+  o.stop(at + dur + 0.2); lfo.stop(at + dur + 0.2);
+}
+
+/** door_close: the plank leaf thudding into its frame, then the latch dropping. */
+export function doorClose(ctx: BaseAudioContext, out: AudioNode, t: number, noise: Noise, peak: number): void {
+  const o = tone(ctx, out, t, 'sine', 85 + Math.random() * 20, peak * 0.8, 0.003, 0.22);
+  o.frequency.exponentialRampToValueAtTime(52, t + 0.12);
+  noiseBurst(ctx, out, t, noise.brown, 'lowpass', 520, 0.7, peak * 0.9, 0.12, 0.002);
+  noiseBurst(ctx, out, t, noise.white, 'bandpass', 900, 2, peak * 0.25, 0.05);
+  latch(ctx, out, t + 0.03 + Math.random() * 0.03, noise, peak * 0.7);
+}
+
 /** Dog bark: a falling, nasal sawtooth with a breathy edge. */
 export function bark(ctx: BaseAudioContext, out: AudioNode, t: number, noise: Noise, peak: number): void {
   const n = 1 + Math.floor(Math.random() * 3);

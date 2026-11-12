@@ -69,6 +69,8 @@ async function bootstrap() {
     ui.showEventNotification(`🔔 Church Bells Toll: ${bellName} — All burghers proceed according to civic duty.`);
   };
 
+  sim.onDoor = (d, opening) => audio.door(d.x, d.z, opening);
+
   // Systemic Fair Event notification binding
   sim.onEventTriggered = (event) => {
     audio.herald();
@@ -329,6 +331,7 @@ async function bootstrap() {
     threeRenderer.updateCamera(dt);
     threeRenderer.updateDayNightLighting(sim.simTimeHours);
     threeRenderer.updateCitizens(sim.citizens, dt);
+    threeRenderer.updateDoors(sim.activeDoors, sim.simTimeHours);
     threeRenderer.updateSpeechBubbles(dt);
     listener.x = threeRenderer.targetPos.x;
     listener.z = threeRenderer.targetPos.z;

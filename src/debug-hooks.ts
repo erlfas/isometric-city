@@ -13,7 +13,9 @@ import type { Soundscape } from './engine/audio';
  *   &lineup=char_tanner[,n[,work|walk]]   stand n citizens of a character model in rows of 6 at
  *                                    the view centre (needs &pause); work loop or walk in place.
  *                                    Without cam/model it frames open ground, zoomed to fit all n.
- *   &follow=walk[,zoom]               camera follows the first visible walking citizen (polls
+ *   &door=house_baker[,n[,k[,zoom]]]  camera on the k-th door of the n-th placed building of a
+ *                                    model, from the side it faces; the door is held open
+ *   &follow=walk[,zoom]             camera follows the first visible walking citizen (polls
  *                                    until one walks); or follow=<index|id>[,zoom]
  *
  * window.__lublin: { renderer, sim, audio, ready, snapTo(x,z,zoom?,q?), find(model), stats() }
@@ -78,6 +80,27 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
     if (params.has('pause') && !sim.isPaused) sim.togglePause();
     const hour = num(params.get('hour') ?? undefined);
     if (hour !== undefined) sim.setTime(hour);
+    const door = params.get('door');
+    if (door) {
+      // n-th building of a model, k-th door: camera on the side the door faces, held open.
+      const [name, n, k, zoom] = door.split(',');
+      const b = sim.buildings.byModel.get(name)?.[num(n) ?? 0];
+      const d = b?.doors[num(k) ?? 0];
+      if (d) {
+        let q = 0, best = -2;
+        for (let i = 0; i < 4; i++) {
+          const yaw = (i * Math.PI) / 2 + Math.PI / 4;
+          const dot = d.nx * Math.sin(yaw) + d.nz * Math.cos(yaw);
+          if (dot > best) { best = dot; q = i; }
+        }
+        // Centre the screen on the doorway's middle: the ground point behind it on the
+        // camera ray (pitch 35.26 deg: 1.414 m back per metre up).
+        const yaw = (q * Math.PI) / 2 + Math.PI / 4;
+        const back = (d.y + d.h * 0.5) * 1.414;
+        renderer.snapTo(d.x - Math.sin(yaw) * back, d.z - Math.cos(yaw) * back, num(zoom) ?? 9, q);
+        sim.pinDoor(d, true);
+      } else console.warn(`[debug] no door ${k ?? 0} on building ${n ?? 0} of "${name}"`);
+    }
     const follow = params.get('follow');
     if (follow) {
       // A citizen index / id, or "walk" = the first visible citizen walking (waits for one).

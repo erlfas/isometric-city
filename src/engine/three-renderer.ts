@@ -3,6 +3,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { CityPlan, Citizen } from '../types';
 import { TextureLibrary } from './texture-library';
 import { CitizenCrowd } from './citizen-crowd';
+import { DoorLeaves } from './door-leaves';
+import type { Door } from './building-anchors';
 import { parcelHash, parcelKind } from './parcel-kind';
 import { StaticBatches, type PlacedModel, type Placement, type Tint } from './static-batches';
 
@@ -101,6 +103,7 @@ export class ThreeIsometricRenderer {
 
   private groundPlane: THREE.Mesh;
   private crowd: CitizenCrowd;
+  private doorLeaves: DoorLeaves;
   /** Buildings, walls, stalls, trees: instanced per chunk (static-batches.ts). */
   private statics = new StaticBatches();
 
@@ -119,6 +122,7 @@ export class ThreeIsometricRenderer {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x4a6572); // Medieval daylight sky
     this.crowd = new CitizenCrowd(this.scene);
+    this.doorLeaves = new DoorLeaves(this.scene, this.textures);
 
     // Orthographic Isometric Camera
     const aspect = canvas.clientWidth / canvas.clientHeight || 16 / 9;
@@ -786,6 +790,11 @@ export class ThreeIsometricRenderer {
     this.camera.updateMatrixWorld();
     this.crowd.update(citizens, (c) => this.getCitizenArchetype(c), dt, performance.now() * 0.001, this.camera,
       this.canvas.clientHeight);
+  }
+
+  /** Leaves and openings of the doors the simulation has open (sim.activeDoors). */
+  public updateDoors(doors: readonly Door[], hour: number): void {
+    this.doorLeaves.update(doors, hour);
   }
 
   /** Crowd detail level, citizens drawn, triangles per pass (debug stats). */

@@ -6,7 +6,7 @@ import type { PlacedModel } from './static-batches';
  *
  * build_assets.py writes them per model as glTF scene extras ("anchors", a JSON string;
  * GLTFLoader puts it on the template's userData) in model space:
- *   doors: { p: sill centre on the outer wall face, n: outward normal, w: width,
+ *   doors: { p: sill centre on the outer wall face, n: outward normal, w: width, h: height,
  *            stair?: points from the stair foot (outside, on the ground) up to the landing }
  *   spots: { p, yaw (facing, atan2(dx, dz)), tag: work | sell | stand | guard }
  * Here each placement's matrix takes them to the world.
@@ -24,6 +24,22 @@ export interface Door {
   ix: number; iz: number;
   /** World stair polyline, foot first, ending at the landing in front of the door. */
   stair?: THREE.Vector3[];
+  /** Opening height (the leaf and the dark doorway are drawn this tall). */
+  h: number;
+  // Runtime state, owned by simulation.ts (door leaves and sounds read it).
+  /** 0 shut .. 1 open. */
+  open: number;
+  /** People passing through now; their direction (+1 in, -1 out); real s of the last pass. */
+  users: number; dir: number; gateT: number;
+  /** How many may walk through side by side (1 for a house door). */
+  lanes: number;
+  /** Agents waiting outside to go in; inside waiting to come out (they go first). */
+  queue: number[]; exitQ: number[];
+  /** s the door stays open after the last person. */
+  hold: number;
+  active: boolean;
+  /** Held open regardless of people (debug hook `door=`). */
+  pinned?: boolean;
 }
 
 export interface Spot { x: number; y: number; z: number; yaw: number; tag: string; taken: number }
@@ -37,7 +53,7 @@ export interface Building {
 }
 
 interface RawAnchors {
-  doors?: { p: number[]; n: number[]; w: number; stair?: number[][] }[];
+  doors?: { p: number[]; n: number[]; w: number; h?: number; stair?: number[][] }[];
   spots?: { p: number[]; yaw: number; tag: string }[];
 }
 
@@ -77,9 +93,11 @@ export class BuildingIndex {
         v.fromArray(d.p).applyMatrix4(pm.matrix);
         const [nx, nz] = dir(d.n[0], d.n[2]);
         const door: Door = {
-          x: v.x, y: v.y, z: v.z, nx, nz, w: d.w,
+          x: v.x, y: v.y, z: v.z, nx, nz, w: d.w, h: d.h ?? 2.1,
           ax: v.x + nx * APPROACH, az: v.z + nz * APPROACH,
           ix: v.x - nx * INSIDE, iz: v.z - nz * INSIDE,
+          open: 0, users: 0, dir: 0, gateT: -1e9, lanes: d.w >= 2.4 ? 3 : d.w >= 1.4 ? 2 : 1,
+          queue: [], exitQ: [], hold: 0, active: false,
         };
         if (d.stair?.length) {
           door.stair = d.stair.map((s) => new THREE.Vector3().fromArray(s).applyMatrix4(pm.matrix));

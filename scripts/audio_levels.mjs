@@ -2,7 +2,7 @@
 // The only way to check the mix without ears: compare buses against each other and the music.
 //
 // usage: node scripts/audio_levels.mjs [scene ...] [--url http://localhost:5173/]
-//   scenes: market forge cooper saw loom water bells herald night (default: all)
+//   scenes: market forge cooper saw loom water bells herald night doors (default: all)
 // Needs `npm run dev`. Bus names and debugState(): src/engine/audio.ts.
 // Rough targets: music -23..-27 dB, a workshop you are zoomed onto -30..-40, crowd at the
 // market about -40, bells above the ducked music.
@@ -24,6 +24,8 @@ const SCENES = {
   bells: ['__lublin.snapTo(0, 0, 40); __lublin.audio.tollHour(9)', 8],
   herald: ['__lublin.snapTo(0, 0, 30); __lublin.audio.herald()', 4],
   night: ['__lublin.sim.setTime(23); __lublin.snapTo(-60, -140, 30)', 6],
+  // a door opening and shutting every 0.6 s at the view centre, zoomed in close
+  doors: ['__lublin.sim.togglePause(); const d = __lublin.sim.buildings.byModel.get("house_baker")[0].doors[0]; __lublin.snapTo(d.x, d.z, 12); let k = 0; const iv = setInterval(() => { __lublin.audio.door(d.x, d.z, k++ % 2 === 0); if (k > 8) clearInterval(iv); }, 600)', 5],
 };
 const chosen = args.length ? args : Object.keys(SCENES);
 

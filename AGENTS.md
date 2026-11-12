@@ -22,6 +22,7 @@ Commands:
 - **Runtime numbers** (draw calls, triangles, citizens per model, placed instances per building model, any `__lublin` expression): `node scripts/probe.mjs "<hash>" "__lublin.stats()"`. Before/after a performance change: `node scripts/perf.mjs` (fps + draw calls over three views; header says how to measure another commit).
 - **Navigation** (walkable grid from the placed models, door anchors, routing): `node scripts/nav_check.mjs [out.png] [x0,z0,x1,z1]` draws the grid with doors/spots and routes 400 door pairs (fails if >2% unreachable). Live numbers: `__lublin.nav()`; watch someone: hash `hour=6.95&follow=walk` with `shoot.mjs --wait 8000`.
 - **Audio mix** (you can't listen; this is the check): `node scripts/audio_levels.mjs [scene ...]` prints level per bus.
+- **Doors in Blender**: `anchor_door(p, n, w, h=..., steps=(bm, stone_mat))` exports the door and, for a sill above 0.15 m, builds stone steps and their stair path.
 
 ---
 
@@ -40,7 +41,7 @@ Commands:
 
 - **3D Runtime Engine**:
   - [`src/engine/three-renderer.ts`](src/engine/three-renderer.ts): Three.js orthographic renderer, dynamic parcel dispatch, citizen archetype instancing, shadows. Buildings and props are drawn as one `BatchedMesh` per material ([`static-batches.ts`](src/engine/static-batches.ts)): place them with `put()`, not `scene.add(clone)`.
-  - [`src/engine/simulation.ts`](src/engine/simulation.ts): 1,500-citizen schedule, routing (`nav-grid.ts`, doors from `building-anchors.ts`) and steering (time-to-collision avoidance, couples, gaits; tuning constants at the top). Live numbers: `__lublin.nav()` (`stuckNow`, `pairs`, `stepMs`).
+  - [`src/engine/simulation.ts`](src/engine/simulation.ts): 1,500-citizen schedule, routing (`nav-grid.ts`, doors from `building-anchors.ts`) and steering (time-to-collision avoidance, couples, gaits; tuning constants at the top), door queues. Live numbers: `__lublin.nav()` (`stuckNow`, `pairs`, `stepMs`, `doorsOpen`, `queueing`). Door leaves and night glow: `door-leaves.ts`; look at one with hash `door=house_baker,0` (held open).
   - [`src/engine/audio.ts`](src/engine/audio.ts): music (`music/`) and the synthesised positional soundscape (recipes in `sound-recipes.ts`). Which building a parcel is drawn as (shared by renderer and audio): `parcel-kind.ts`.
   - [`src/types.ts`](src/types.ts): TypeScript interfaces for `Parcel`, `Citizen`, `CityPlan`.
 - **Reference Photos & Artwork**:
