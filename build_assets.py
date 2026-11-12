@@ -753,6 +753,335 @@ def export_object(obj, name):
     )
     print(f"Exported: {filepath} ({os.path.getsize(filepath):,} bytes)")
 
+# =============================================================
+# Landmark helpers (_lm_*): oriented closed solids, Brick Gothic details, roofs, spires.
+# Used by the town hall, Szmatruz, church, monastery, donjon and the two gates.
+# _lm_extrude fixes its own winding, so callers may pass any in-plane axes and every
+# face (walls, roofs, spires) comes out wound outward.
+# =============================================================
+_LM_Z = Vector((0.0, 0.0, 1.0))
+
+
+def _lm_extrude(bm, pts, origin, u, v, n, depth, mat):
+    """Convex polygon pts [(a, b)] in the plane origin + u*a + v*b, extruded by n*depth (> 0)."""
+    o, u, v, n = Vector(origin), Vector(u), Vector(v), Vector(n).normalized()
+    P = [o + u * a + v * b for a, b in pts]
+    nrm = Vector((0.0, 0.0, 0.0))
+    for i in range(len(P)):
+        nrm += P[i].cross(P[(i + 1) % len(P)])
+    if nrm.dot(n) < 0:
+        P.reverse()                                   # ccw around +n
+    vp = [bm.verts.new(p) for p in P]
+    vq = [bm.verts.new(p + n * depth) for p in P]
+    faces = [bm.faces.new(list(reversed(vp))), bm.faces.new(vq)]
+    k = len(P)
+    for i in range(k):
+        j = (i + 1) % k
+        faces.append(bm.faces.new([vp[i], vp[j], vq[j], vq[i]]))
+    for f in faces:
+        f.material_index = mat
+    return faces
+
+
+def _lm_hexa(bm, pts, mat):
+    """Hexahedron from 8 corners in add_box order (bottom -x-y, +x-y, +x+y, -x+y; then top)."""
+    v = [bm.verts.new(Vector(p)) for p in pts]
+    for a, b, c, d in ((0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4), (2, 3, 7, 6), (0, 4, 7, 3), (1, 2, 6, 5)):
+        bm.faces.new([v[a], v[b], v[c], v[d]]).material_index = mat
+
+
+def _lm_obox(bm, c, along, out, w, d, h, mat):
+    """Box centred on c, w along `along`, d along `out`, h vertical (any horizontal orientation)."""
+    along, out = Vector(along).normalized(), Vector(out).normalized()
+    _lm_extrude(bm, [(-w * 0.5, -h * 0.5), (w * 0.5, -h * 0.5), (w * 0.5, h * 0.5), (-w * 0.5, h * 0.5)],
+                Vector(c) - out * (d * 0.5), along, _LM_Z, out, d, mat)
+
+
+def _lm_ngon_prism(bm, cx, cy, z0, z1, r, sides, mat, r_top=None, rot=None, caps=True):
+    """Vertical n-gon prism / frustum (r = circumradius). Default rot puts a flat facing +X."""
+    rot = math.pi / sides if rot is None else rot
+    r_top = r if r_top is None else r_top
+    bot, top = [], []
+    for i in range(sides):
+        a = rot + 2.0 * math.pi * i / sides
+        bot.append(bm.verts.new(Vector((cx + r * math.cos(a), cy + r * math.sin(a), z0))))
+        top.append(bm.verts.new(Vector((cx + r_top * math.cos(a), cy + r_top * math.sin(a), z1))))
+    for i in range(sides):
+        j = (i + 1) % sides
+        bm.faces.new([bot[i], bot[j], top[j], top[i]]).material_index = mat
+    if caps:
+        bm.faces.new(top).material_index = mat
+        bm.faces.new(list(reversed(bot))).material_index = mat
+
+
+def _lm_spire(bm, cx, cy, z0, r, h, sides, mat, rot=None, base_cap=True):
+    """n-sided spire / helm / cone from a ring of circumradius r at z0 to an apex h above."""
+    rot = math.pi / sides if rot is None else rot
+    ring = [bm.verts.new(Vector((cx + r * math.cos(rot + 2.0 * math.pi * i / sides),
+                                 cy + r * math.sin(rot + 2.0 * math.pi * i / sides), z0))) for i in range(sides)]
+    apex = bm.verts.new(Vector((cx, cy, z0 + h)))
+    for i in range(sides):
+        bm.faces.new([ring[i], ring[(i + 1) % sides], apex]).material_index = mat
+    if base_cap:
+        bm.faces.new(list(reversed(ring))).material_index = mat
+
+
+def _lm_finial(bm, x, y, z, mat_rod, mat_orb, h=1.6, cross=False):
+    """Iron spike with a gilded orb (and optional cross) on a spire apex at z."""
+    add_timber_beam(bm, Vector((x, y, z - 0.3)), Vector((x, y, z + h)), width=0.09, depth=0.09, mat_idx=mat_rod)
+    zo = z + h * 0.35
+    _lm_ngon_prism(bm, x, y, zo, zo + 0.12, 0.13, 8, mat_orb, r_top=0.22)
+    _lm_ngon_prism(bm, x, y, zo + 0.12, zo + 0.26, 0.22, 8, mat_orb, r_top=0.13)
+    if cross:
+        add_timber_beam(bm, Vector((x - 0.35, y, z + h - 0.35)), Vector((x + 0.35, y, z + h - 0.35)),
+                        width=0.08, depth=0.08, mat_idx=mat_rod)
+
+
+def _lm_lancet(bm, c, along, out, w, h, mat_glass, mat_frame, frame=0.15, rise=0.6,
+               mullion=False, sill=True, proud=0.03):
+    """Pointed (lancet) opening on any vertical wall. c = bottom-centre on the wall face.
+
+    Glass (or a plank door leaf) fills a pentagon w wide, h to the springing, w*rise to the
+    apex; the frame (jambs, two raking head members, optional sill) stands proud of the wall.
+    mat_glass=None draws only the frame (e.g. a gate portal); mat_frame=None only the glass.
+    """
+    c, along, out = Vector(c), Vector(along).normalized(), Vector(out).normalized()
+    top = h + w * rise
+    if mat_glass is not None:
+        _lm_extrude(bm, [(-w * 0.5, 0.0), (w * 0.5, 0.0), (w * 0.5, h), (0.0, top), (-w * 0.5, h)],
+                    c - out * 0.02, along, _LM_Z, out, 0.02 + proud, mat_glass)
+    if mat_frame is None:
+        return
+    f = c + out * (frame * 0.5)
+    hw = w * 0.5 + frame * 0.5
+
+    def beam(p, q, s=frame):
+        add_timber_beam(bm, p, q, width=s, depth=s, mat_idx=mat_frame)
+
+    beam(f - along * hw, f - along * hw + _LM_Z * h)
+    beam(f + along * hw, f + along * hw + _LM_Z * h)
+    apex = f + _LM_Z * (top + frame * 0.6)
+    beam(f - along * hw + _LM_Z * h, apex)
+    beam(f + along * hw + _LM_Z * h, apex)
+    if sill:
+        beam(f - along * (hw + 0.1) + out * 0.03, f + along * (hw + 0.1) + out * 0.03, frame * 1.3)
+    if mullion and mat_glass is not None:
+        beam(f + out * 0.01, f + out * 0.01 + _LM_Z * (h + w * rise * 0.45), frame * 0.55)
+
+
+def _lm_blind(bm, c, along, out, w, h, mat, proud=0.05, rise=0.6):
+    """Blind lancet niche panel (blenda) standing `proud` off the wall; c = bottom-centre."""
+    c, along, out = Vector(c), Vector(along).normalized(), Vector(out).normalized()
+    _lm_extrude(bm, [(-w * 0.5, 0.0), (w * 0.5, 0.0), (w * 0.5, h), (0.0, h + w * rise), (-w * 0.5, h)],
+                c - out * 0.02, along, _LM_Z, out, proud + 0.02, mat)
+
+
+def _lm_disc(bm, c, along, out, r, mat, proud=0.06, segs=12):
+    """Round disc (clock dial) centred on c, standing `proud` off the wall."""
+    c, along, out = Vector(c), Vector(along).normalized(), Vector(out).normalized()
+    pts = [(r * math.cos(2.0 * math.pi * i / segs), r * math.sin(2.0 * math.pi * i / segs)) for i in range(segs)]
+    _lm_extrude(bm, pts, c - out * 0.02, along, _LM_Z, out, proud + 0.02, mat)
+
+
+def _lm_buttress(bm, p, out, along, width, tiers, mat, z0=0.0, back=0.05):
+    """Stepped Gothic buttress at wall point p, projecting along `out`.
+
+    tiers: [(height, depth), ...] bottom-up with decreasing depth; every offset and the top
+    get a 45-degree weathering slope. back: how far the body reaches into the wall (use
+    ~0.6 on convex corners so no sliver gap shows). Returns the top z.
+    """
+    p = Vector((p[0], p[1], 0.0))
+    out, along = Vector(out).normalized(), Vector(along).normalized()
+    o = p - along * (width * 0.5)
+    z = z0
+    for k, (hgt, dep) in enumerate(tiers):
+        nxt = tiers[k + 1][1] if k + 1 < len(tiers) else 0.0
+        zt = z + hgt
+        dz = dep - nxt
+        if nxt > 0:
+            pts = [(-back, z), (dep, z), (dep, zt), (nxt, zt + dz), (-back, zt + dz)]
+        else:
+            pts = [(-back, z), (dep, z), (dep, zt), (-back, zt + dz)]
+        _lm_extrude(bm, pts, o, out, _LM_Z, along, width, mat)
+        z = zt + dz
+    return z
+
+
+def _lm_arcade(bm, o, along, out, piers, pier_w, thick, z_spring, z_top, mat, mat_cap=None,
+               rise=0.6, end_piers=True):
+    """Open arcade of pointed arches in a wall face. o: point on the face at along-coordinate 0
+    and the base height; piers: pier-centre coordinates along `along`; the wall is `thick` deep
+    behind the face (away from `out`). Spandrels extruded through the depth give the arches
+    real soffits. end_piers=False omits the first/last pier (supplied by another wall)."""
+    o, along = Vector(o), Vector(along).normalized()
+    n = -Vector(out).normalized()
+    hw = pier_w * 0.5
+    for i, p in enumerate(piers):
+        if not end_piers and i in (0, len(piers) - 1):
+            continue
+        _lm_extrude(bm, [(p - hw, 0.0), (p + hw, 0.0), (p + hw, z_top), (p - hw, z_top)], o, along, _LM_Z, n, thick, mat)
+        if mat_cap is not None:
+            _lm_obox(bm, o + along * p + n * (thick * 0.5) + _LM_Z * z_spring, along, n,
+                     pier_w + 0.16, thick + 0.16, 0.22, mat_cap)
+    for p, q in zip(piers, piers[1:]):
+        a, b = p + hw, q - hw
+        m = (a + b) * 0.5
+        za = min(z_spring + (b - a) * rise, z_top - 0.1)
+        _lm_extrude(bm, [(a, z_spring), (m, za), (m, z_top), (a, z_top)], o, along, _LM_Z, n, thick, mat)
+        _lm_extrude(bm, [(m, za), (b, z_spring), (b, z_top), (m, z_top)], o, along, _LM_Z, n, thick, mat)
+
+
+def _lm_saddle_roof(bm, cx, cy, z0, length, span, h, axis, mat, overhang=0.4, end_overhang=0.0, ridge_cap=True):
+    """Two roof slopes, ridge along 'x' or 'y', meeting the wall tops at z0 (the eaves drop
+    below z0 by the overhang at the same pitch, so there is no gap). Gable ends are left
+    open for crow-stepped or plain gables built separately."""
+    L2, S2 = length * 0.5 + end_overhang, span * 0.5 + overhang
+    ez, rz = z0 - h * overhang / (span * 0.5), z0 + h
+    swap = axis == 'y'
+
+    def P(u, v, z):
+        return Vector((cx + v, cy + u, z)) if swap else Vector((cx + u, cy + v, z))
+
+    e = [bm.verts.new(P(-L2, -S2, ez)), bm.verts.new(P(L2, -S2, ez)),
+         bm.verts.new(P(L2, S2, ez)), bm.verts.new(P(-L2, S2, ez))]
+    r0, r1 = bm.verts.new(P(-L2, 0.0, rz)), bm.verts.new(P(L2, 0.0, rz))
+    for quad in ([e[0], e[1], r1, r0], [e[2], e[3], r0, r1]):
+        bm.faces.new(list(reversed(quad)) if swap else quad).material_index = mat
+    if ridge_cap:
+        if swap:
+            add_box(bm, cx, cy, rz + 0.05, 0.3, 2.0 * L2, 0.14, mat_idx=mat)
+        else:
+            add_box(bm, cx, cy, rz + 0.05, 2.0 * L2, 0.3, 0.14, mat_idx=mat)
+
+
+def _lm_hip_roof(bm, cx, cy, z0, w, d, h, mat, overhang=0.3):
+    """Hipped roof over a w x d plan (pyramid when square), eaves at z0, ridge along the long side."""
+    w2, d2 = w * 0.5 + overhang, d * 0.5 + overhang
+    swap = d > w
+    a, b = (d2, w2) if swap else (w2, d2)
+    rl = max(a - b, 0.0)
+
+    def P(u, v, z):
+        return Vector((cx + v, cy + u, z)) if swap else Vector((cx + u, cy + v, z))
+
+    c = [bm.verts.new(P(-a, -b, z0)), bm.verts.new(P(a, -b, z0)), bm.verts.new(P(a, b, z0)), bm.verts.new(P(-a, b, z0))]
+    r0 = bm.verts.new(P(-rl, 0.0, z0 + h))
+    r1 = bm.verts.new(P(rl, 0.0, z0 + h)) if rl > 1e-3 else r0
+    faces = [[c[3], c[0], r0], [c[1], c[2], r1]]
+    if r1 is r0:
+        faces += [[c[0], c[1], r0], [c[2], c[3], r0]]
+    else:
+        faces += [[c[0], c[1], r1, r0], [c[2], c[3], r0, r1]]
+    for f in faces:
+        bm.faces.new(list(reversed(f)) if swap else f).material_index = mat
+    return P(-rl, 0.0, z0 + h), P(rl, 0.0, z0 + h)
+
+
+def _lm_parapet_rect(bm, cx, cy, z, w, d, h, thick, mat, merlon_h=0.0, merlon_w=0.6, pitch=1.2):
+    """Rectangular parapet ring (outer size w x d) from z to z+h, optionally crenellated."""
+    add_box(bm, cx, cy - d * 0.5 + thick * 0.5, z + h * 0.5, w, thick, h, mat_idx=mat)
+    add_box(bm, cx, cy + d * 0.5 - thick * 0.5, z + h * 0.5, w, thick, h, mat_idx=mat)
+    add_box(bm, cx - w * 0.5 + thick * 0.5, cy, z + h * 0.5, thick, d - 2.0 * thick, h, mat_idx=mat)
+    add_box(bm, cx + w * 0.5 - thick * 0.5, cy, z + h * 0.5, thick, d - 2.0 * thick, h, mat_idx=mat)
+    if merlon_h <= 0:
+        return
+    zc = z + h + merlon_h * 0.5
+    n = max(1, int(round((w - merlon_w) / pitch)))
+    for i in range(n + 1):
+        x = cx - w * 0.5 + merlon_w * 0.5 + i * (w - merlon_w) / n
+        for sy in (-1.0, 1.0):
+            add_box(bm, x, cy + sy * (d * 0.5 - thick * 0.5), zc, merlon_w, thick, merlon_h, mat_idx=mat)
+    m = max(1, int(round((d - merlon_w) / pitch)))
+    for j in range(1, m):                                # corners come from the X sides
+        y = cy - d * 0.5 + merlon_w * 0.5 + j * (d - merlon_w) / m
+        for sx in (-1.0, 1.0):
+            add_box(bm, cx + sx * (w * 0.5 - thick * 0.5), y, zc, thick, merlon_w, merlon_h, mat_idx=mat)
+
+
+def _lm_crow_gable(bm, c, along, out, z_base, w, steps, step_h, mat_brick, mat_plaster, thick=0.5, niches=True):
+    """Crow-stepped gable (szczyt schodkowy) facing any horizontal direction.
+
+    c: (x, y) of the gable's inner face centre; the gable occupies c .. c + out*thick, so put
+    c `thick` inside the wall line to keep the front flush with the wall below. Plaster
+    coping and pinnacles (sterczyny) on every step, a taller central pinnacle, and lancet
+    blind niches. Unlike add_crow_step_gable, the top step gets no end copings that would
+    duplicate the full-width coping (coplanar overlap).
+    """
+    c = Vector((c[0], c[1], 0.0))
+    along, out = Vector(along).normalized(), Vector(out).normalized()
+    shrink = w / (steps + 1)
+
+    def slab(u, uw, z0, z1, d0, d1, mat):
+        _lm_extrude(bm, [(u - uw * 0.5, z0), (u + uw * 0.5, z0), (u + uw * 0.5, z1), (u - uw * 0.5, z1)],
+                    c + out * d0, along, _LM_Z, out, d1 - d0, mat)
+
+    for s in range(steps):
+        sw, sz = w - s * shrink, z_base + s * step_h
+        zt = sz + step_h
+        slab(0.0, sw, sz, zt, 0.0, thick, mat_brick)
+        if s < steps - 1:
+            for sx in (-1.0, 1.0):
+                ex = sx * (sw * 0.5 - 0.22)
+                slab(ex, 0.5, zt, zt + 0.08, -0.04, thick + 0.04, mat_plaster)
+                slab(ex, 0.32, zt + 0.08, zt + 0.98, thick * 0.5 - 0.16, thick * 0.5 + 0.16, mat_plaster)
+    top_w, zt = w - (steps - 1) * shrink, z_base + steps * step_h
+    slab(0.0, top_w, zt, zt + 0.08, -0.04, thick + 0.04, mat_plaster)
+    for ex, ph in ((-(top_w * 0.5 - 0.22), 0.9), (top_w * 0.5 - 0.22, 0.9), (0.0, 1.4)):
+        slab(ex, 0.32, zt + 0.08, zt + 0.08 + ph, thick * 0.5 - 0.16, thick * 0.5 + 0.16, mat_plaster)
+    if not niches:
+        return
+    nw = 0.55
+    for i in range(-(steps - 1), steps, 2):
+        nx = i * shrink * 0.5
+        ok = [s for s in range(steps) if (w - s * shrink) * 0.5 - 0.35 > abs(nx) + nw * 0.5]
+        if not ok:
+            continue
+        z_top = z_base + (max(ok) + 1) * step_h - 0.45 - nw * 0.6
+        z_bot = z_base + 0.4
+        if z_top - z_bot < 0.8:
+            continue
+        _lm_blind(bm, c + out * thick + along * nx + _LM_Z * z_bot, along, out, nw, z_top - z_bot, mat_plaster, proud=0.04)
+
+
+def _lm_gable_wall(bm, c, along, out, z0, span, h, thick, mat):
+    """Plain triangular gable wall; c = base centre on the outer face, built inward."""
+    _lm_extrude(bm, [(-span * 0.5, z0), (span * 0.5, z0), (0.0, z0 + h)], Vector((c[0], c[1], 0.0)),
+                Vector(along), _LM_Z, -Vector(out), thick, mat)
+
+
+def _lm_gate_passage(bm, L, W, pw, z_spring, z_top, mat_wall, mat_plinth, mat_frame, plinth_h=1.2,
+                     batter=0.4, frame=0.45):
+    """Gate-tower base L (along X, the road) x W (along Y, the curtain-wall line), centred on
+    the origin, with a pointed-vaulted carriage passage pw wide running through along X.
+    Battered limestone plinth on the two side blocks; limestone portal frames at both ends."""
+    hl, hw, hp = L * 0.5, W * 0.5, pw * 0.5
+    X, Y = Vector((1.0, 0.0, 0.0)), Vector((0.0, 1.0, 0.0))
+    for s in (-1.0, 1.0):
+        ylo_b, yhi_b = sorted((s * hp, s * (hw + batter)))
+        ylo_t, yhi_t = sorted((s * hp, s * hw))
+        _lm_hexa(bm, [(-hl - batter, ylo_b, 0.0), (hl + batter, ylo_b, 0.0), (hl + batter, yhi_b, 0.0), (-hl - batter, yhi_b, 0.0),
+                      (-hl, ylo_t, plinth_h), (hl, ylo_t, plinth_h), (hl, yhi_t, plinth_h), (-hl, yhi_t, plinth_h)], mat_plinth)
+        add_box(bm, 0.0, s * (hp + hw) * 0.5, (plinth_h + z_top) * 0.5, L, hw - hp, z_top - plinth_h, mat_idx=mat_wall)
+    za = z_spring + pw * 0.6
+    for poly in ([(-hp, z_spring), (0.0, za), (0.0, z_top), (-hp, z_top)],
+                 [(0.0, za), (hp, z_spring), (hp, z_top), (0.0, z_top)]):
+        _lm_extrude(bm, poly, Vector((-hl, 0.0, 0.0)), Y, _LM_Z, X, L, mat_wall)
+    for s in (-1.0, 1.0):
+        _lm_lancet(bm, Vector((s * hl, 0.0, 0.0)), Y, Vector((s, 0.0, 0.0)), pw, z_spring, None, mat_frame,
+                   frame=frame, sill=False)
+
+
+def _lm_finish(bm, mat_list, glb_name, obj_name):
+    bm.normal_update()
+    mesh = bpy.data.meshes.new("Mesh_" + obj_name)
+    bm.to_mesh(mesh)
+    bm.free()
+    for m in mat_list:
+        mesh.materials.append(m)
+    obj = bpy.data.objects.new(obj_name, mesh)
+    bpy.context.collection.objects.link(obj)
+    export_object(obj, glb_name)
+
 # -------------------------------------------------------------
 # 1. Old Town Hall (Ratusz Miejski)
 # -------------------------------------------------------------
@@ -762,49 +1091,121 @@ def build_town_hall(mats):
 
     mat_list = [
         mats["brick_gothic"], mats["plaster_white"], mats["roof_tile_red"],
-        mats["copper_patina"], mats["stone_limestone"], mats["timber_dark"]
+        mats["copper_patina"], mats["stone_limestone"], mats["timber_dark"],
+        mats["glass_dark"], mats["timber_plank"], mats["iron_wrought"], mats["gold_sign"]
     ]
 
-    add_box(bm, 0, 0, 5.0, 18.0, 12.0, 10.0, mat_idx=0)
-    for x in [-6.0, -3.0, 3.0, 6.0]:
-        add_box(bm, x, -6.05, 5.5, 1.4, 0.15, 6.0, mat_idx=1)
-    add_sloped_roof(bm, 0, 0, 10.0, 18.0, 12.0, 6.5, overhang=0.4, mat_idx=2)
+    BR, PL, RT, CU, LS, TD, GL, TP, IR, GD = range(10)
+    X, Y, Z = Vector((1.0, 0.0, 0.0)), Vector((0.0, 1.0, 0.0)), _LM_Z
+    W, D, H, Z1, LOG = 18.0, 12.0, 10.0, 4.2, 2.2     # plan, eaves, first floor, loggia depth
+    x2, y2 = W * 0.5, D * 0.5
+    yb = -y2 + LOG                                      # loggia back wall
 
-    for x in [-9.0, 9.0]:
-        for s in range(5):
-            sw = 12.0 - s * 2.2
-            add_box(bm, x, 0, 10.0 + s * 1.5, 0.6, sw, 1.5, mat_idx=0)
-            add_box(bm, x, -sw * 0.5 + 0.3, 11.0 + s * 1.5, 0.7, 0.4, 0.8, mat_idx=1)
-            add_box(bm, x, sw * 0.5 - 0.3, 11.0 + s * 1.5, 0.7, 0.4, 0.8, mat_idx=1)
+    # Ground storey behind the open loggia (on a limestone plinth); upper storey over the full plan
+    add_box(bm, 0, (yb + y2) * 0.5, 0.25, W + 0.3, (y2 - yb) + 0.3, 0.5, mat_idx=LS)
+    add_box(bm, 0, (yb + y2) * 0.5, Z1 * 0.5, W, y2 - yb, Z1, mat_idx=BR)
+    add_box(bm, 0, 0, (Z1 + H) * 0.5, W, D, H - Z1, mat_idx=BR)
 
-    add_box(bm, 0, 0, 16.0, 5.5, 5.5, 12.0, mat_idx=0)
-    for y in [-2.78, 2.78]:
-        add_box(bm, 0, y, 18.0, 2.2, 0.1, 7.0, mat_idx=1)
-    add_box(bm, 0, -2.85, 20.0, 2.4, 0.1, 2.4, mat_idx=1)
+    # Market-front loggia (podcienia): six pointed arches on brick piers with limestone imposts
+    piers = [-x2 + 0.45 + k * (W - 0.9) / 6 for k in range(7)]
+    bays = [(a + b) * 0.5 for a, b in zip(piers, piers[1:])]
+    _lm_arcade(bm, (0, -y2, 0), X, -Y, piers, 0.9, 0.8, 2.5, Z1, BR, mat_cap=LS)
+    for sx in (-1.0, 1.0):                              # loggia end walls
+        yc = (-y2 + 0.8 + yb) * 0.5
+        add_box(bm, sx * (x2 - 0.45), yc, Z1 * 0.5, 0.9, yb - (-y2 + 0.8), Z1, mat_idx=BR)
+        _lm_blind(bm, Vector((sx * x2, yc, 1.0)), Y, sx * X, 0.5, 1.6, PL)
+    for i, bx in enumerate(bays):                       # doors and windows inside the loggia
+        if i in (1, 4):
+            _lm_lancet(bm, Vector((bx, yb, 0.0)), X, -Y, 1.4, 2.3, TP, LS, frame=0.2, sill=False)
+        else:
+            _lm_lancet(bm, Vector((bx, yb, 1.0)), X, -Y, 0.9, 1.4, GL, LS, frame=0.14)
 
-    add_box(bm, 0, 0, 23.5, 5.0, 5.0, 3.0, mat_idx=4)
-    add_box(bm, 0, 0, 27.5, 4.2, 4.2, 5.0, mat_idx=3)
-    add_box(bm, 0, 0, 31.0, 2.0, 2.0, 2.5, mat_idx=3)
+    # Limestone string course and eaves cornice
+    add_box(bm, 0, 0, Z1, W + 0.24, D + 0.24, 0.22, mat_idx=LS)
+    add_box(bm, 0, 0, H - 0.3, W + 0.3, D + 0.3, 0.3, mat_idx=LS)
 
-    for cx in [-8.5, 8.5]:
-        for cy in [-5.5, 5.5]:
-            add_box(bm, cx, cy, 11.5, 1.8, 1.8, 3.5, mat_idx=0)
-            add_box(bm, cx, cy, 14.5, 2.0, 2.0, 2.8, mat_idx=3)
+    # Upper floor: mullioned lancets on the bay axes, white blind niches (blendy) over the piers
+    for sy in (-1.0, 1.0):
+        for bx in bays:
+            _lm_lancet(bm, Vector((bx, sy * y2, 5.3)), X, sy * Y, 1.1, 2.3, GL, LS, frame=0.15, mullion=True)
+        for px in piers[1:-1]:
+            _lm_blind(bm, Vector((px, sy * y2, 4.8)), X, sy * Y, 0.45, 3.6, PL)
+    for sx in (-1.0, 1.0):
+        for wy in ((-3.2, -0.2) if sx > 0 else (-3.0, 0.0, 3.0)):
+            _lm_lancet(bm, Vector((sx * x2, wy, 5.3)), Y, sx * X, 1.1, 2.3, GL, LS, frame=0.15, mullion=True)
+    for wy in (-1.0, 2.6):
+        _lm_lancet(bm, Vector((-x2, wy, 1.0)), Y, -X, 0.9, 1.4, GL, LS, frame=0.14)
 
-    for st in range(8):
-        add_box(bm, 9.5 + st * 0.55, -4.5, 0.3 + st * 0.45, 0.6, 2.2, 0.6 + st * 0.9, mat_idx=4)
-    add_box(bm, 11.5, -3.3, 3.5, 4.5, 0.3, 1.2, mat_idx=4)
+    # Steep tiled roof (ridge along X) between two crow-stepped gables with pinnacles
+    _lm_saddle_roof(bm, 0, 0, H, W - 1.0, D, 6.5, 'x', RT, overhang=0.5)
+    for sx in (-1.0, 1.0):
+        _lm_crow_gable(bm, (sx * (x2 - 0.5), 0.0), Y, sx * X, H, D, 5, 1.4, BR, PL, thick=0.5)
 
-    bm.normal_update()
-    mesh = bpy.data.meshes.new("Mesh_TownHall")
-    bm.to_mesh(mesh)
-    bm.free()
+    # Clock tower rising through the ridge
+    TW = 5.2
+    t2 = TW * 0.5
+    add_box(bm, 0, 0, (H + 21.5) * 0.5, TW, TW, 21.5 - H, mat_idx=BR)
+    add_box(bm, 0, 0, 17.0, TW + 0.2, TW + 0.2, 0.25, mat_idx=LS)
+    for out, along in ((-Y, X), (Y, X), (X, Y), (-X, Y)):
+        cc = out * t2 + Z * 19.2
+        _lm_disc(bm, cc, along, out, 1.42, LS, proud=0.04, segs=16)          # stone ring
+        _lm_disc(bm, cc, along, out, 1.25, PL, proud=0.08, segs=16)          # dial
+        _lm_disc(bm, cc + out * 0.06, along, out, 0.16, GD, proud=0.06, segs=8)
+        hub = cc + out * 0.13
+        add_timber_beam(bm, hub, hub + Z * 0.95, width=0.08, depth=0.08, mat_idx=IR)
+        add_timber_beam(bm, hub, hub + along * 0.6 - Z * 0.3, width=0.08, depth=0.08, mat_idx=IR)
+        for k in range(4):                                                   # quarter-hour marks
+            a = k * math.pi * 0.5
+            p = cc + out * 0.1 + along * (1.05 * math.cos(a)) + Z * (1.05 * math.sin(a))
+            _lm_obox(bm, p, along, out, 0.14, 0.04, 0.14, GD)
+    for wx in (-1.1, 1.1):
+        for sy in (-1.0, 1.0):
+            _lm_blind(bm, Y * (sy * t2) + X * wx + Z * 14.4, X, sy * Y, 0.6, 1.6, PL)
 
-    for m in mat_list:
-        mesh.materials.append(m)
-    obj = bpy.data.objects.new("TownHall", mesh)
-    bpy.context.collection.objects.link(obj)
-    export_object(obj, "town_hall")
+    # Corbel table, crenellated gallery, octagonal belfry and copper spire
+    add_box(bm, 0, 0, 21.75, TW + 0.8, TW + 0.8, 0.5, mat_idx=LS)
+    _lm_parapet_rect(bm, 0, 0, 22.0, TW + 0.8, TW + 0.8, 0.8, 0.35, BR, merlon_h=0.7, merlon_w=0.55, pitch=1.2)
+    r8 = 2.1 / math.cos(math.pi / 8)
+    _lm_ngon_prism(bm, 0, 0, 22.0, 26.4, r8, 8, BR)
+    for k in range(8):
+        a = k * math.pi / 4
+        out, along = Vector((math.cos(a), math.sin(a), 0)), Vector((-math.sin(a), math.cos(a), 0))
+        if k % 2 == 0:
+            _lm_lancet(bm, out * 2.1 + Z * 23.6, along, out, 0.7, 1.7, GL, LS, frame=0.12)
+        else:
+            _lm_blind(bm, out * 2.1 + Z * 23.8, along, out, 0.45, 1.3, PL)
+    _lm_ngon_prism(bm, 0, 0, 26.4, 26.7, r8 + 0.25, 8, LS)
+    _lm_spire(bm, 0, 0, 26.7, r8 + 0.3, 9.5, 8, CU, base_cap=False)
+    _lm_finial(bm, 0, 0, 36.2, IR, GD, h=1.6)
+
+    # Four corbelled corner turrets (bartizans) with copper needle spires
+    for sx in (-1.0, 1.0):
+        for sy in (-1.0, 1.0):
+            tx, ty = sx * x2, sy * y2
+            _lm_ngon_prism(bm, tx, ty, 7.0, 8.4, 0.3, 8, BR, r_top=1.05)
+            _lm_ngon_prism(bm, tx, ty, 8.4, 13.0, 1.05, 8, BR)
+            _lm_ngon_prism(bm, tx, ty, 13.0, 13.25, 1.18, 8, LS)
+            dg = Vector((sx, sy, 0)).normalized()
+            _lm_lancet(bm, Vector((tx, ty, 10.2)) + dg * (1.05 * math.cos(math.pi / 8)),
+                       Vector((-dg.y, dg.x, 0)), dg, 0.3, 0.9, GL, None)
+            _lm_spire(bm, tx, ty, 13.25, 1.2, 4.6, 8, CU, base_cap=False)
+            _lm_finial(bm, tx, ty, 17.85, IR, GD, h=1.0)
+
+    # External limestone stair along the +X gable up to the first-floor council door
+    steps, run = 9, 0.8
+    rise = Z1 / steps
+    sx0, sx1, y_land, y_end = x2, x2 + 1.9, 2.0, 5.2
+    y0 = y_land - steps * run
+    for k in range(steps):
+        add_box(bm, (sx0 + sx1) * 0.5, y0 + (k + 0.5) * run, (k + 1) * rise * 0.5,
+                sx1 - sx0, run, (k + 1) * rise, mat_idx=LS)
+    add_box(bm, (sx0 + sx1) * 0.5, (y_land + y_end) * 0.5, Z1 * 0.5, sx1 - sx0, y_end - y_land, Z1, mat_idx=LS)
+    _lm_extrude(bm, [(y0, 0.0), (y_end, 0.0), (y_end, Z1 + 0.9), (y_land, Z1 + 0.9), (y0, 0.9)],
+                Vector((sx1, 0, 0)), Y, Z, X, 0.25, LS)                      # raking balustrade
+    add_box(bm, (sx0 + sx1 + 0.25) * 0.5, y_end + 0.125, (Z1 + 0.9) * 0.5, sx1 - sx0 + 0.25, 0.25, Z1 + 0.9, mat_idx=LS)
+    _lm_lancet(bm, Vector((x2, 3.6, Z1)), Y, X, 1.2, 2.0, TP, LS, frame=0.2, sill=False)
+
+    _lm_finish(bm, mat_list, "town_hall", "TownHall")
 
 # -------------------------------------------------------------
 # 2. Szmatruz (Cloth & Bread Hall)
@@ -815,31 +1216,58 @@ def build_szmatruz(mats):
 
     mat_list = [
         mats["brick_gothic"], mats["stone_limestone"], mats["roof_tile_red"],
-        mats["timber_dark"], mats["awning_red_white"], mats["awning_blue_white"]
+        mats["timber_dark"], mats["awning_red_white"], mats["awning_blue_white"],
+        mats["plaster_white"], mats["glass_dark"], mats["goods_fabrics"],
+        mats["goods_cheese_bread"]
     ]
+    BR, LS, RT, TD, AR, AB, PL, GL, GF, GB = range(10)
+    X, Y, Z = Vector((1.0, 0.0, 0.0)), Vector((0.0, 1.0, 0.0)), _LM_Z
+    HX, HY = 10.45, 4.45                       # outer faces of the 22 piers (x -10..10, y +-4)
+    ZS, ZA, ZE = 3.3, 5.0, 7.0                 # arch springing, arcade top, attic eaves
 
-    for x in range(-10, 11, 2):
-        for y in [-4.0, 4.0]:
-            add_box(bm, x, y, 2.5, 0.9, 0.9, 5.0, mat_idx=0)
-            add_box(bm, x, y, 5.2, 1.2, 1.2, 0.4, mat_idx=1)
+    # Open pointed arcades on all four sides (22 piers on the long sides) with limestone imposts
+    xs = [float(x) for x in range(-10, 11, 2)]
+    for s in (-1.0, 1.0):
+        _lm_arcade(bm, (0, s * HY, 0), X, s * Y, xs, 0.9, 0.9, ZS, ZA, BR, mat_cap=LS)
+        _lm_arcade(bm, (s * HX, 0, 0), Y, s * X, [-4.0, -2.0, 0.0, 2.0, 4.0], 0.9, 0.9, ZS, ZA, BR,
+                   mat_cap=LS, end_piers=False)
+        for x in xs:
+            add_box(bm, x, s * (HY - 0.45), 0.2, 1.1, 1.1, 0.4, mat_idx=LS)          # pier bases
+        for y in (-2.0, 0.0, 2.0):
+            add_box(bm, s * (HX - 0.45), y, 0.2, 1.1, 1.1, 0.4, mat_idx=LS)
 
-    add_sloped_roof(bm, 0, 0, 5.4, 24.0, 10.0, 4.5, overhang=0.5, mat_idx=2)
+    # Attic storey (cloth store) with string course, cornice, vents and blind niches
+    add_box(bm, 0, 0, (ZA + ZE) * 0.5, 2 * HX, 2 * HY, ZE - ZA, mat_idx=BR)
+    add_box(bm, 0, 0, ZA, 2 * HX + 0.2, 2 * HY + 0.2, 0.2, mat_idx=LS)
+    add_box(bm, 0, 0, ZE - 0.3, 2 * HX + 0.25, 2 * HY + 0.25, 0.3, mat_idx=LS)
+    for s in (-1.0, 1.0):
+        for i, bx in enumerate(range(-9, 10, 2)):
+            if i % 2 == 0:
+                _lm_lancet(bm, Vector((bx, s * HY, 5.35)), X, s * Y, 0.5, 0.7, GL, LS, frame=0.1)
+            else:
+                _lm_blind(bm, Vector((bx, s * HY, 5.3)), X, s * Y, 0.45, 0.8, PL)
+        for y in (-2.0, 2.0):
+            _lm_blind(bm, Vector((s * HX, y, 5.3)), Y, s * X, 0.45, 0.8, PL)
 
-    for x in range(-8, 9, 4):
-        add_box(bm, x, -3.2, 1.0, 2.8, 1.4, 1.8, mat_idx=3)
-        add_box(bm, x, 3.2, 1.0, 2.8, 1.4, 1.8, mat_idx=3)
-        m_awn = 4 if (x % 8 == 0) else 5
-        add_box(bm, x, -3.2, 2.6, 3.0, 1.6, 0.2, mat_idx=m_awn)
-        add_box(bm, x, 3.2, 2.6, 3.0, 1.6, 0.2, mat_idx=m_awn)
+    # Tiled saddle roof between crow-stepped gables
+    _lm_saddle_roof(bm, 0, 0, ZE, 2 * HX - 1.0, 2 * HY, 5.0, 'x', RT, overhang=0.45)
+    for s in (-1.0, 1.0):
+        _lm_crow_gable(bm, (s * (HX - 0.5), 0.0), Y, s * X, ZE, 2 * HY, 4, 1.45, BR, PL, thick=0.5)
 
-    bm.normal_update()
-    mesh = bpy.data.meshes.new("Mesh_Szmatruz")
-    bm.to_mesh(mesh)
-    bm.free()
-    for m in mat_list: mesh.materials.append(m)
-    obj = bpy.data.objects.new("Szmatruz", mesh)
-    bpy.context.collection.objects.link(obj)
-    export_object(obj, "szmatruz")
+    # Trestle counters along the covered aisle: broadcloth bolts and loaves under small canopies
+    for i, bx in enumerate((-7.0, -3.0, 3.0, 7.0)):
+        for s in (-1.0, 1.0):
+            cy = s * 2.5
+            add_box(bm, bx, cy, 0.45, 1.6, 0.9, 0.9, mat_idx=TD)
+            goods = GF if (i + (s > 0)) % 2 == 0 else GB
+            for gx in (-0.5, 0.0, 0.5):
+                add_box(bm, bx + gx, cy, 1.02, 0.4, 0.6, 0.24, mat_idx=goods)
+            for px in (-0.75, 0.75):
+                add_timber_beam(bm, Vector((bx + px, s * 1.95, 0.0)), Vector((bx + px, s * 1.95, 2.4)),
+                                width=0.08, depth=0.08, mat_idx=TD)
+            add_box(bm, bx, s * 2.4, 2.44, 1.9, 1.2, 0.08, mat_idx=AR if i % 2 == 0 else AB)
+
+    _lm_finish(bm, mat_list, "szmatruz", "Szmatruz")
 
 # -------------------------------------------------------------
 # 3. Market Stall with Scalloped Striped Canopy
@@ -1284,49 +1712,132 @@ def build_church_gothic(mats):
 
     mat_list = [
         mats["brick_gothic"], mats["plaster_white"], mats["roof_tile_red"],
-        mats["stone_limestone"], mats["copper_patina"]
+        mats["stone_limestone"], mats["copper_patina"], mats["glass_dark"],
+        mats["timber_plank"], mats["iron_wrought"], mats["gold_sign"]
     ]
+    BR, PL, RT, LS, CU, GL, TP, IR, GD = range(9)
+    X, Y, Z = Vector((1.0, 0.0, 0.0)), Vector((0.0, 1.0, 0.0)), _LM_Z
 
-    add_box(bm, 0, 0, 7.0, 16.0, 30.0, 14.0, mat_idx=0)
+    # Plan (footprint as before: x +-8, y -21.5 .. ~15): west tower, nave, narrower chancel
+    # ending in a three-sided apse. The church is placed rotated, so -Y (tower) and -X face the camera.
+    NX, YW, YE, NH, NR = 8.0, -13.5, 7.0, 13.0, 12.0          # nave half-width, west/east ends, eaves, roof
+    CXH, YC, CH, CR = 5.5, 12.0, 12.0, 9.5                     # chancel half-width, apse chord, eaves, roof
+    APSE = [(5.5, 12.0), (3.0, 14.6), (-3.0, 14.6), (-5.5, 12.0)]
+    APSE_P = [(5.65, 12.0), (3.08, 14.75), (-3.08, 14.75), (-5.65, 12.0)]
+    TC, T2, TH = Vector((0.0, -17.5, 0.0)), 4.0, 27.0
 
-    for cy in [-11.0, -5.5, 0.0, 5.5, 11.0]:
-        for cx, sx in [(-8.4, -1), (8.4, 1)]:
-            add_box(bm, cx + sx * 0.45, cy, 4.5, 1.1, 1.4, 9.0, mat_idx=0)
-            add_box(bm, cx + sx * 0.45, cy, 9.2, 1.1, 1.4, 0.4, mat_idx=3)
-            add_box(bm, cx + sx * 0.25, cy, 11.5, 0.7, 1.2, 4.2, mat_idx=0)
-            add_box(bm, cx + sx * 0.25, cy, 13.8, 0.7, 1.2, 0.4, mat_idx=3)
+    # Limestone plinths (different heights so no top faces are coplanar)
+    add_box(bm, 0, (YW + YE) * 0.5, 0.4, 2 * NX + 0.3, YE - YW + 0.3, 0.8, mat_idx=LS)
+    add_box(bm, 0, (YE + YC) * 0.5, 0.35, 2 * CXH + 0.3, YC - YE, 0.7, mat_idx=LS)
+    _lm_extrude(bm, APSE_P, Vector((0, 0, 0)), X, Y, Z, 0.7, LS)
 
-    for cy in [-8.25, -2.75, 2.75, 8.25]:
-        for cx in [-8.05, 8.05]:
-            add_box(bm, cx, cy, 8.5, 0.12, 1.8, 7.0, mat_idx=1)
+    # Walls and eaves cornices
+    add_box(bm, 0, (YW + YE) * 0.5, NH * 0.5, 2 * NX, YE - YW, NH, mat_idx=BR)
+    add_box(bm, 0, (YE + YC) * 0.5, CH * 0.5, 2 * CXH, YC - YE, CH, mat_idx=BR)
+    _lm_extrude(bm, APSE, Vector((0, 0, 0)), X, Y, Z, CH, BR)
+    add_box(bm, 0, (YW + YE) * 0.5, NH - 0.25, 2 * NX + 0.3, YE - YW + 0.3, 0.3, mat_idx=LS)
+    add_box(bm, 0, (YE + YC) * 0.5, CH - 0.25, 2 * CXH + 0.3, YC - YE, 0.3, mat_idx=LS)
+    _lm_extrude(bm, APSE_P, Vector((0, 0, CH - 0.4)), X, Y, Z, 0.3, LS)
 
-    add_sloped_roof(bm, 0, 0, 14.0, 16.0, 30.0, 11.0, overhang=0.4, mat_idx=2)
+    # Nave: stepped buttresses with weathering slopes, tall mullioned lancets between them
+    bays_y = [-13.0, -9.4, -5.3, -1.2, 2.9, 6.5]
+    for sx in (-1.0, 1.0):
+        for by in bays_y:
+            _lm_buttress(bm, (sx * NX, by), sx * X, Y, 1.0, [(5.5, 1.8), (3.5, 1.2), (1.8, 0.6)], BR)
+        for i, (a, b) in enumerate(zip(bays_y, bays_y[1:])):
+            wy = (a + b) * 0.5
+            if sx < 0 and i == 2:              # porch bay: a short clerestory light only
+                _lm_lancet(bm, Vector((sx * NX, wy, 8.0)), Y, sx * X, 1.4, 2.2, GL, LS, frame=0.18)
+                continue
+            _lm_lancet(bm, Vector((sx * NX, wy, 3.6)), Y, sx * X, 1.7, 5.8, GL, LS, frame=0.2, mullion=True)
 
-    for cy in [15.1, -15.1]:
-        for s in range(6):
-            sw = 16.0 - s * 2.4
-            sz = 14.0 + s * 1.8
-            add_box(bm, 0, cy, sz + 0.9, sw, 0.4, 1.8, mat_idx=0)
-            add_box(bm, -sw * 0.5 + 0.3, cy, sz + 2.0, 0.4, 0.4, 0.8, mat_idx=1)
-            add_box(bm, sw * 0.5 - 0.3, cy, sz + 2.0, 0.4, 0.4, 0.8, mat_idx=1)
+    # South porch with a pointed portal (on the camera-facing -X flank)
+    px0, px1, py = -NX - 2.2, -NX, -3.25
+    add_box(bm, (px0 + px1) * 0.5, py, 2.6, px1 - px0, 3.0, 5.2, mat_idx=BR)
+    _lm_saddle_roof(bm, (px0 + px1) * 0.5, py, 5.2, px1 - px0, 3.0, 2.0, 'x', RT, overhang=0.25)
+    _lm_gable_wall(bm, (px0, py), Y, -X, 5.2, 3.0, 2.0, 0.3, BR)
+    _lm_blind(bm, Vector((px0, py, 5.45)), Y, -X, 0.4, 0.6, PL)
+    _lm_lancet(bm, Vector((px0, py, 0.0)), Y, -X, 1.5, 2.6, TP, LS, frame=0.3, sill=False)
 
-    add_box(bm, 0, -17.5, 13.0, 8.0, 8.0, 26.0, mat_idx=0)
-    add_box(bm, 0, -17.5, 26.8, 9.2, 9.2, 1.6, mat_idx=3)
-    add_box(bm, 0, -17.5, 30.5, 7.0, 7.0, 6.0, mat_idx=0)
-    add_box(bm, 0, -21.05, 30.5, 2.2, 0.12, 4.0, mat_idx=1)
+    # Steep nave roof between two crow-stepped gables with blind niches
+    _lm_saddle_roof(bm, 0, (YW + YE) * 0.5, NH, (YE - YW) - 1.0, 2 * NX, NR, 'y', RT, overhang=0.5)
+    _lm_crow_gable(bm, (0.0, YW + 0.5), X, -Y, NH, 2 * NX, 6, 2.2, BR, PL, thick=0.5)
+    _lm_crow_gable(bm, (0.0, YE - 0.5), X, Y, NH, 2 * NX, 6, 2.2, BR, PL, thick=0.5)
 
-    add_box(bm, 0, -17.5, 36.5, 6.0, 6.0, 6.0, mat_idx=4)
-    add_box(bm, 0, -17.5, 42.0, 3.2, 3.2, 6.0, mat_idx=4)
-    add_box(bm, 0, -17.5, 46.0, 1.2, 1.2, 3.0, mat_idx=4)
+    # Ridge turret (sygnaturka) for the sanctus bell
+    rz = NH + NR
+    _lm_ngon_prism(bm, 0, 3.5, rz - 1.5, rz + 1.6, 0.7, 8, CU)
+    for k in range(0, 8, 2):
+        a = k * math.pi / 4
+        out = Vector((math.cos(a), math.sin(a), 0))
+        _lm_lancet(bm, Vector((0, 3.5, rz + 0.3)) + out * (0.7 * math.cos(math.pi / 8)),
+                   Vector((-out.y, out.x, 0)), out, 0.3, 0.7, GL, None)
+    _lm_spire(bm, 0, 3.5, rz + 1.6, 0.85, 3.8, 8, CU, base_cap=False)
+    _lm_finial(bm, 0, 3.5, rz + 5.4, IR, GD, h=1.0, cross=True)
 
-    bm.normal_update()
-    mesh = bpy.data.meshes.new("Mesh_ChurchGothic")
-    bm.to_mesh(mesh)
-    bm.free()
-    for m in mat_list: mesh.materials.append(m)
-    obj = bpy.data.objects.new("ChurchGothic", mesh)
-    bpy.context.collection.objects.link(obj)
-    export_object(obj, "church_gothic")
+    # Chancel and apse: lancets, diagonal buttresses at the apse corners, half-hipped roof
+    for sx in (-1.0, 1.0):
+        _lm_lancet(bm, Vector((sx * CXH, 9.5, 3.2)), Y, sx * X, 1.4, 5.6, GL, LS, frame=0.18, mullion=True)
+    normals = [X]
+    for i in range(3):
+        a, b = Vector((*APSE[i], 0.0)), Vector((*APSE[i + 1], 0.0))
+        along = (b - a).normalized()
+        out = Vector((along.y, -along.x, 0.0))
+        normals.append(out)
+        _lm_lancet(bm, (a + b) * 0.5 + Z * 3.2, along, out, 1.3, 5.6, GL, LS, frame=0.18, mullion=True)
+    normals.append(-X)
+    for i, p in enumerate(APSE):
+        n = (normals[i] + normals[i + 1]).normalized()
+        _lm_buttress(bm, p, n, Vector((-n.y, n.x, 0.0)), 0.9, [(5.0, 1.4), (3.2, 0.9), (2.0, 0.5)], BR, back=0.6)
+    _lm_saddle_roof(bm, 0, (YE + YC) * 0.5, CH, YC - YE, 2 * CXH, CR, 'y', RT, overhang=0.4)
+    ez = CH - CR * 0.4 / CXH
+    ev = [bm.verts.new(Vector(p)) for p in ((CXH + 0.4, YC, ez), (3.25, 15.0, ez), (-3.25, 15.0, ez), (-CXH - 0.4, YC, ez))]
+    apex = bm.verts.new(Vector((0.0, YC, CH + CR)))
+    for i in range(3):
+        bm.faces.new([ev[i], ev[i + 1], apex]).material_index = RT
+
+    # West tower: clasping buttresses, string courses, portal, blind niches, belfry openings
+    tx, ty = TC.x, TC.y
+    add_box(bm, tx, ty, 0.5, 2 * T2 + 0.4, 2 * T2 + 0.4, 1.0, mat_idx=LS)
+    add_box(bm, tx, ty, TH * 0.5, 2 * T2, 2 * T2, TH, mat_idx=BR)
+    for zb in (9.0, 18.0):
+        add_box(bm, tx, ty, zb, 2 * T2 + 0.3, 2 * T2 + 0.3, 0.3, mat_idx=LS)
+    tiers = [(9.0, 1.6), (8.0, 1.1), (6.5, 0.6)]
+    for sx in (-1.0, 1.0):
+        for sy in (-1.0, 1.0):
+            _lm_buttress(bm, (tx + sx * T2, ty + sy * (T2 - 0.5)), sx * X, Y, 1.0, tiers, BR)
+            if sy < 0:
+                _lm_buttress(bm, (tx + sx * (T2 - 0.5), ty + sy * T2), sy * Y, X, 1.0, tiers, BR)
+    fy = ty - T2
+    _lm_blind(bm, Vector((tx, fy, 0.0)), X, -Y, 3.3, 3.2, LS, proud=0.3)                  # portal orders
+    _lm_lancet(bm, Vector((tx, fy - 0.3, 0.0)), X, -Y, 2.0, 2.7, TP, LS, frame=0.25, sill=False)
+    _lm_lancet(bm, Vector((tx, fy, 5.6)), X, -Y, 1.5, 2.2, GL, LS, frame=0.18, mullion=True)
+    for out, along in ((-Y, X), (X, Y), (-X, Y)):
+        base = TC + out * T2
+        for o in (-1.3, 1.3):
+            _lm_blind(bm, base + along * o + Z * 9.6, along, out, 0.9, 6.3, PL)
+        for o in (-1.2, 1.2):
+            _lm_lancet(bm, base + along * o + Z * 19.0, along, out, 1.0, 4.6, GL, LS, frame=0.16)
+
+    # Tower top: cornice, parapet with corner pinnacles, octagonal belfry, copper needle spire
+    add_box(bm, tx, ty, TH + 0.3, 2 * T2 + 1.0, 2 * T2 + 1.0, 0.6, mat_idx=LS)
+    _lm_parapet_rect(bm, tx, ty, TH + 0.6, 2 * T2 + 1.0, 2 * T2 + 1.0, 0.9, 0.35, BR)
+    for sx in (-1.0, 1.0):
+        for sy in (-1.0, 1.0):
+            px_, py_ = tx + sx * (T2 + 0.1), ty + sy * (T2 + 0.1)
+            _lm_ngon_prism(bm, px_, py_, TH + 0.6, TH + 3.0, 0.6, 8, BR)
+            _lm_spire(bm, px_, py_, TH + 3.0, 0.7, 3.4, 8, CU, base_cap=False)
+    r8 = 3.0 / math.cos(math.pi / 8)
+    _lm_ngon_prism(bm, tx, ty, TH + 0.6, TH + 6.6, r8, 8, BR)
+    for k in range(8):
+        a = k * math.pi / 4
+        out, along = Vector((math.cos(a), math.sin(a), 0)), Vector((-math.sin(a), math.cos(a), 0))
+        _lm_lancet(bm, TC + out * 3.0 + Z * (TH + 2.0), along, out, 0.8, 2.6, GL, LS, frame=0.14)
+    _lm_ngon_prism(bm, tx, ty, TH + 6.6, TH + 6.9, r8 + 0.2, 8, LS)
+    _lm_spire(bm, tx, ty, TH + 6.9, r8 + 0.25, 15.0, 8, CU, base_cap=False)
+    _lm_finial(bm, tx, ty, TH + 21.9, IR, GD, h=2.0, cross=True)
+
+    _lm_finish(bm, mat_list, "church_gothic", "ChurchGothic")
 
 def build_castle_donjon(mats):
     clear_scene()
@@ -1334,46 +1845,81 @@ def build_castle_donjon(mats):
 
     mat_list = [
         mats["stone_limestone"], mats["brick_gothic"], mats["roof_tile_red"],
-        mats["timber_dark"]
+        mats["timber_dark"], mats["glass_dark"], mats["timber_plank"],
+        mats["iron_wrought"], mats["fire_orange"], mats["gold_sign"],
+        mats["cloth_red"], mats["roof_shingle"]
     ]
+    LS, BR, RT, TD, GL, TP, IR, FO, GD, CR, SH = range(11)
+    X, Y, Z = Vector((1.0, 0.0, 0.0)), Vector((0.0, 1.0, 0.0)), _LM_Z
+    S, R = 16, 7.0
+    FL = R * math.cos(math.pi / S)                      # distance to a wall flat
 
-    segs = 16
-    radius = 7.0
-    height = 22.0
-    for i in range(segs):
-        a1 = (i / segs) * math.pi * 2
-        a2 = ((i + 1) / segs) * math.pi * 2
-        x1, y1 = math.cos(a1) * radius, math.sin(a1) * radius
-        x2, y2 = math.cos(a2) * radius, math.sin(a2) * radius
-        mx, my = (x1 + x2) * 0.5, (y1 + y2) * 0.5
-        seg_len = math.hypot(x2 - x1, y2 - y1)
-        add_box(bm, mx, my, height * 0.5, 2.8, seg_len, height, mat_idx=0)
+    def radial(a_deg):
+        a = math.radians(a_deg)
+        return Vector((math.cos(a), math.sin(a), 0.0)), Vector((-math.sin(a), math.cos(a), 0.0))
 
-    r_top = 7.8
-    for i in range(segs):
-        a1 = (i / segs) * math.pi * 2
-        a2 = ((i + 1) / segs) * math.pi * 2
-        x1, y1 = math.cos(a1) * r_top, math.sin(a1) * r_top
-        x2, y2 = math.cos(a2) * r_top, math.sin(a2) * r_top
-        mx, my = (x1 + x2) * 0.5, (y1 + y2) * 0.5
-        seg_len = math.hypot(x2 - x1, y2 - y1)
-        add_box(bm, mx, my, 22.8, 1.2, seg_len, 1.6, mat_idx=0)
-        if i % 2 == 0:
-            add_box(bm, mx, my, 24.4, 0.8, seg_len, 1.6, mat_idx=1)
+    # Round limestone keep: battered base, shaft, string courses, arrow slits
+    _lm_ngon_prism(bm, 0, 0, 0.0, 3.0, 7.9, S, LS, r_top=R)
+    _lm_ngon_prism(bm, 0, 0, 3.0, 21.6, R, S, LS)
+    for zb in (9.9, 15.8):
+        _lm_ngon_prism(bm, 0, 0, zb, zb + 0.3, R + 0.15, S, LS)
+    for a_deg, z in ((0, 6.0), (90, 6.0), (180, 6.0), (45, 12.4), (135, 12.4), (225, 12.4),
+                     (315, 12.4), (270, 12.4), (0, 17.6), (90, 17.6), (180, 17.6), (270, 17.6)):
+        out, along = radial(a_deg)
+        _lm_lancet(bm, out * FL + Z * z, along, out, 0.28, 1.3, GL, None)
 
-    add_box(bm, 0, 0, 25.5, 14.5, 14.5, 2.5, mat_idx=2)
-    add_box(bm, 0, 0, 27.5, 9.5, 9.5, 2.5, mat_idx=2)
-    add_box(bm, 0, 0, 29.5, 4.5, 4.5, 2.5, mat_idx=2)
-    add_box(bm, 0, 0, 31.0, 1.5, 1.5, 1.5, mat_idx=3)
+    # Raised entrance with a timber platform and draw-stair (camera side, -Y)
+    out, along = -Y, X
+    _lm_lancet(bm, out * FL + Z * 7.2, along, out, 1.3, 1.7, TP, LS, frame=0.25, rise=0.5, sill=False)
+    add_box(bm, 0, -7.9, 7.05, 3.4, 2.6, 0.3, mat_idx=TP)                        # deck y -9.2..-6.6
+    for px in (-1.5, 1.5):
+        add_timber_beam(bm, Vector((px, -9.0, 0.0)), Vector((px, -9.0, 6.9)), width=0.22, depth=0.22, mat_idx=TD)
+        add_timber_beam(bm, Vector((px, -9.0, 5.0)), Vector((px, -7.1, 6.9)), width=0.16, depth=0.16, mat_idx=TD)
+    for p, q in (((-1.6, -9.1), (1.6, -9.1)), ((-1.6, -9.1), (-1.6, -6.9))):
+        add_timber_beam(bm, Vector((p[0], p[1], 8.1)), Vector((q[0], q[1], 8.1)), width=0.1, depth=0.1, mat_idx=TD)
+    for p in ((-1.6, -9.1), (0.0, -9.1), (1.6, -9.1), (-1.6, -7.0)):
+        add_timber_beam(bm, Vector((p[0], p[1], 7.2)), Vector((p[0], p[1], 8.15)), width=0.1, depth=0.1, mat_idx=TD)
+    n_st, run, sx0 = 11, 0.55, 1.7
+    rise = 7.2 / (n_st + 1)
+    for yy in (-8.35, -9.25):                                                    # stringers
+        add_timber_beam(bm, Vector((sx0, yy, 7.05)), Vector((sx0 + (n_st + 1) * run, yy, 0.05)), width=0.14, depth=0.2, mat_idx=TD)
+    for k in range(n_st):
+        add_box(bm, sx0 + (k + 0.5) * run, -8.8, 7.2 - (k + 1) * rise + 0.04, 0.5, 1.0, 0.08, mat_idx=TP)
+    add_timber_beam(bm, Vector((5.0, -8.8, 0.0)), Vector((5.0, -8.8, 3.6)), width=0.18, depth=0.18, mat_idx=TD)
+    for yy, wx in ((-8.35, 1.0), (-9.25, 1.4)):                                  # lifting chains
+        add_timber_beam(bm, Vector((sx0 + 0.3, yy, 6.7)), Vector((wx, -math.sqrt(R * R - wx * wx) + 0.05, 9.6)),
+                        width=0.06, depth=0.06, mat_idx=IR)
 
-    bm.normal_update()
-    mesh = bpy.data.meshes.new("Mesh_CastleDonjon")
-    bm.to_mesh(mesh)
-    bm.free()
-    for m in mat_list: mesh.materials.append(m)
-    obj = bpy.data.objects.new("CastleDonjon", mesh)
-    bpy.context.collection.objects.link(obj)
-    export_object(obj, "castle_donjon")
+    # Machicolation corbels, brick fighting gallery with merlons, conical tile roof
+    for k in range(S):
+        out, along = radial(k * 360.0 / S)
+        _lm_obox(bm, out * (FL + 0.3) + Z * 21.3, along, out, 0.45, 0.7, 0.6, LS)
+    RB = 7.65
+    FB = RB * math.cos(math.pi / S)
+    _lm_ngon_prism(bm, 0, 0, 21.6, 24.4, RB, S, BR)
+    flat = 2.0 * RB * math.sin(math.pi / S)
+    for k in range(S):
+        out, along = radial(k * 360.0 / S)
+        if k % 2 == 0:
+            _lm_obox(bm, out * (FB - 0.35) + Z * 25.05, along, out, flat * 0.85, 0.7, 1.3, BR)
+        else:
+            _lm_lancet(bm, out * FB + Z * 22.4, along, out, 0.25, 0.9, GL, None)
+    _lm_spire(bm, 0, 0, 24.4, 7.1, 10.2, S, RT, base_cap=False)
+    _lm_finial(bm, 0, 0, 34.6, IR, GD, h=2.0)
+    add_box(bm, 0.55, 0, 36.25, 1.0, 0.04, 0.5, mat_idx=CR)                         # pennant
+
+    # Bailey guardhouse and brazier fire basket by the stair foot
+    hx, hy = -5.0, -10.8
+    add_box(bm, hx, hy, 1.2, 3.2, 2.4, 2.4, mat_idx=TP)
+    _lm_saddle_roof(bm, hx, hy, 2.4, 3.2, 2.4, 1.4, 'x', SH, overhang=0.3, end_overhang=0.25)
+    for sx in (-1.0, 1.0):
+        _lm_gable_wall(bm, (hx + sx * 1.6, hy), Y, sx * X, 2.4, 2.4, 1.4, 0.2, TP)
+    add_box(bm, hx, hy - 1.23, 0.95, 0.9, 0.06, 1.9, mat_idx=TD)
+    add_timber_beam(bm, Vector((9.0, -10.2, 0.0)), Vector((9.0, -10.2, 1.1)), width=0.1, depth=0.1, mat_idx=IR)
+    _lm_ngon_prism(bm, 9.0, -10.2, 1.1, 1.55, 0.25, 8, IR, r_top=0.42)
+    _lm_ngon_prism(bm, 9.0, -10.2, 1.55, 1.75, 0.34, 8, FO)
+
+    _lm_finish(bm, mat_list, "castle_donjon", "CastleDonjon")
 
 # =============================================================
 # NEW DIFFERENTIATED ARTISAN GUILD WORKSHOPS
@@ -2711,41 +3257,96 @@ def build_krakow_gate(mats):
 
     mat_list = [
         mats["brick_gothic"], mats["stone_limestone"], mats["copper_patina"],
-        mats["timber_dark"], mats["iron_wrought"], mats["roof_tile_red"]
+        mats["timber_dark"], mats["iron_wrought"], mats["roof_tile_red"],
+        mats["glass_dark"], mats["timber_plank"], mats["plaster_white"],
+        mats["roof_shingle"], mats["gold_sign"]
     ]
+    BR, LS, CU, TD, IR, RT, GL, TP, PL, SH, GD = range(11)
+    X, Y, Z = Vector((1.0, 0.0, 0.0)), Vector((0.0, 1.0, 0.0)), _LM_Z
 
-    # Kraków Gate Tower: 11.0m wide x 13.0m deep x 24.0m high
-    # Tier 1: Arched stone carriage portal base
-    add_box(bm, 0, 0, 3.0, 11.0, 13.0, 6.0, mat_idx=1)
-    # Portal carriage passage (opening)
-    add_box(bm, 0, 0, 2.5, 4.5, 13.2, 5.0, mat_idx=3)
-    # Iron portcullis slot
-    add_box(bm, 0, -5.5, 3.2, 4.2, 0.2, 4.0, mat_idx=4)
+    # Orientation (as placed by populateCityScene): the curtain wall meets the tower along
+    # the model's Y axis, the Kraków road runs through it along X, and +X is outside the town.
+    L, W, PW = 10.5, 10.0, 4.4            # depth along the road, width along the wall, passage
+    ZS, ZT, TOP = 3.8, 7.0, 17.0           # passage springing, vault top, tower-body top
+    hl, hw = L * 0.5, W * 0.5
+    _lm_gate_passage(bm, L, W, PW, ZS, ZT, BR, LS, LS)
 
-    # Tier 2: Square Gothic brick body with arrow loops
-    add_box(bm, 0, 0, 9.5, 10.2, 12.0, 7.0, mat_idx=0)
+    # Half-raised iron portcullis behind the outer portal; oak leaves opened against the walls
+    gx = hl - 0.7
+    for k in range(9):
+        y = -2.0 + k * 0.5
+        add_timber_beam(bm, Vector((gx, y, 2.5)), Vector((gx, y, 6.6)), width=0.1, depth=0.1, mat_idx=IR)
+    for z in (2.7, 3.5, 4.3):
+        add_timber_beam(bm, Vector((gx, -PW * 0.5, z)), Vector((gx, PW * 0.5, z)), width=0.1, depth=0.1, mat_idx=IR)
+    for s in (-1.0, 1.0):
+        add_box(bm, -hl + 1.6, s * (PW * 0.5 - 0.08), 1.8, 2.0, 0.12, 3.6, mat_idx=TP)
 
-    # Tier 3: Transition to Octagonal brick belfry with machicolations
-    add_box(bm, 0, 0, 14.5, 11.0, 12.8, 1.4, mat_idx=1) # corbel gallery
-    add_box(bm, 0, 0, 18.0, 8.5, 8.5, 6.0, mat_idx=0) # octagonal tier
+    # Square Gothic brick body: string courses, blind niches, arrow loops, wall-walk door
+    add_box(bm, 0, 0, (ZT + TOP) * 0.5, L, W, TOP - ZT, mat_idx=BR)
+    for zb in (ZT, 12.0):
+        add_box(bm, 0, 0, zb, L + 0.2, W + 0.2, 0.25, mat_idx=LS)
+    for out, along, half in ((X, Y, hl), (-X, Y, hl), (-Y, X, hw), (Y, X, hw)):
+        base = out * half
+        for o in (-2.4, 2.4):
+            _lm_blind(bm, base + along * o + Z * 7.6, along, out, 1.0, 3.2, PL)
+        if out.x < 0.5:                   # +X carries the hoarding
+            for o in (-2.6, 0.0, 2.6):
+                _lm_lancet(bm, base + along * o + Z * 13.4, along, out, 0.28, 1.3, GL, LS, frame=0.1, sill=False)
+    _lm_lancet(bm, Vector((0, hw, 8.0)), X, Y, 1.0, 1.9, TP, LS, frame=0.18, sill=False)
 
-    # Tier 4: Copper-clad spire apex
-    add_box(bm, 0, 0, 22.5, 7.5, 7.5, 3.0, mat_idx=2)
-    add_box(bm, 0, 0, 25.5, 3.5, 3.5, 3.5, mat_idx=2)
+    # Gatekeeper's timber hoarding gallery over the highway approach (+X)
+    hx0, hx1 = hl, hl + 1.5
+    add_box(bm, (hx0 + hx1) * 0.5, 0, 12.7, hx1 - hx0, 7.4, 0.2, mat_idx=TP)
+    add_box(bm, hx1 - 0.1, 0, 13.9, 0.2, 7.4, 2.2, mat_idx=TP)
+    for s in (-1.0, 1.0):
+        add_box(bm, (hx0 + hx1 - 0.2) * 0.5, s * 3.6, 13.9, hx1 - hx0 - 0.2, 0.2, 2.2, mat_idx=TP)
+    for yy in (-3.0, 0.0, 3.0):
+        add_timber_beam(bm, Vector((hx0, yy, 11.4)), Vector((hx1 - 0.2, yy, 12.6)), width=0.2, depth=0.2, mat_idx=TD)
+    for yy in (-3.6, -1.2, 1.2, 3.6):
+        add_timber_beam(bm, Vector((hx1, yy, 12.6)), Vector((hx1, yy, 15.05)), width=0.16, depth=0.16, mat_idx=TD)
+    for yy in (-2.4, 0.0, 2.4):
+        add_box(bm, hx1 + 0.01, yy, 13.9, 0.04, 0.3, 0.8, mat_idx=GL)
+    # lean-to roof: one plane wound up/out (a closed slab would put as much area facing down)
+    rv = [bm.verts.new(Vector(p)) for p in ((hx0, -3.95, 16.0), (hx1 + 0.35, -3.95, 14.8),
+                                             (hx1 + 0.35, 3.95, 14.8), (hx0, 3.95, 16.0))]
+    bm.faces.new(rv).material_index = SH
+    add_timber_beam(bm, Vector((hx1 + 0.35, -3.95, 14.74)), Vector((hx1 + 0.35, 3.95, 14.74)), width=0.12, depth=0.12, mat_idx=TD)
 
-    # Outer timber drawbridge spanning dry moat (-Y highway approach)
-    add_box(bm, 0, -10.0, 0.4, 4.5, 8.0, 0.35, mat_idx=3)
-    add_box(bm, -2.1, -10.0, 0.9, 0.15, 8.0, 0.8, mat_idx=3) # drawbridge railing
-    add_box(bm, 2.1, -10.0, 0.9, 0.15, 8.0, 0.8, mat_idx=3)
+    # Machicolated corbel table and crenellated parapet
+    PO = 0.45
+    for s in (-1.0, 1.0):
+        for k in range(7):
+            add_box(bm, s * (hl + PO * 0.5), -hw + 0.6 + k * (W - 1.2) / 6, TOP - 0.25, PO, 0.35, 0.5, mat_idx=LS)
+            add_box(bm, -hl + 0.6 + k * (L - 1.2) / 6, s * (hw + PO * 0.5), TOP - 0.25, 0.35, PO, 0.5, mat_idx=LS)
+    _lm_parapet_rect(bm, 0, 0, TOP, L + 2 * PO, W + 2 * PO, 1.1, 0.4, BR, merlon_h=0.9, merlon_w=0.7, pitch=1.45)
 
-    bm.normal_update()
-    mesh = bpy.data.meshes.new("Mesh_GateKrakow")
-    bm.to_mesh(mesh)
-    bm.free()
-    for m in mat_list: mesh.materials.append(m)
-    obj = bpy.data.objects.new("GateKrakow", mesh)
-    bpy.context.collection.objects.link(obj)
-    export_object(obj, "gate_krakow")
+    # Octagonal brick belfry and copper-clad helm spire
+    r8 = 3.6 / math.cos(math.pi / 8)
+    _lm_ngon_prism(bm, 0, 0, TOP, 23.2, r8, 8, BR)
+    for k in range(8):
+        a = k * math.pi / 4
+        out, along = Vector((math.cos(a), math.sin(a), 0)), Vector((-math.sin(a), math.cos(a), 0))
+        if k % 2 == 0:
+            _lm_lancet(bm, out * 3.6 + Z * 19.4, along, out, 0.9, 2.2, GL, LS, frame=0.14, mullion=True)
+        else:
+            _lm_blind(bm, out * 3.6 + Z * 19.4, along, out, 0.6, 2.0, PL)
+    _lm_ngon_prism(bm, 0, 0, 23.2, 23.5, r8 + 0.25, 8, LS)
+    _lm_spire(bm, 0, 0, 23.5, r8 + 0.35, 10.0, 8, CU, base_cap=False)
+    _lm_finial(bm, 0, 0, 33.5, IR, GD, h=1.6)
+
+    # Timber drawbridge on chains over the (dry) moat, with a stone abutment
+    bx0, bx1 = hl, hl + 7.5
+    add_box(bm, (bx0 + bx1) * 0.5, 0, 0.35, bx1 - bx0, 4.0, 0.3, mat_idx=TP)
+    add_box(bm, bx1 + 0.3, 0, 0.3, 0.6, 4.6, 0.6, mat_idx=LS)
+    for s in (-1.0, 1.0):
+        add_timber_beam(bm, Vector((bx0, s * 1.9, 0.6)), Vector((bx1, s * 1.9, 0.6)), width=0.22, depth=0.22, mat_idx=TD)
+        for xx in (bx0 + 0.6, (bx0 + bx1) * 0.5, bx1 - 0.3):
+            add_timber_beam(bm, Vector((xx, s * 1.9, 0.7)), Vector((xx, s * 1.9, 1.5)), width=0.12, depth=0.12, mat_idx=TD)
+        add_timber_beam(bm, Vector((bx0 + 0.6, s * 1.9, 1.45)), Vector((bx1 - 0.3, s * 1.9, 1.45)), width=0.1, depth=0.1, mat_idx=TD)
+        add_timber_beam(bm, Vector((bx1 - 0.3, s * 1.75, 0.7)), Vector((hl + 0.05, s * 2.75, 6.9)), width=0.07, depth=0.07, mat_idx=IR)
+        add_box(bm, hl + 0.01, s * 2.75, 6.9, 0.04, 0.3, 0.3, mat_idx=GL)
+
+    _lm_finish(bm, mat_list, "gate_krakow", "GateKrakow")
 
 # -------------------------------------------------------------
 # 24. Grodzka Gate (Brama Grodzka)
@@ -2756,38 +3357,82 @@ def build_grodzka_gate(mats):
 
     mat_list = [
         mats["brick_gothic"], mats["stone_limestone"], mats["roof_tile_red"],
-        mats["timber_dark"], mats["iron_wrought"], mats["plaster_white"]
+        mats["timber_dark"], mats["iron_wrought"], mats["plaster_white"],
+        mats["glass_dark"], mats["timber_plank"], mats["roof_shingle"], mats["gold_sign"]
     ]
+    BR, LS, RT, TD, IR, PL, GL, TP, SH, GD = range(10)
+    X, Y, Z = Vector((1.0, 0.0, 0.0)), Vector((0.0, 1.0, 0.0)), _LM_Z
 
-    # Grodzka Gate Tower: 9.5m wide x 11.0m deep x 18.0m high
-    # Ground arched passage
-    add_box(bm, 0, 0, 3.0, 9.5, 11.0, 6.0, mat_idx=1)
-    add_box(bm, 0, 0, 2.5, 4.0, 11.2, 5.0, mat_idx=3)
-    # Heavy oak portcullis
-    add_box(bm, 0, -4.5, 3.0, 3.8, 0.2, 4.0, mat_idx=4)
+    # Same orientation as the Kraków Gate: wall along Y, road along X, +X towards Castle Hill.
+    L, W, PW = 9.5, 9.0, 4.0
+    ZS, ZT, TOP = 3.4, 6.6, 13.6
+    hl, hw = L * 0.5, W * 0.5
+    _lm_gate_passage(bm, L, W, PW, ZS, ZT, BR, LS, LS, frame=0.4)
 
-    # 2 Upper brick defensive tiers
-    add_box(bm, 0, 0, 9.0, 9.0, 10.4, 6.0, mat_idx=0)
-    add_box(bm, 0, 0, 13.5, 9.6, 11.0, 1.4, mat_idx=1) # machicolation
+    # Heavy oak portcullis with iron-shod spikes; open gate leaves
+    gx = hl - 0.6
+    for k in range(8):
+        y = -1.75 + k * 0.5
+        add_timber_beam(bm, Vector((gx, y, 2.2)), Vector((gx, y, 6.0)), width=0.14, depth=0.14, mat_idx=TD)
+        add_timber_beam(bm, Vector((gx, y, 2.0)), Vector((gx, y, 2.2)), width=0.08, depth=0.08, mat_idx=IR)
+    for z in (2.4, 3.2, 4.0):
+        add_timber_beam(bm, Vector((gx + 0.1, -PW * 0.5, z)), Vector((gx + 0.1, PW * 0.5, z)), width=0.12, depth=0.12, mat_idx=TD)
+    for s in (-1.0, 1.0):
+        add_box(bm, -hl + 1.5, s * (PW * 0.5 - 0.08), 1.6, 1.8, 0.12, 3.2, mat_idx=TP)
 
-    # Hipped clay pantile roof
-    add_box(bm, 0, 0, 15.5, 9.4, 10.8, 2.6, mat_idx=2)
-    add_box(bm, 0, 0, 17.2, 5.0, 6.0, 1.8, mat_idx=2)
+    # Brick body: string courses, blind niches, small lancet windows, wall-walk door
+    add_box(bm, 0, 0, (ZT + TOP) * 0.5, L, W, TOP - ZT, mat_idx=BR)
+    for zb in (ZT, 10.1):
+        add_box(bm, 0, 0, zb, L + 0.2, W + 0.2, 0.25, mat_idx=LS)
+    for out, along, half in ((X, Y, hl), (-X, Y, hl), (-Y, X, hw), (Y, X, hw)):
+        base = out * half
+        if out.y < 0.5:
+            for o in (-2.0, 2.0):
+                _lm_blind(bm, base + along * o + Z * 6.95, along, out, 0.9, 2.4, PL)
+        for o in (-2.6, 0.0, 2.6):
+            _lm_lancet(bm, base + along * o + Z * 10.8, along, out, 0.55, 1.1, GL, LS, frame=0.12)
+    _lm_lancet(bm, Vector((0, hw, 8.0)), X, Y, 1.0, 1.7, TP, LS, frame=0.18, sill=False)
 
-    # Projecting wooden royal toll collector's booth (+X flank)
-    add_box(bm, 5.6, -3.0, 1.8, 2.4, 2.4, 3.6, mat_idx=3)
-    add_sloped_roof(bm, 5.6, -3.0, 3.6, 2.4, 2.4, 1.2, overhang=0.2, mat_idx=2)
-    # Toll clerk desk and ledger
-    add_box(bm, 5.6, -4.4, 1.0, 1.6, 0.6, 0.8, mat_idx=3)
+    # Machicolated overhanging parapet with loops, then a hipped tile roof
+    PO = 0.4
+    for s in (-1.0, 1.0):
+        for k in range(6):
+            add_box(bm, s * (hl + PO * 0.5), -hw + 0.6 + k * (W - 1.2) / 5, TOP - 0.25, PO, 0.35, 0.5, mat_idx=LS)
+            add_box(bm, -hl + 0.6 + k * (L - 1.2) / 5, s * (hw + PO * 0.5), TOP - 0.25, 0.35, PO, 0.5, mat_idx=LS)
+    pw_, pd_ = L + 2 * PO, W + 2 * PO
+    ZP = TOP + 1.4
+    _lm_parapet_rect(bm, 0, 0, TOP, pw_, pd_, ZP - TOP, 0.4, BR)
+    for s in (-1.0, 1.0):
+        for o in (-3.0, -1.0, 1.0, 3.0):
+            add_box(bm, s * (pw_ * 0.5 + 0.01), o, TOP + 0.75, 0.04, 0.25, 0.6, mat_idx=GL)
+            add_box(bm, o, s * (pd_ * 0.5 + 0.01), TOP + 0.75, 0.25, 0.04, 0.6, mat_idx=GL)
+    add_box(bm, 0, 0, ZP + 0.05, pw_ + 0.1, pd_ + 0.1, 0.1, mat_idx=LS)       # coping
+    r0, r1 = _lm_hip_roof(bm, 0, 0, ZP + 0.1, pw_, pd_, 6.2, RT, overhang=0.35)
+    for p in (r0, r1):
+        _lm_finial(bm, p.x, p.y, p.z, IR, GD, h=1.2)
 
-    bm.normal_update()
-    mesh = bpy.data.meshes.new("Mesh_GateGrodzka")
-    bm.to_mesh(mesh)
-    bm.free()
-    for m in mat_list: mesh.materials.append(m)
-    obj = bpy.data.objects.new("GateGrodzka", mesh)
-    bpy.context.collection.objects.link(obj)
-    export_object(obj, "gate_grodzka")
+    # Octagonal timber toll booth by the outer portal, with counter, scales and toll chest
+    bx, by = hl + 1.9, -3.6
+    _lm_ngon_prism(bm, bx, by, 0.0, 0.3, 1.5, 8, LS)
+    _lm_ngon_prism(bm, bx, by, 0.3, 2.9, 1.3, 8, TP)
+    for k in range(8):
+        a = math.pi / 8 + k * math.pi / 4
+        add_timber_beam(bm, Vector((bx + 1.31 * math.cos(a), by + 1.31 * math.sin(a), 0.3)),
+                        Vector((bx + 1.31 * math.cos(a), by + 1.31 * math.sin(a), 2.9)), width=0.14, depth=0.14, mat_idx=TD)
+    fl = 1.3 * math.cos(math.pi / 8)
+    _lm_lancet(bm, Vector((bx, by - fl, 1.2)), X, -Y, 0.8, 0.9, GL, TD, frame=0.1)
+    add_box(bm, bx, by - fl - 0.25, 1.15, 1.1, 0.5, 0.08, mat_idx=TD)                  # counter
+    add_timber_beam(bm, Vector((bx, by - fl - 0.3, 1.19)), Vector((bx, by - fl - 0.3, 1.75)), width=0.05, depth=0.05, mat_idx=IR)
+    add_timber_beam(bm, Vector((bx - 0.35, by - fl - 0.3, 1.75)), Vector((bx + 0.35, by - fl - 0.3, 1.75)), width=0.04, depth=0.04, mat_idx=IR)
+    for sx in (-0.35, 0.35):
+        _lm_ngon_prism(bm, bx + sx, by - fl - 0.3, 1.45, 1.5, 0.12, 6, IR)
+    _lm_lancet(bm, Vector((bx + fl, by, 0.3)), Y, X, 0.8, 1.6, TD, None)              # door
+    add_box(bm, bx + 1.6, by - 1.3, 0.25, 0.6, 0.4, 0.5, mat_idx=IR)                  # toll chest
+    _lm_ngon_prism(bm, bx, by, 2.9, 3.0, 1.45, 8, TD)
+    _lm_spire(bm, bx, by, 3.0, 1.75, 1.9, 8, SH, base_cap=False)
+    _lm_finial(bm, bx, by, 4.9, IR, GD, h=0.6)
+
+    _lm_finish(bm, mat_list, "gate_grodzka", "GateGrodzka")
 
 # -------------------------------------------------------------
 # 25. Dominican Monastery & Cloister Garden (Klasztor Dominikanów)
@@ -2798,51 +3443,82 @@ def build_monastery_cloister(mats):
 
     mat_list = [
         mats["brick_gothic"], mats["plaster_white"], mats["roof_tile_red"],
-        mats["stone_limestone"], mats["foliage_green"], mats["timber_dark"]
+        mats["stone_limestone"], mats["foliage_green"], mats["timber_dark"],
+        mats["glass_dark"], mats["timber_plank"], mats["copper_patina"],
+        mats["gold_sign"], mats["water_clean"], mats["iron_wrought"]
     ]
+    BR, PL, RT, LS, FG, TD, GL, TP, CU, GD, WA, IR = range(12)
+    X, Y, Z = Vector((1.0, 0.0, 0.0)), Vector((0.0, 1.0, 0.0)), _LM_Z
 
-    # Enclosed 4-sided quadrangle: 24.0m x 24.0m enclosing 12.0m x 12.0m inner quad
-    # 4 Cloister wings
-    wing_w = 5.5
-    wing_len = 24.0
-    wing_h = 7.5
+    # 24 m square quadrangle around a 13 m garth. N/S ranges (dormitory, refectory) are two
+    # storeys with crow-stepped gables; E/W ranges are one storey + attic, their roofs running
+    # into the N/S roofs. A 2 m vaulted cloister walk with pointed arcades lines the garth.
+    O, I, K = 12.0, 6.5, 8.5                    # outer half, garth half, walk back wall
+    Z1, ZN, ZE = 3.6, 7.5, 5.0                  # walk ceiling, N/S eaves, E/W eaves
+    for s in (-1.0, 1.0):
+        add_box(bm, 0, s * (K + O) * 0.5, Z1 * 0.5, 2 * O, O - K, Z1, mat_idx=BR)
+        add_box(bm, 0, s * (I + O) * 0.5, (Z1 + ZN) * 0.5, 2 * O, O - I, ZN - Z1, mat_idx=BR)
+        add_box(bm, s * (K + O) * 0.5, 0, Z1 * 0.5, O - K, 2 * K, Z1, mat_idx=BR)
+        add_box(bm, s * (I + O) * 0.5, 0, (Z1 + ZE) * 0.5, O - I, 2 * I, ZE - Z1, mat_idx=BR)
+        add_box(bm, 0, s * (O - 0.425), 0.3, 2 * O + 0.3, 1.15, 0.6, mat_idx=LS)    # outer plinth
+        add_box(bm, s * (O - 0.425), 0, 0.3, 1.15, 2 * O + 0.3 - 2.3, 0.6, mat_idx=LS)
 
-    # North and South wings
-    for wy in [-9.25, 9.25]:
-        add_box(bm, 0, wy, wing_h * 0.5, wing_len, wing_w, wing_h, mat_idx=0)
-        add_sloped_roof(bm, 0, wy, wing_h, wing_len, wing_w, 4.0, overhang=0.3, mat_idx=2)
+    # Cloister arcades (the N/S arcades carry the corner piers)
+    piers = [-I - 0.3 + k * (2 * I + 0.6) / 6 for k in range(7)]
+    bays = [(a + b) * 0.5 for a, b in zip(piers, piers[1:])]
+    for s in (-1.0, 1.0):
+        _lm_arcade(bm, (0, s * I, 0), X, -s * Y, piers, 0.6, 0.6, 2.2, Z1, BR, mat_cap=LS)
+        _lm_arcade(bm, (s * I, 0, 0), Y, -s * X, piers, 0.6, 0.6, 2.2, Z1, BR, mat_cap=LS, end_piers=False)
+        for bx in bays:                                                       # upper-floor cells
+            _lm_lancet(bm, Vector((bx, s * I, 4.6)), X, -s * Y, 0.6, 1.2, GL, LS, frame=0.1)
+        _lm_lancet(bm, Vector((1.1, s * K, 0.0)), X, -s * Y, 1.2, 2.0, TP, LS, frame=0.18, sill=False)
+        _lm_lancet(bm, Vector((s * K, -1.1, 0.0)), Y, -s * X, 1.2, 2.0, TP, LS, frame=0.18, sill=False)
 
-    # East and West wings (connecting)
-    for wx in [-9.25, 9.25]:
-        add_box(bm, wx, 0, wing_h * 0.5, wing_w, 13.0, wing_h, mat_idx=0)
-        add_sloped_roof(bm, wx, 0, wing_h, wing_w, 13.0, 4.0, overhang=0.3, mat_idx=2)
+    # Outer facades: buttressed south front with the gate, windows elsewhere
+    for bx in (-10.5, -7.5, -4.5, -1.5, 1.5, 4.5, 7.5, 10.5):
+        _lm_buttress(bm, (bx, -O), -Y, X, 0.6, [(3.0, 0.8), (2.8, 0.45)], BR)
+    for s in (-1.0, 1.0):
+        for wx in (-9.0, -6.0, -3.0, 0.0, 3.0, 6.0, 9.0):
+            _lm_lancet(bm, Vector((wx, s * O, 4.4)), X, s * Y, 0.9, 1.7, GL, LS, frame=0.14)
+            if wx != 0.0:
+                _lm_lancet(bm, Vector((wx, s * O, 1.0)), X, s * Y, 0.6, 1.0, GL, LS, frame=0.12)
+        for wy in (-4.5, -1.5, 1.5, 4.5):
+            _lm_lancet(bm, Vector((s * O, wy, 1.0)), Y, s * X, 0.7, 1.4, GL, LS, frame=0.12)
+        for wy in (-9.25, 9.25):
+            _lm_lancet(bm, Vector((s * O, wy, 4.4)), Y, s * X, 0.9, 1.7, GL, LS, frame=0.14)
+    _lm_blind(bm, Vector((0, -O, 0.0)), X, -Y, 2.4, 2.6, LS, proud=0.2)                 # gate portal
+    _lm_lancet(bm, Vector((0, -O - 0.2, 0.0)), X, -Y, 1.5, 2.3, TP, LS, frame=0.22, sill=False)
 
-    # Inner pointed arcades facing the courtyard
-    for wy in [-6.4, 6.4]:
-        for wx in [-4.0, -1.5, 1.5, 4.0]:
-            add_box(bm, wx, wy, 2.2, 1.4, 0.15, 3.2, mat_idx=1)
-    for wx in [-6.4, 6.4]:
-        for wy in [-3.0, 0.0, 3.0]:
-            add_box(bm, wx, wy, 2.2, 0.15, 1.4, 3.2, mat_idx=1)
+    # Roofs: N/S saddles between crow-stepped gables; E/W saddles dying into them
+    for s in (-1.0, 1.0):
+        _lm_saddle_roof(bm, 0, s * (I + O) * 0.5, ZN, 2 * O - 1.0, O - I, 4.5, 'x', RT, overhang=0.35)
+        for sx in (-1.0, 1.0):
+            _lm_crow_gable(bm, (sx * (O - 0.5), s * (I + O) * 0.5), Y, sx * X, ZN, O - I, 3, 1.7, BR, PL, thick=0.5)
+        _lm_saddle_roof(bm, s * (I + O) * 0.5, 0, ZE, 14.4, O - I, 3.5, 'y', RT, overhang=0.35)
 
-    # INNER CLOISTER GARDEN: 6 raised geometric timber herb beds
-    for hx in [-3.0, 3.0]:
-        for hy in [-3.0, 0.0, 3.0]:
-            add_box(bm, hx, hy, 0.35, 2.2, 1.8, 0.4, mat_idx=5) # timber bed rim
-            add_box(bm, hx, hy, 0.55, 2.0, 1.6, 0.2, mat_idx=4) # medicinal herb greenery
+    # Bell turret (sygnaturka) on the south range
+    tz = ZN + 4.5
+    _lm_ngon_prism(bm, 3.0, -(I + O) * 0.5, tz - 0.8, tz + 1.6, 0.55, 8, CU)
+    _lm_spire(bm, 3.0, -(I + O) * 0.5, tz + 1.6, 0.68, 2.8, 8, CU, base_cap=False)
+    _lm_finial(bm, 3.0, -(I + O) * 0.5, tz + 4.4, IR, GD, h=0.9, cross=True)
 
-    # Central carved limestone fountain basin
-    add_cylinder(bm, 0, 0, 0.5, radius=1.2, height=1.0, segs=8, mat_idx=3)
-    add_box(bm, 0, 0, 1.4, 0.25, 0.25, 1.2, mat_idx=3) # central fountain pillar
+    # Garth: crossing gravel paths, eight raised herb beds, central fountain
+    add_box(bm, 0, 0, 0.025, 2 * I, 1.2, 0.05, mat_idx=LS)
+    add_box(bm, 0, 0, 0.03, 1.0, 2 * I, 0.06, mat_idx=LS)
+    for bi, bx in enumerate((-4.4, -1.5, 1.5, 4.4)):
+        for bj, by in enumerate((-3.4, 3.4)):
+            add_box(bm, bx, by, 0.2, 2.2, 1.8, 0.4, mat_idx=TD)
+            add_box(bm, bx, by, 0.45, 2.0, 1.6, 0.1, mat_idx=FG)
+            for ci, cx in enumerate((-0.6, 0.0, 0.6)):
+                for cj, cy in enumerate((-0.4, 0.4)):
+                    hgt = 0.18 + 0.12 * ((bi * 3 + bj * 5 + ci * 2 + cj * 7) % 4)
+                    add_box(bm, bx + cx, by + cy, 0.5 + hgt * 0.5, 0.42, 0.42, hgt, mat_idx=FG)
+    _lm_ngon_prism(bm, 0, 0, 0.0, 0.7, 1.35, 8, LS)
+    _lm_ngon_prism(bm, 0, 0, 0.55, 0.75, 1.12, 8, WA)
+    _lm_ngon_prism(bm, 0, 0, 0.75, 1.9, 0.18, 8, LS)
+    _lm_ngon_prism(bm, 0, 0, 1.5, 1.7, 0.55, 8, LS, r_top=0.62)
 
-    bm.normal_update()
-    mesh = bpy.data.meshes.new("Mesh_MonasteryCloister")
-    bm.to_mesh(mesh)
-    bm.free()
-    for m in mat_list: mesh.materials.append(m)
-    obj = bpy.data.objects.new("MonasteryCloister", mesh)
-    bpy.context.collection.objects.link(obj)
-    export_object(obj, "monastery_cloister")
+    _lm_finish(bm, mat_list, "monastery_cloister", "MonasteryCloister")
 
 # -------------------------------------------------------------
 # 26. Castle Archery & Training Yard (Strzelnica Zamkowa)
