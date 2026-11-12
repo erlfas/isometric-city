@@ -4,7 +4,8 @@ import type { CityPlan, Citizen } from '../types';
 import { TextureLibrary } from './texture-library';
 import { CitizenCrowd } from './citizen-crowd';
 import { DoorLeaves } from './door-leaves';
-import type { Door } from './building-anchors';
+import type { Building, Door } from './building-anchors';
+import { Cutaway, type CutTarget } from './cutaway';
 import { parcelHash, parcelKind } from './parcel-kind';
 import { StaticBatches, type PlacedModel, type Placement, type Tint } from './static-batches';
 
@@ -76,6 +77,11 @@ export const LINEUP_STEP = 1.1;
 export const LINEUP_ROW = 6; // wider rows run behind the walls around debug-hooks' LINEUP_SPOT
 export const LINEUP_ROW_GAP = 3.5;
 
+/** Cutaway: walls kept up to this height above the floor of the entered storey (m). */
+const CUT_STOREY = 2.2;
+/** How far a building between the camera and the followed citizen fades (1 = gone). */
+const OCCLUDER_FADE = 0.85;
+
 export class ThreeIsometricRenderer {
   public scene: THREE.Scene;
   public camera: THREE.OrthographicCamera;
@@ -106,6 +112,12 @@ export class ThreeIsometricRenderer {
   private doorLeaves: DoorLeaves;
   /** Buildings, walls, stalls, trees: instanced per chunk (static-batches.ts). */
   private statics = new StaticBatches();
+  private cutaway: Cutaway;
+  private cutTargets = new Map<number, CutTarget>();
+  private cutRay = new THREE.Ray();
+  private cutHit = new THREE.Vector3();
+  /** Building looked into by hand (tap, debug hash `cutaway=`); cut away like a followed citizen's. */
+  public peek: Building | null = null;
 
   // Speech bubbles data
   public activeBubbles: { id: string; text: string; x: number; y: number; z: number; timer: number }[] = [];
@@ -123,6 +135,7 @@ export class ThreeIsometricRenderer {
     this.scene.background = new THREE.Color(0x4a6572); // Medieval daylight sky
     this.crowd = new CitizenCrowd(this.scene);
     this.doorLeaves = new DoorLeaves(this.scene, this.textures);
+    this.cutaway = new Cutaway(this.scene, this.statics);
 
     // Orthographic Isometric Camera
     const aspect = canvas.clientWidth / canvas.clientHeight || 16 / 9;
@@ -731,6 +744,7 @@ export class ThreeIsometricRenderer {
     }
 
     const batches = this.statics.build(this.scene);
+    this.cutaway.prewarm(this.renderer, this.camera).catch((e) => console.warn('[cutaway] prewarm failed', e));
     console.log(`[ThreeRenderer] City populated: ${this.statics.placements.length} models in ${batches} instanced batches.`);
   }
 
@@ -795,6 +809,66 @@ export class ThreeIsometricRenderer {
   /** Leaves and openings of the doors the simulation has open (sim.activeDoors). */
   public updateDoors(doors: readonly Door[], hour: number): void {
     this.doorLeaves.update(doors, hour);
+  }
+
+  /**
+   * Cutaway (cutaway.ts): `inside` = the building the followed citizen is in, entered through
+   * `door`; else the peeked building. Its roof and everything above the ground storey fade
+   * out. While following someone, buildings between them and the camera dither to ghosts.
+   */
+  public updateCutaway(dt: number, inside: { b: Building; door: Door } | null): void {
+    const t = this.cutTargets;
+    t.clear();
+    const room = inside ?? (this.peek && this.peek.doors.length ? { b: this.peek, door: this.peek.doors[0] } : null);
+    const o = this.cutRay.origin;
+    let focus = false;
+    if (room) {
+      const d = room.door;
+      const fill = new THREE.Vector3(d.x - d.nx * 3, d.y + 1.8, d.z - d.nz * 3);
+      t.set(room.b.index, { cutY: d.y + CUT_STOREY, fade: 1, fill });
+      o.set(fill.x, d.y + 1.1, fill.z);
+      focus = true;
+    }
+    const c = this.followingCitizen;
+    if (c) {
+      o.set(c.currentX ?? 0, (c.y ?? 0) + 1.1, c.currentZ ?? 0);
+      focus = true;
+    }
+    if (focus) {
+      // Line of sight from the person (or the room) toward the camera; anything it passes
+      // through is in the way.
+      const yaw = this.currentRotationAngle + Math.PI / 4, pitch = 0.615479;
+      this.cutRay.direction.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
+      const bounds = this.statics.bounds;
+      for (let i = 0; i < bounds.length; i++) {
+        if (t.has(i)) continue;
+        const hit = this.cutRay.intersectBox(bounds[i], this.cutHit);
+        if (hit && hit.distanceTo(this.cutRay.origin) < 60) t.set(i, { cutY: -1e4, fade: OCCLUDER_FADE });
+      }
+    }
+    this.cutaway.set(t);
+    this.cutaway.update(dt);
+  }
+
+  /** Building whose bounds a screen point's ray hits first (tap to look inside). */
+  public pickBuilding(screenX: number, screenY: number, buildings: readonly Building[]): Building | null {
+    const rect = this.canvas.getBoundingClientRect();
+    this.ndcVec.set(((screenX - rect.left) / rect.width) * 2 - 1, -((screenY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(this.ndcVec, this.camera);
+    let best: Building | null = null, bestD = Infinity;
+    for (const b of buildings) {
+      if (!b.doors.length) continue;
+      const hit = this.raycaster.ray.intersectBox(this.statics.bounds[b.index], this.cutHit);
+      if (!hit) continue;
+      const dist = hit.distanceTo(this.raycaster.ray.origin);
+      if (dist < bestD) { bestD = dist; best = b; }
+    }
+    return best;
+  }
+
+  /** Placements cut away now (debug). */
+  public cutawayActive(): number[] {
+    return this.cutaway.active;
   }
 
   /** Crowd detail level, citizens drawn, triangles per pass (debug stats). */

@@ -610,6 +610,19 @@ export class SimulationEngine {
     this.wake(d);
   }
 
+  /** The building a citizen is in (hidden there) and the door they came in by, or null. */
+  public insideOf(c: Citizen): { b: Building; door: Door } | null {
+    const i = this.citizens.indexOf(c);
+    const ag = this.agents[i];
+    return ag && ag.phase === Phase.INSIDE && ag.inB && ag.inDoor ? { b: ag.inB, door: ag.inDoor } : null;
+  }
+
+  /** Everyone inside a building now (the cutaway shows them). */
+  public occupants(b: Building, out: Citizen[] = []): Citizen[] {
+    for (const ag of this.agents) if (ag.phase === Phase.INSIDE && ag.inB === b) out.push(ag.c);
+    return out;
+  }
+
   /** Debug: hold a door open (or let it shut again). */
   public pinDoor(d: Door, on: boolean): void {
     d.pinned = on;

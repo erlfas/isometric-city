@@ -16,7 +16,10 @@ import type { Soundscape } from './engine/audio';
  *   &door=house_baker[,n[,k[,zoom]]]  camera on the k-th door of the n-th placed building of a
  *                                    model, from the side it faces; the door is held open
  *   &follow=walk[,zoom]             camera follows the first visible walking citizen (polls
- *                                    until one walks); or follow=<index|id>[,zoom]
+ *                                    until one walks); or follow=<index|id>[,zoom]; follow=inside
+ *                                    picks someone indoors (the cutaway opens their building)
+ *   &cutaway=<parcelId | model[,n[,zoom[,quadrant]]]>   look into a building (roof faded,
+ *                                    people inside shown), camera on it unless cam/model given
  *
  * window.__lublin: { renderer, sim, audio, ready, snapTo(x,z,zoom?,q?), find(model), stats() }
  *   audio.debugState(): context state, music, crowd level, audible workshops
@@ -62,6 +65,16 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
   (window as unknown as { __lublin: typeof api }).__lublin = api;
 
   const num = (s: string | undefined) => (s === undefined || s === '' ? undefined : Number(s));
+  /** Camera quadrant that looks at a wall with outward normal (nx, nz) most squarely. */
+  const facing = (nx: number, nz: number) => {
+    let q = 0, best = -2;
+    for (let i = 0; i < 4; i++) {
+      const yaw = (i * Math.PI) / 2 + Math.PI / 4;
+      const dot = nx * Math.sin(yaw) + nz * Math.cos(yaw);
+      if (dot > best) { best = dot; q = i; }
+    }
+    return q;
+  };
 
   const apply = () => {
     const params = new URLSearchParams(location.hash.slice(1));
@@ -87,12 +100,7 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
       const b = sim.buildings.byModel.get(name)?.[num(n) ?? 0];
       const d = b?.doors[num(k) ?? 0];
       if (d) {
-        let q = 0, best = -2;
-        for (let i = 0; i < 4; i++) {
-          const yaw = (i * Math.PI) / 2 + Math.PI / 4;
-          const dot = d.nx * Math.sin(yaw) + d.nz * Math.cos(yaw);
-          if (dot > best) { best = dot; q = i; }
-        }
+        const q = facing(d.nx, d.nz);
         // Centre the screen on the doorway's middle: the ground point behind it on the
         // camera ray (pitch 35.26 deg: 1.414 m back per metre up).
         const yaw = (q * Math.PI) / 2 + Math.PI / 4;
@@ -101,12 +109,25 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
         sim.pinDoor(d, true);
       } else console.warn(`[debug] no door ${k ?? 0} on building ${n ?? 0} of "${name}"`);
     }
+    const cut = params.get('cutaway');
+    renderer.peek = null;
+    if (cut) {
+      // A parcel id, or model[,n]: look into that building (camera on it unless cam/model set).
+      const [name, n, zoom, q] = cut.split(',');
+      const b = sim.buildings.byParcel.get(name) ?? sim.buildings.byModel.get(name)?.[num(n) ?? 0];
+      if (b) {
+        renderer.peek = b;
+        const d = b.doors[0];
+        if (!cam && !model) renderer.snapTo(b.x, b.z, num(zoom) ?? 22, num(q) ?? (d ? facing(d.nx, d.nz) : undefined));
+      } else console.warn(`[debug] cutaway: no building "${cut}"`);
+    }
     const follow = params.get('follow');
     if (follow) {
       // A citizen index / id, or "walk" = the first visible citizen walking (waits for one).
       const [who, zoom] = follow.split(',');
       const pick = () => (who === 'walk'
         ? sim.citizens.find((c) => c.isMoving && !c.hidden)
+        : who === 'inside' ? sim.citizens.find((c) => c.hidden && sim.insideOf(c))
         : /^\d+$/.test(who) ? sim.citizens[Number(who)] : sim.citizens.find((c) => c.id === who));
       let tries = 0;
       const t = setInterval(() => {

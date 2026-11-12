@@ -46,6 +46,8 @@ export interface Spot { x: number; y: number; z: number; yaw: number; tag: strin
 
 export interface Building {
   name: string;
+  /** Placement index (StaticBatches order): the cutaway hides and redraws it. */
+  index: number;
   parcelId?: string;
   x: number; y: number; z: number;
   doors: Door[];
@@ -78,7 +80,8 @@ export class BuildingIndex {
 
   constructor(placed: PlacedModel[]) {
     const v = new THREE.Vector3();
-    for (const pm of placed) {
+    for (let index = 0; index < placed.length; index++) {
+      const pm = placed[index];
       const raw = parse(pm.template.userData?.anchors);
       if (!raw) continue;
       const e = pm.matrix.elements;
@@ -88,7 +91,7 @@ export class BuildingIndex {
         return [wx / l, wz / l];
       };
       v.setFromMatrixPosition(pm.matrix);
-      const b: Building = { name: pm.template.name, parcelId: pm.parcelId, x: v.x, y: v.y, z: v.z, doors: [], spots: [] };
+      const b: Building = { name: pm.template.name, index, parcelId: pm.parcelId, x: v.x, y: v.y, z: v.z, doors: [], spots: [] };
       for (const d of raw.doors ?? []) {
         v.fromArray(d.p).applyMatrix4(pm.matrix);
         const [nx, nz] = dir(d.n[0], d.n[2]);

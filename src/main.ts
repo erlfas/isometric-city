@@ -1,4 +1,4 @@
-import type { CityPlan } from './types';
+import type { CityPlan, Citizen } from './types';
 import { ThreeIsometricRenderer } from './engine/three-renderer';
 import { SpatialHashGrid } from './engine/spatial-hash';
 import { SimulationEngine } from './engine/simulation';
@@ -177,10 +177,14 @@ async function bootstrap() {
       return;
     }
 
-    // 2. Raycast to 3D ground plane for parcel/building picking
+    // 2. A building under the pointer: look inside (tap it again to close it), inspect its parcel.
+    //    Otherwise raycast to the ground plane for parcel picking.
+    const picked = threeRenderer.pickBuilding(screenX, screenY, sim.buildings.all);
+    threeRenderer.peek = picked && picked !== threeRenderer.peek ? picked : null;
     const groundHit = threeRenderer.screenToGround(screenX, screenY);
-    if (groundHit) {
-      const hitParcel = spatialGrid.findParcelAt(groundHit.x, groundHit.z);
+    if (picked || groundHit) {
+      const hitParcel = (picked?.parcelId ? sim.parcelMap.get(picked.parcelId) : undefined)
+        ?? (groundHit ? spatialGrid.findParcelAt(groundHit.x, groundHit.z) : null);
       if (hitParcel) {
         threeRenderer.hoveredCitizen = null;
         ui.inspectParcel(hitParcel);
@@ -233,8 +237,10 @@ async function bootstrap() {
   });
 
   // Desktop hover check (only when using a mouse pointer)
+  const mouse = { x: 0, y: 0 };
   window.addEventListener('pointermove', (e) => {
     if (e.pointerType !== 'mouse') return;
+    mouse.x = e.clientX; mouse.y = e.clientY;
     const rect = webglCanvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
@@ -315,10 +321,20 @@ async function bootstrap() {
     else if (e.key === 'q' || e.key === 'Q') { threeRenderer.rotateCounterClockwise(); updateCompassUI(); }
     else if (e.key === 'e' || e.key === 'E') { threeRenderer.rotateClockwise(); updateCompassUI(); }
     else if (e.key === ' ') sim.togglePause();
+    else if ((e.key === 'c' || e.key === 'C') && !e.repeat) {
+      // Hold C: look into the building under the mouse.
+      threeRenderer.peek = threeRenderer.pickBuilding(mouse.x, mouse.y, sim.buildings.all);
+      peekByKey = true;
+    }
+  });
+  let peekByKey = false;
+  window.addEventListener('keyup', (e) => {
+    if ((e.key === 'c' || e.key === 'C') && peekByKey) { threeRenderer.peek = null; peekByKey = false; }
   });
 
   // Main Loop
   let lastTime = performance.now();
+  const shownInside: Citizen[] = [];
 
   function animate(now: number) {
     const dt = Math.min((now - lastTime) / 1000.0, 0.1);
@@ -330,7 +346,17 @@ async function bootstrap() {
     // 2. Update Three.js camera & lighting
     threeRenderer.updateCamera(dt);
     threeRenderer.updateDayNightLighting(sim.simTimeHours);
+    // Cutaway: the followed citizen's building (or the peeked one) opens up, and the people
+    // inside it - hidden while indoors - are drawn for this frame.
+    const followed = threeRenderer.followingCitizen;
+    const inside = followed ? sim.insideOf(followed) : null;
+    threeRenderer.updateCutaway(dt, inside);
+    const room = inside?.b ?? threeRenderer.peek;
+    shownInside.length = 0;
+    if (room) sim.occupants(room, shownInside);
+    for (const c of shownInside) c.hidden = false;
     threeRenderer.updateCitizens(sim.citizens, dt);
+    for (const c of shownInside) c.hidden = true;
     threeRenderer.updateDoors(sim.activeDoors, sim.simTimeHours);
     threeRenderer.updateSpeechBubbles(dt);
     listener.x = threeRenderer.targetPos.x;

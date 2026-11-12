@@ -42,6 +42,7 @@ Commands:
 - **3D Runtime Engine**:
   - [`src/engine/three-renderer.ts`](src/engine/three-renderer.ts): Three.js orthographic renderer, dynamic parcel dispatch, citizen archetype instancing, shadows. Buildings and props are drawn as one `BatchedMesh` per material ([`static-batches.ts`](src/engine/static-batches.ts)): place them with `put()`, not `scene.add(clone)`.
   - [`src/engine/simulation.ts`](src/engine/simulation.ts): 1,500-citizen schedule, routing (`nav-grid.ts`, doors from `building-anchors.ts`) and steering (time-to-collision avoidance, couples, gaits; tuning constants at the top), door queues. Live numbers: `__lublin.nav()` (`stuckNow`, `pairs`, `stepMs`, `doorsOpen`, `queueing`). Door leaves and night glow: `door-leaves.ts`; look at one with hash `door=house_baker,0` (held open).
+  - [`src/engine/cutaway.ts`](src/engine/cutaway.ts): looking into buildings. The followed citizen's building (or one tapped / under the mouse while C is held) is hidden in the batches and redrawn as a copy whose roof and upper storeys dither out; back faces become inner walls and floor. Buildings between the camera and the followed citizen dither to ghosts. Hashes `cutaway=house_baker,0` and `follow=inside`.
   - [`src/engine/audio.ts`](src/engine/audio.ts): music (`music/`) and the synthesised positional soundscape (recipes in `sound-recipes.ts`). Which building a parcel is drawn as (shared by renderer and audio): `parcel-kind.ts`.
   - [`src/types.ts`](src/types.ts): TypeScript interfaces for `Parcel`, `Citizen`, `CityPlan`.
 - **Reference Photos & Artwork**:
