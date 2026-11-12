@@ -9,6 +9,8 @@ import type { Citizen } from '../types';
  * plus scene extras `kit` = JSON {pivots, groups, slots, anim}. Each citizen gets a
  * deterministic look from its id: one option per variant group, one palette colour per
  * Slot_* material. Parts swing about their pivots for walking and work loops.
+ * Each frame only citizens in view are packed into the front of the instance buffers
+ * (Slot holds each piece's tint so colours move with them); instance indices are not stable.
  * Legacy single-mesh GLBs (no extras) are drawn as one rigid `body` part.
  */
 
@@ -45,10 +47,13 @@ interface Look {
   height: number;
 }
 
+/** One mesh piece a citizen wears: which InstancedMesh, which part it moves with, its tint. */
 interface Slot {
-  arr: Float32Array;
-  offset: number;
+  mesh: number;
   part: PartIdx;
+  r: number;
+  g: number;
+  b: number;
 }
 
 interface Motion {
@@ -61,6 +66,9 @@ interface Motion {
 
 const TIER: Record<string, string> = { plebeian: 'p', artisan: 'a', burgher: 'b', patrician: 'r' };
 const STRIDE = 1.5; // metres per full gait cycle (two steps)
+// Citizens whose bounding sphere misses the view are not drawn. The radius covers the
+// figure plus its shadow reaching into the view from just off-screen.
+const CULL_RADIUS = 3.5;
 
 function hashId(id: string): number {
   let h = 2166136261;
@@ -96,6 +104,9 @@ const _s = new THREE.Vector3();
 const _root = new THREE.Matrix4();
 const _local = new THREE.Matrix4();
 const _parts = PARTS.map(() => new THREE.Matrix4());
+const _frustum = new THREE.Frustum();
+const _viewProj = new THREE.Matrix4();
+const _sphere = new THREE.Sphere(new THREE.Vector3(), CULL_RADIUS);
 
 /** out = T(0,py,pz) * R(pitch about X, yaw about Y) * T(0,-py,-pz) */
 function pivotRotation(out: THREE.Matrix4, py: number, pz: number, pitch: number, yaw: number): void {
@@ -117,6 +128,8 @@ export class CitizenCrowd {
   private phaseOffset: number[] = [];
   private looks: { arch: Archetype; look: Look }[] = [];
   private posed: { ids: Set<string>; yaw: number; walk: boolean } | null = null;
+  /** Per mesh: instances written this frame, and its matrix / colour arrays. */
+  private buffers = { counts: new Int32Array(0), mats: [] as Float32Array[], cols: [] as Float32Array[] };
 
   /** Debug: hold these citizens at a fixed heading, optionally walking in place (lineups). */
   pose(ids: Set<string>, yaw: number, walk: boolean): void {
@@ -226,7 +239,9 @@ export class CitizenCrowd {
         mesh.receiveShadow = true;
         mesh.frustumCulled = false;
         mesh.name = `${arch.name}:${PARTS[piece.part]}`;
-        list.forEach(([ci, look], n) => {
+        mesh.setColorAt(0, tint.set(0xffffff)); // allocates instanceColor; update() fills it
+        const meshIdx = this.meshes.length;
+        for (const [ci, look] of list) {
           if (piece.slot) {
             tint.set(0xffffff);
             const col = look.colors[piece.slot];
@@ -235,15 +250,18 @@ export class CitizenCrowd {
             const v = 0.92 + ((ci * 2654435761) % 1000) / 1000 * 0.12; // grime / wear
             tint.setRGB(v, v, v);
           }
-          mesh.setColorAt(n, tint);
-          this.slots[ci].push({ arr: mesh.instanceMatrix.array as Float32Array, offset: n * 16, part: piece.part });
-        });
-        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+          this.slots[ci].push({ mesh: meshIdx, part: piece.part, r: tint.r, g: tint.g, b: tint.b });
+        }
         this.scene.add(mesh);
         this.meshes.push(mesh);
       });
     }
 
+    this.buffers = {
+      counts: new Int32Array(this.meshes.length),
+      mats: this.meshes.map((m) => m.instanceMatrix.array as Float32Array),
+      cols: this.meshes.map((m) => m.instanceColor!.array as Float32Array),
+    };
     this.motion = citizens.map((c, i) => this.motion[i] ?? {
       yaw: (this.phaseOffset[i] % 6.28),
       phase: 0,
@@ -254,11 +272,16 @@ export class CitizenCrowd {
     this.builtFor = citizens;
   }
 
-  update(citizens: Citizen[], archetypeOf: (c: Citizen) => string, dt: number, now: number): void {
+  /** Pose every citizen in view of `camera` and pack them into the instance buffers. */
+  update(citizens: Citizen[], archetypeOf: (c: Citizen) => string, dt: number, now: number,
+    camera: THREE.Camera): void {
     if (!this.archetypes.size) return;
     if (this.builtFor !== citizens) this.build(citizens, archetypeOf);
     const looks = this.looks;
     const k = Math.min(1, dt * 12);
+    _frustum.setFromProjectionMatrix(_viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    const { counts, mats, cols } = this.buffers;
+    counts.fill(0);
 
     for (let i = 0; i < citizens.length; i++) {
       const slots = this.slots[i];
@@ -289,6 +312,9 @@ export class CitizenCrowd {
         if (moving) m.phase += dt * 1.3 / STRIDE * Math.PI * 2; // 1.3 m/s in place
       }
       m.amp += ((moving ? 1 : 0) - m.amp) * Math.min(1, dt * 6);
+
+      _sphere.center.set(x, 0.9, z);
+      if (!_frustum.intersectsSphere(_sphere)) continue;
 
       // Pose: angles in radians, negative pitch = swing forward.
       const t = now + this.phaseOffset[i];
@@ -344,8 +370,24 @@ export class CitizenCrowd {
         pivotRotation(_local, pv[p][0], pv[p][1], angles[p][0], angles[p][1]);
         _parts[p].multiplyMatrices(p >= 4 ? _root : _parts[0], _local);
       }
-      for (const sl of slots) sl.arr.set(_parts[sl.part].elements, sl.offset);
+      for (const sl of slots) {
+        const n = counts[sl.mesh]++;
+        mats[sl.mesh].set(_parts[sl.part].elements, n * 16);
+        const col = cols[sl.mesh];
+        col[n * 3] = sl.r;
+        col[n * 3 + 1] = sl.g;
+        col[n * 3 + 2] = sl.b;
+      }
     }
-    for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;
+    this.meshes.forEach((mesh, j) => {
+      mesh.count = counts[j];
+      mesh.visible = counts[j] > 0;
+      mesh.instanceMatrix.clearUpdateRanges();
+      mesh.instanceMatrix.addUpdateRange(0, counts[j] * 16);
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.instanceColor!.clearUpdateRanges();
+      mesh.instanceColor!.addUpdateRange(0, counts[j] * 3);
+      mesh.instanceColor!.needsUpdate = true;
+    });
   }
 }

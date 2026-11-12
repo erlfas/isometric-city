@@ -939,7 +939,8 @@ export class ThreeIsometricRenderer {
   }
 
   public updateCitizens(citizens: Citizen[], dt: number): void {
-    this.crowd.update(citizens, (c) => this.getCitizenArchetype(c), dt, performance.now() * 0.001);
+    this.camera.updateMatrixWorld();
+    this.crowd.update(citizens, (c) => this.getCitizenArchetype(c), dt, performance.now() * 0.001, this.camera);
   }
 
   public updateCamera(dt: number): void {

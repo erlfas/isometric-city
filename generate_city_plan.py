@@ -836,6 +836,13 @@ def generate_lublin_city_plan():
                 carried_item = "Burlap Sack & Whetstone"
             wallet = random.randint(10, 350)
 
+        # Watch, clergy and long-distance merchants of 1392 were men. The replacement name
+        # comes from its own RNG so the main stream (every other citizen and parcel) is unchanged.
+        if (is_visitor or is_guard or is_monk) and not is_male:
+            is_male = True
+            first_name = random.Random(c_idx).choice(FIRST_NAMES_MALE)
+            full_name = f"{first_name} {surname}"
+
         # Register workplace
         for p in parcels:
             if p["id"] == work_p_id:

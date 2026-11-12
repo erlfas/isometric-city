@@ -14,6 +14,7 @@ Legacy single-mesh characters (`CHARACTER_BUILDERS`) still render as one rigid `
 - **Parts**: `body head arm_L arm_R leg_L leg_R`; each swings about `BASE_PIVOTS`. Geometry that must move with a limb (tools, gloves, sleeves) goes in that limb's part.
 - **Variants**: `kit.option(group, opt, w_male, w_female)` plus geometry in `kit.bm(part, "group:opt")`. Combine conditions with `+` (`"apron:bib+sex:f"`). An option with no geometry (`hat:bare`) just draws nothing. Shells that stack (hair < coif < hood) need increasing radii.
 - **Colours**: dyeable surfaces use `kit.mat("slot:<name>")` plus `kit.slot(name, palette)`; palette rows are `[sRGB hex, weight, tiers]` with tiers `p a b r` = plebeian, artisan, burgher, patrician. Fixed materials (`FIXED_MATS`) are sRGB too; `create_mat` linearises.
+- **Readability**: metallic ≤ 0.3 (no environment map, so metal renders black); every head cloth gets `add_fringe`. Why: `KEY_FINDINGS.md` §18.6.
 - **Trade signature first**: everything a viewer uses to recognise the trade (apron, tool, boots) is base geometry; everything else varies.
 - **Work loop**: set `kit.anim = {"work": "<name>"}` and add the pose to `CitizenCrowd.update`. Lean only the upper body.
 - **Budget**: `check_models.py` enforces base and per-variant triangle limits.

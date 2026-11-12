@@ -682,6 +682,8 @@ UNDYED = [["#8a7f6a", 3, "pa"], ["#6f6552", 3, "pa"], ["#9b927e", 2, "pab"], ["#
 DYED = [["#5f6b3a", 2, "ab"], ["#4b5a6e", 2, "abr"], ["#7a3a2c", 2, "abr"],
         ["#8a6a2e", 2, "ab"], ["#3e4f3a", 1, "abr"], ["#2f3f63", 1, "br"], ["#8c2f2a", 1, "br"]]
 LINEN = [["#e6dfcf", 3, "pabr"], ["#d6ccb4", 3, "pabr"], ["#c7bba0", 2, "pa"]]
+KERCHIEF = LINEN[1:] + [["#b9a27a", 2, "pa"], ["#a86656", 1, "ab"], ["#7e8ea3", 1, "abr"],
+                        ["#b8963f", 1, "ab"]]   # unbleached, madder, woad, weld
 HOSE = [["#4f4a3e", 3, "pa"], ["#5d4a36", 2, "pab"], ["#3b3f45", 2, "abr"], ["#6e2f28", 1, "br"]]
 LEATHER = [["#3a2a1c", 3, "pabr"], ["#4d3622", 2, "pabr"], ["#2b211a", 2, "pabr"]]
 OILED = [["#24201c", 3, "pabr"], ["#2f2a24", 2, "pabr"], ["#3a2c22", 2, "pabr"]]
@@ -737,7 +739,9 @@ def get_fixed_mats():
     FIXED_MATS.update({
         "eye": create_mat("CharEye", (0.16, 0.12, 0.10), roughness=0.4),
         "lip": create_mat("CharLip", (0.55, 0.32, 0.28), roughness=0.7),
-        "iron_steel": create_mat("CharIronSteel", (0.55, 0.56, 0.58), roughness=0.35, metallic=0.8),
+        # Low metallic: the scene has no environment map, so metal renders near black.
+        # Own name: create_mat reuses by name and the legacy builders define CharIronSteel.
+        "iron_steel": create_mat("CharSteelBright", (0.62, 0.63, 0.65), roughness=0.4, metallic=0.3),
         "iron_dark": create_mat("CharIronDark", (0.18, 0.18, 0.20), roughness=0.45, metallic=0.6),
         "wood_ash": create_mat("CharWoodAsh", (0.48, 0.36, 0.24), roughness=0.75),
         "wood_dark": create_mat("CharWoodDark", (0.28, 0.18, 0.10), roughness=0.75),
@@ -888,15 +892,15 @@ def kit_body(kit, tunic_slot="tunic", hose_slot="hose", shoe="shoes", sleeves=("
     bm = kit.bm("body", "sex:m")
     add_tube(bm, [((0, 0.0, male_hem), 0.215, 0.155), ((0, 0, 0.80), 0.185, 0.13),
                   ((0, 0, 0.98), 0.165, 0.115), ((0, 0, 1.18), 0.19, 0.13),
-                  ((0, 0, 1.35), 0.2, 0.125), ((0, 0, 1.42), 0.165, 0.1),
-                  ((0, 0, 1.47), 0.075, 0.065)], segs=10, mat_idx=tun)
+                  ((0, 0, 1.35), 0.205, 0.125), ((0, 0, 1.40), 0.2, 0.112),
+                  ((0, 0, 1.44), 0.13, 0.078), ((0, 0, 1.475), 0.075, 0.065)], segs=10, mat_idx=tun)
     add_tube(bm, [((0, 0, 0.95), 0.172, 0.122), ((0, 0, 1.0), 0.172, 0.122)], segs=10, mat_idx=belt)
     # Torso, female: fitted bodice, kirtle to the ankle.
     bm = kit.bm("body", "sex:f")
     add_tube(bm, [((0, 0.0, 0.07), 0.25, 0.22), ((0, 0, 0.55), 0.205, 0.17),
                   ((0, 0, 0.98), 0.15, 0.105), ((0, -0.005, 1.16), 0.165, 0.125),
-                  ((0, 0, 1.33), 0.175, 0.11), ((0, 0, 1.42), 0.125, 0.085),
-                  ((0, 0, 1.46), 0.07, 0.06)], segs=10, mat_idx=tun)
+                  ((0, 0, 1.33), 0.18, 0.11), ((0, 0, 1.385), 0.185, 0.1),
+                  ((0, 0, 1.43), 0.12, 0.075), ((0, 0, 1.465), 0.07, 0.06)], segs=10, mat_idx=tun)
     add_tube(bm, [((0, 0, 0.96), 0.155, 0.11), ((0, 0, 1.0), 0.155, 0.11)], segs=10, mat_idx=belt)
 
     # Neck + head + face (head part, pivot at the neck).
@@ -920,10 +924,11 @@ def kit_body(kit, tunic_slot="tunic", hose_slot="hose", shoe="shoes", sleeves=("
     # Arms: shoulder cap + upper sleeve + hand in the base; forearm per sleeve option.
     for side, sx in (("arm_R", -1), ("arm_L", 1)):
         bm = kit.bm(side)
-        sh = (sx * 0.205, 0.0, 1.40)
+        sh = (sx * 0.205, 0.0, 1.385)
         el = (sx * 0.232, 0.01, 1.11)
         wr = (sx * 0.238, -0.05, 0.86)
-        add_ellipsoid(bm, (sx * 0.195, 0.0, 1.375), (0.06, 0.066, 0.052), segs=8, rings=5, mat_idx=tun)
+        # Flat cap rounding the sleeve top into the torso slope (taller ones read as epaulettes).
+        add_ellipsoid(bm, (sx * 0.2, 0.0, 1.37), (0.064, 0.066, 0.034), segs=8, rings=5, mat_idx=tun)
         add_tube(bm, [(sh, 0.062, 0.064), (el, 0.052, 0.054)], segs=8, mat_idx=tun)
         add_ellipsoid(bm, (sx * 0.24, -0.065, 0.80), (0.03, 0.042, 0.058), segs=8, rings=5, mat_idx=sk)
         for opt in sleeves:
@@ -989,9 +994,16 @@ def kit_heads(kit, options):
             m = kit.mat("slot:linen")
             add_ellipsoid(bm, (cx, cy + 0.01, cz + 0.012), (rx * 1.14, ry * 1.12, rz * 1.08), segs=12, rings=8,
                           mat_idx=m, keep=lambda x, y, z: z > -0.62 and not (y < -0.5 and z < 0.45))
-            for sx in (-1, 1):
-                add_tube(bm, [((sx * 0.085, -0.03, 1.53), 0.012, 0.012), ((sx * 0.04, -0.07, 1.47), 0.012, 0.012),
-                              ((0, -0.08, 1.46), 0.012, 0.012)], segs=5, mat_idx=m)
+            for sx in (-1, 1):   # thin ties: thick ones read as a white beard
+                add_tube(bm, [((sx * 0.085, -0.03, 1.53), 0.005, 0.005), ((sx * 0.04, -0.07, 1.47), 0.005, 0.005),
+                              ((0, -0.08, 1.46), 0.005, 0.005)], segs=4, mat_idx=m)
+            add_fringe(bm, hair)
+        elif key == "hat:kerchief":  # women: kerchief knotted at the nape
+            m = kit.mat("slot:kerchief")
+            add_ellipsoid(bm, (cx, cy + 0.012, cz + 0.012), (rx * 1.14, ry * 1.13, rz * 1.08), segs=12, rings=8,
+                          mat_idx=m, keep=lambda x, y, z: (z > 0.15 and y > -0.75) or (y > 0.1 and z > -0.5))
+            add_tube(bm, [((0, 0.11, 1.58), 0.03, 0.03), ((0, 0.135, 1.52), 0.04, 0.02)], segs=6, mat_idx=m)
+            add_fringe(bm, hair)
         elif key == "hat:cap":    # felt skullcap
             m = kit.mat("slot:cap")
             add_ellipsoid(bm, (cx, cy + 0.004, cz + 0.03), (rx * 1.12, ry * 1.1, rz * 1.0), segs=12, rings=8,
@@ -1004,11 +1016,6 @@ def kit_heads(kit, options):
                           mat_idx=m, keep=lambda x, y, z: not (y < -0.42 and -0.75 < z < 0.5))
             add_tube(bm, [((0, 0.01, 1.30), 0.27, 0.2), ((0, 0.01, 1.42), 0.17, 0.14), ((0, 0.015, 1.50), 0.1, 0.1)],
                      segs=10, mat_idx=m, cap1=False)
-        elif key == "hat:kerchief":  # women: linen kerchief knotted at the nape
-            m = kit.mat("slot:linen")
-            add_ellipsoid(bm, (cx, cy + 0.012, cz + 0.012), (rx * 1.14, ry * 1.13, rz * 1.08), segs=12, rings=8,
-                          mat_idx=m, keep=lambda x, y, z: (z > 0.15 and y > -0.75) or (y > 0.1 and z > -0.5))
-            add_tube(bm, [((0, 0.11, 1.58), 0.03, 0.03), ((0, 0.135, 1.52), 0.04, 0.02)], segs=6, mat_idx=m)
         elif key == "hat:veil":      # women: wimple round the face + veil to the shoulders
             m = kit.mat("slot:linen")
             add_ellipsoid(bm, (cx, cy + 0.012, cz + 0.012), (rx * 1.16, ry * 1.14, rz * 1.1), segs=12, rings=8,
@@ -1020,6 +1027,16 @@ def kit_heads(kit, options):
         else:
             raise ValueError(f"{kit.name}: unknown head option {key}")
     kit.slot("linen", LINEN)
+    kit.slot("kerchief", KERCHIEF)
+
+
+def add_fringe(bm, hair):
+    """Strip of hair across the forehead under a head cloth, so white linen does not read as white hair."""
+    pts = []
+    for x in (-0.07, -0.035, 0.0, 0.035, 0.07):
+        z = 1.672 - 0.9 * x * x
+        pts.append(((x, head_surface_y(x, z, 0.004), z), 0.012, 0.009))
+    add_tube(bm, pts, segs=6, mat_idx=hair)
 
 
 def kit_bib_apron(kit, variant, slot, bottom=0.30, top=1.30, waist_only=False):
@@ -1056,14 +1073,15 @@ def build_kit_tanner(kit):
     kit_bib_apron(kit, "apron:bib", "apron")
     kit_bib_apron(kit, "apron:waist", "apron", bottom=0.36, waist_only=True)
 
-    # Fleshing knife in the right hand: grip, curved blade, far handle.
+    # Two-handled fleshing knife hanging from the right fist: grip, broad blade bowed
+    # slightly forward, far handle. (A thin blade curling forward read as a hook.)
     bm = kit.bm("arm_R")
     wd, st = kit.mat("wood_dark"), kit.mat("iron_steel")
-    add_tube(bm, [((-0.24, 0.0, 0.80), 0.016, 0.016), ((-0.24, -0.12, 0.79), 0.016, 0.016)], segs=6, mat_idx=wd)
-    add_tube(bm, [((-0.24, -0.12, 0.79), 0.005, 0.03), ((-0.24, -0.20, 0.75), 0.005, 0.034),
-                  ((-0.24, -0.26, 0.65), 0.005, 0.032), ((-0.24, -0.28, 0.53), 0.005, 0.026)],
+    add_tube(bm, [((-0.24, -0.065, 0.86), 0.016, 0.016), ((-0.24, -0.07, 0.74), 0.016, 0.016)], segs=6, mat_idx=wd)
+    add_tube(bm, [((-0.24, -0.07, 0.74), 0.005, 0.02), ((-0.24, -0.09, 0.64), 0.005, 0.026),
+                  ((-0.24, -0.1, 0.52), 0.005, 0.026), ((-0.24, -0.09, 0.42), 0.005, 0.02)],
              segs=4, mat_idx=st, smooth=False)
-    add_tube(bm, [((-0.24, -0.28, 0.53), 0.016, 0.016), ((-0.24, -0.29, 0.42), 0.016, 0.016)], segs=6, mat_idx=wd)
+    add_tube(bm, [((-0.24, -0.09, 0.42), 0.016, 0.016), ((-0.24, -0.085, 0.31), 0.016, 0.016)], segs=6, mat_idx=wd)
     # Belt pouch (optional) on the left hip.
     kit.option("pouch", "yes", 2, 2)
     kit.option("pouch", "no", 1, 1)
