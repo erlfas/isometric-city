@@ -6,16 +6,19 @@ This guide provides high-signal navigation pointers and commands for coding agen
 
 ## 1. Quick Start & Environment
 
-- **Initial Setup**: Run `./scripts/setup_environment.sh` (installs `node_modules` and verifies Blender 3.6 LTS).
-- **Typecheck**: `npm run check` (runs `tsc --noEmit` without bundling).
-- **Model check**: `scripts/check_models.py` (stdlib; roof winding, UVs, texture bindings ↔ manifest). Runs with `npm run check` in the pre-commit hook (`git config core.hooksPath .githooks` once per clone) and in CI. Run it after every model build.
-- **Build**: `npm run build` (typechecks and bundles Vite client).
-- **Blender Binary Path**: `/home/antigravity/blender/blender` (or `~/.local/bin/blender`).
-  - *Never* run unbounded `find /` across the filesystem.
-- **Windows workstation**: Blender 5.3 at `C:\Program Files\Blender Foundation\Blender 5.3\blender.exe` (verified to produce identical geometry/materials to the 3.6 builds).
-  - Build: `& "C:\Program Files\Blender Foundation\Blender 5.3\blender.exe" --background --factory-startup --python build_assets.py` — append `-- house_half_timber town_hall` (GLB names) to build only those models.
+Setup: `scripts\setup_environment.ps1` (Windows) or `./scripts/setup_environment.sh` (Linux). Both install `node_modules`, enable the pre-commit hook, and print the tool paths below.
+
+| Tool | Windows workstation (PowerShell 5.1) | Linux |
+|---|---|---|
+| `$BLENDER` | `C:\Program Files\Blender Foundation\Blender 5.3\blender.exe` (call with `&`) | `~/.local/bin/blender` (3.6 LTS; same geometry as 5.3) |
+| `$PY` | Blender's bundled Python: `C:\Program Files\Blender Foundation\Blender 5.3\5.3\python\bin\python.exe` (no standalone Python) | `python3` |
+| Node / npm | `C:\Program Files\nodejs` (prepend to `$env:Path` if a shell predates the install) | `node` |
+| Browser for `shoot.mjs` | installed Edge (default) | set `PLAYWRIGHT_CHANNEL=chromium` |
+
+Commands:
+- **Typecheck**: `npm run check`. **Build**: `npm run build`.
+- **Model check**: `$PY scripts/check_models.py` (roof winding, UVs, texture bindings ↔ manifest). Run it after every model build; the pre-commit hook and CI run it too.
 - **Visual check**: with `npm run dev` running, `node scripts/shoot.mjs out.png "model=house_timber_log,0,14&pause&hour=12"` screenshots the n-th placed instance of a model. Hash syntax and `window.__lublin`: [`src/debug-hooks.ts`](src/debug-hooks.ts).
-  - No standalone Python; use Blender's bundled interpreter: `C:\Program Files\Blender Foundation\Blender 5.3\5.3\python\bin\python.exe`.
 
 ---
 
@@ -23,10 +26,10 @@ This guide provides high-signal navigation pointers and commands for coding agen
 
 | Task | Script / Entry Point | Output / Target | Command |
 |---|---|---|---|
-| **Building Models** | [`build_assets.py`](build_assets.py) | `public/models/*.glb` (31 models) | `/home/antigravity/blender/blender --background --python build_assets.py` |
-| **Character Models** | [`build_characters.py`](build_characters.py) | `public/models/characters/*.glb` (14 models) | `/home/antigravity/blender/blender --background --python build_characters.py` |
+| **Building Models** | [`build_assets.py`](build_assets.py) | `public/models/*.glb` (31 models) | `$BLENDER --background --factory-startup --python build_assets.py [-- <glb names>]` (names = only those models; seconds instead of minutes) |
+| **Character Models** | [`build_characters.py`](build_characters.py) | `public/models/characters/*.glb` (14 models) | `$BLENDER --background --factory-startup --python build_characters.py`. The renderer loads `public/models/char_*.glb`, not this folder: copy the rebuilt files there or the game shows the old characters. |
 | **Textures** | [`scripts/textures/build_textures.ps1`](scripts/textures/build_textures.ps1) | `public/textures/*.jpg` + `manifest.json` (19 families) | `powershell -ExecutionPolicy Bypass -File scripts\textures\build_textures.ps1` (needs git-ignored `texture_sources/`) |
-| **Urban Parcellation** | [`generate_city_plan.py`](generate_city_plan.py) | `city_plan.json` (580 parcels, 0 overlaps) | `python3 generate_city_plan.py` |
+| **Urban Parcellation** | [`generate_city_plan.py`](generate_city_plan.py) | `city_plan.json` (580 parcels, 0 overlaps) | `$PY generate_city_plan.py` |
 
 ---
 
