@@ -3,9 +3,10 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { CityPlan, Citizen } from '../types';
 import { TextureLibrary } from './texture-library';
 import { CitizenCrowd } from './citizen-crowd';
-import { DoorLeaves } from './door-leaves';
+import { DoorLeaves, nightFactor } from './door-leaves';
 import type { Building, Door } from './building-anchors';
 import { Cutaway, type CutTarget } from './cutaway';
+import { InteriorProps, roomAt, roomCentre } from './interiors';
 import { parcelHash, parcelKind } from './parcel-kind';
 import { StaticBatches, type PlacedModel, type Placement, type Tint } from './static-batches';
 
@@ -81,6 +82,8 @@ export const LINEUP_ROW_GAP = 3.5;
 const CUT_STOREY = 2.2;
 /** How far a building between the camera and the followed citizen fades (1 = gone). */
 const OCCLUDER_FADE = 0.85;
+/** Lit window glass at night (linear emissive, times nightFactor). */
+const WINDOW_GLOW = new THREE.Color(1.0, 0.55, 0.22).multiplyScalar(1.3);
 
 export class ThreeIsometricRenderer {
   public scene: THREE.Scene;
@@ -118,6 +121,18 @@ export class ThreeIsometricRenderer {
   private cutHit = new THREE.Vector3();
   /** Building looked into by hand (tap, debug hash `cutaway=`); cut away like a followed citizen's. */
   public peek: Building | null = null;
+  /** Storey of the peeked building to look at (0 = ground floor). */
+  public peekStorey = 0;
+  /** Walls of the room being looked into stop here (world y); Infinity when none. */
+  public cutY = Infinity;
+  private interiorProps: InteriorProps | null = null;
+  private byIndex = new Map<number, Building>();
+  private cutV = new THREE.Vector3();
+  // Lit windows: glass parts per placement, which are lit now, the glass materials' night level.
+  private glass = new Map<number, { mesh: THREE.BatchedMesh; id: number; tint: THREE.Color }[]>();
+  private litNow = new Set<number>();
+  private uNight = { value: 0 };
+  private glow4 = new THREE.Vector4();
 
   // Speech bubbles data
   public activeBubbles: { id: string; text: string; x: number; y: number; z: number; timer: number }[] = [];
@@ -437,6 +452,7 @@ export class ThreeIsometricRenderer {
       'gate_grodzka',
       'monastery_cloister',
       'archery_yard',
+      'interior_props',
       'char_baker',
       'char_tanner',
       'char_carpenter',
@@ -744,7 +760,14 @@ export class ThreeIsometricRenderer {
     }
 
     const batches = this.statics.build(this.scene);
-    this.cutaway.prewarm(this.renderer, this.camera).catch((e) => console.warn('[cutaway] prewarm failed', e));
+    this.interiorProps = new InteriorProps(this.models.get('interior_props'));
+    this.cutaway.furniture = (i) => {
+      const b = this.byIndex.get(i);
+      return b && this.interiorProps ? this.interiorProps.parts(b) : [];
+    };
+    this.cutaway.prewarm(this.renderer, this.camera, this.interiorProps.samples())
+      .catch((e) => console.warn('[cutaway] prewarm failed', e));
+    this.collectGlass();
     console.log(`[ThreeRenderer] City populated: ${this.statics.placements.length} models in ${batches} instanced batches.`);
   }
 
@@ -822,14 +845,29 @@ export class ThreeIsometricRenderer {
     const room = inside ?? (this.peek && this.peek.doors.length ? { b: this.peek, door: this.peek.doors[0] } : null);
     const o = this.cutRay.origin;
     let focus = false;
+    const c = this.followingCitizen;
+    this.cutY = Infinity;
     if (room) {
-      const d = room.door;
-      const fill = new THREE.Vector3(d.x - d.nx * 3, d.y + 1.8, d.z - d.nz * 3);
-      t.set(room.b.index, { cutY: d.y + CUT_STOREY, fade: 1, fill });
-      o.set(fill.x, d.y + 1.1, fill.z);
+      // The storey the followed citizen is on (or the one picked by tapping): its walls stop
+      // CUT_STOREY above its floor, the warm light hangs in the middle of the room.
+      const it = room.b.interior;
+      let floor: number;
+      const fill = new THREE.Vector3();
+      if (it) {
+        const k = inside && c ? roomAt(it, c.y ?? 0) : Math.min(this.peekStorey, it.rooms.length - 1);
+        roomCentre(it, k, this.cutV);
+        floor = this.cutV.y;
+        fill.set(this.cutV.x, floor + 1.8, this.cutV.z);
+      } else {
+        const d = room.door;
+        floor = d.y;
+        fill.set(d.x - d.nx * 3, d.y + 1.8, d.z - d.nz * 3);
+      }
+      this.cutY = floor + CUT_STOREY;
+      t.set(room.b.index, { cutY: this.cutY, fade: 1, fill, furnish: true });
+      o.set(fill.x, floor + 1.1, fill.z);
       focus = true;
     }
-    const c = this.followingCitizen;
     if (c) {
       o.set(c.currentX ?? 0, (c.y ?? 0) + 1.1, c.currentZ ?? 0);
       focus = true;
@@ -869,6 +907,54 @@ export class ThreeIsometricRenderer {
   /** Placements cut away now (debug). */
   public cutawayActive(): number[] {
     return this.cutaway.active;
+  }
+
+  /** The buildings (simulation's index): the cutaway finds a placement's furniture through them. */
+  public setBuildings(all: readonly Building[]): void {
+    this.byIndex.clear();
+    for (const b of all) this.byIndex.set(b.index, b);
+  }
+
+  /**
+   * Window glass of every placement, and the glass materials taught to glow: the batch
+   * instance colour's alpha (1 normally, 2 lit) switches a warm emissive, scaled by uNight.
+   */
+  private collectGlass(): void {
+    const patched = new Set<THREE.Material>();
+    for (let i = 0; i < this.statics.placements.length; i++) {
+      for (const p of this.statics.partsOfPlacement(i)) {
+        if (p.material.name !== 'GlassDark' || !p.mesh) continue;
+        let list = this.glass.get(i);
+        if (!list) this.glass.set(i, (list = []));
+        list.push({ mesh: p.mesh, id: p.id!, tint: p.tint });
+        if (patched.has(p.material)) continue;
+        patched.add(p.material);
+        const night = this.uNight;
+        const g = WINDOW_GLOW;
+        p.material.onBeforeCompile = (s) => {
+          s.uniforms.uNight = night;
+          s.fragmentShader = 'uniform float uNight;\n' + s.fragmentShader.replace('#include <emissivemap_fragment>',
+            `#include <emissivemap_fragment>
+#ifdef USE_COLOR_ALPHA
+totalEmissiveRadiance += vec3(${g.r.toFixed(3)}, ${g.g.toFixed(3)}, ${g.b.toFixed(3)}) * clamp(vColor.a - 1.0, 0.0, 1.0) * uNight;
+#endif`);
+        };
+        p.material.customProgramCacheKey = () => 'lit-glass';
+        p.material.needsUpdate = true;
+      }
+    }
+  }
+
+  /** Light the windows of buildings with someone awake inside (lit: placement indices). */
+  public updateWindows(lit: ReadonlySet<number>, hour: number): void {
+    this.uNight.value = nightFactor(hour);
+    const set = (i: number, on: boolean) => {
+      for (const g of this.glass.get(i) ?? []) {
+        g.mesh.setColorAt(g.id, this.glow4.set(g.tint.r, g.tint.g, g.tint.b, on ? 2 : 1) as unknown as THREE.Color);
+      }
+    };
+    for (const i of this.litNow) if (!lit.has(i)) { set(i, false); this.litNow.delete(i); }
+    for (const i of lit) if (!this.litNow.has(i) && this.glass.has(i)) { set(i, true); this.litNow.add(i); }
   }
 
   /** Crowd detail level, citizens drawn, triangles per pass (debug stats). */

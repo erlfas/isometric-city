@@ -1,6 +1,8 @@
 import { LINEUP_ROW, LINEUP_ROW_GAP, LINEUP_STEP, type ThreeIsometricRenderer } from './engine/three-renderer';
 import type { SimulationEngine } from './engine/simulation';
 import type { Soundscape } from './engine/audio';
+import * as THREE from 'three';
+import { roomCentre } from './engine/interiors';
 
 /**
  * Dev-only camera hooks for screenshots and debugging (installed only under `vite dev`).
@@ -18,8 +20,9 @@ import type { Soundscape } from './engine/audio';
  *   &follow=walk[,zoom]             camera follows the first visible walking citizen (polls
  *                                    until one walks); or follow=<index|id>[,zoom]; follow=inside
  *                                    picks someone indoors (the cutaway opens their building)
- *   &cutaway=<parcelId | model[,n[,zoom[,quadrant]]]>   look into a building (roof faded,
- *                                    people inside shown), camera on it unless cam/model given
+ *   &cutaway=<parcelId | model[,n[,zoom[,quadrant[,storey]]]]>   look into a building (roof
+ *                                    faded, furniture and people inside shown; storey 1 = the
+ *                                    upper floor), camera on it unless cam/model given
  *
  * window.__lublin: { renderer, sim, audio, ready, snapTo(x,z,zoom?,q?), find(model), stats() }
  *   audio.debugState(): context state, music, crowd level, audible workshops
@@ -111,14 +114,25 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
     }
     const cut = params.get('cutaway');
     renderer.peek = null;
+    renderer.peekStorey = 0;
     if (cut) {
       // A parcel id, or model[,n]: look into that building (camera on it unless cam/model set).
-      const [name, n, zoom, q] = cut.split(',');
+      const [name, n, zoom, q, storey] = cut.split(',');
       const b = sim.buildings.byParcel.get(name) ?? sim.buildings.byModel.get(name)?.[num(n) ?? 0];
       if (b) {
         renderer.peek = b;
+        renderer.peekStorey = num(storey) ?? 0;
         const d = b.doors[0];
-        if (!cam && !model) renderer.snapTo(b.x, b.z, num(zoom) ?? 22, num(q) ?? (d ? facing(d.nx, d.nz) : undefined));
+        if (!cam && !model) {
+          // Centre on the open room: its floor centre, slid back along the view ray to the
+          // ground (pitch 35.26 deg: 1.414 m per metre up).
+          const qq = num(q) ?? (d ? facing(d.nx, d.nz) : 0);
+          const it = b.interior;
+          const c = it ? roomCentre(it, Math.min(renderer.peekStorey, it.rooms.length - 1), new THREE.Vector3())
+            : new THREE.Vector3(b.x, b.y, b.z);
+          const yaw = (qq * Math.PI) / 2 + Math.PI / 4, back = (c.y + 1) * 1.414;
+          renderer.snapTo(c.x - Math.sin(yaw) * back, c.z - Math.cos(yaw) * back, num(zoom) ?? 22, qq);
+        }
       } else console.warn(`[debug] cutaway: no building "${cut}"`);
     }
     const follow = params.get('follow');

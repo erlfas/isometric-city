@@ -45,6 +45,7 @@ async function bootstrap() {
   const spatialGrid = new SpatialHashGrid(24.0);
   const placed = threeRenderer.placedModels();
   const buildings = new BuildingIndex(placed);
+  threeRenderer.setBuildings(buildings.all);
   // Ground plane is 700 x 550 m around the origin; seed the market square as open ground too.
   const nav = new NavGrid(-350, -275, 350, 275, placed, [...buildings.seeds(), { x: -15.5, z: -25.5 }]);
   console.log(`[Lublin 1392] Navigation grid ${nav.w}x${nav.h} built in ${nav.buildMs.toFixed(0)} ms (${buildings.all.length} buildings with doors/spots).`);
@@ -180,7 +181,13 @@ async function bootstrap() {
     // 2. A building under the pointer: look inside (tap it again to close it), inspect its parcel.
     //    Otherwise raycast to the ground plane for parcel picking.
     const picked = threeRenderer.pickBuilding(screenX, screenY, sim.buildings.all);
-    threeRenderer.peek = picked && picked !== threeRenderer.peek ? picked : null;
+    // Tapping the open building again goes up a storey, and closes it from the top one.
+    const storeys = picked?.interior?.rooms.length ?? 1;
+    if (picked && picked === threeRenderer.peek && threeRenderer.peekStorey + 1 < storeys) threeRenderer.peekStorey++;
+    else {
+      threeRenderer.peek = picked && picked !== threeRenderer.peek ? picked : null;
+      threeRenderer.peekStorey = 0;
+    }
     const groundHit = threeRenderer.screenToGround(screenX, screenY);
     if (picked || groundHit) {
       const hitParcel = (picked?.parcelId ? sim.parcelMap.get(picked.parcelId) : undefined)
@@ -335,6 +342,8 @@ async function bootstrap() {
   // Main Loop
   let lastTime = performance.now();
   const shownInside: Citizen[] = [];
+  const awake = new Set<number>();
+  let windowsT = 0;
 
   function animate(now: number) {
     const dt = Math.min((now - lastTime) / 1000.0, 0.1);
@@ -354,10 +363,19 @@ async function bootstrap() {
     const room = inside?.b ?? threeRenderer.peek;
     shownInside.length = 0;
     if (room) sim.occupants(room, shownInside);
+    // Only the open storey and those below (people upstairs would float above the cut walls).
+    for (let k = shownInside.length - 1; k >= 0; k--) {
+      if ((shownInside[k].y ?? 0) > threeRenderer.cutY - 0.5) shownInside.splice(k, 1);
+    }
     for (const c of shownInside) c.hidden = false;
     threeRenderer.updateCitizens(sim.citizens, dt);
     for (const c of shownInside) c.hidden = true;
     threeRenderer.updateDoors(sim.activeDoors, sim.simTimeHours);
+    windowsT -= dt;
+    if (windowsT <= 0) {
+      windowsT = 0.5;
+      threeRenderer.updateWindows(sim.awakeInside(awake), sim.simTimeHours);
+    }
     threeRenderer.updateSpeechBubbles(dt);
     listener.x = threeRenderer.targetPos.x;
     listener.z = threeRenderer.targetPos.z;

@@ -1,8 +1,10 @@
 import type { CityPlan, Citizen, Parcel, BellHourInfo, FairEvent, StreetNode, ScheduleItem } from '../types';
 import { SpatialHashGrid } from './spatial-hash';
 import { NavGrid } from './nav-grid';
-import { BuildingIndex, type Building, type Door, type Spot } from './building-anchors';
+import * as THREE from 'three';
+import { BuildingIndex, type Building, type Door, type Slot, type Spot } from './building-anchors';
 import { hashId, mulberry32 } from './citizen-crowd';
+import { freePoint, roomAt, roomCentre, routeInside } from './interiors';
 
 /**
  * Citizens' day: schedule -> destination -> route on the navigation grid -> door / stair legs.
@@ -20,9 +22,15 @@ import { hashId, mulberry32 } from './citizen-crowd';
  *   ROUTE     waiting for a path (A* is budgeted per frame)
  *   WALK      following waypoints on the grid
  *   SCRIPT    a scripted leg off the grid: through a door, up or down a stair
- *   INSIDE    in a building: simulated, hidden
+ *   INSIDE    in a building: simulated, hidden (drawn while the building is cut away)
  *   SPOT      standing at a building's work / sell / guard spot, facing it
  *   QUEUE     waiting in line outside a door
+ *
+ * Inside (M6): a building with an interior has slots (beds, table seats, workbenches, the
+ * hearth). Coming in, a citizen takes the slot their schedule state asks for - their own
+ * bed (bedNumber) at night, a bench at work, the hearth or a seat otherwise - walks there
+ * on the room grid (interiors.ts; up the ladder for an upper storey) and lies, sits or works
+ * there. Leaving, they walk back to the door first. Nobody free to take: stand in the room.
  *
  * Doors (M4): a door opens when someone wants through, stays open while anyone is passing
  * and closes DOOR_HOLD s after the last. People pass one lane at a time (wide portals have
@@ -80,6 +88,7 @@ const DOOR_GAP = 0.55;          // s between two people through one lane, same d
 const DOOR_PASS = 0.85;         // open enough to walk through
 const QUEUE_STEP = 0.75;        // m between people queueing at a door
 const STAIR_STRIDE = 0.55;      // stride on steps, fraction of the walking stride
+const INDOOR = 0.6;             // walking pace indoors, fraction of the street pace
 
 const Phase = { IDLE: 0, ROUTE: 1, WALK: 2, SCRIPT: 3, INSIDE: 4, SPOT: 5, QUEUE: 6 } as const;
 type Phase = (typeof Phase)[keyof typeof Phase];
@@ -129,7 +138,13 @@ interface Agent {
   paired: boolean;
   /** Door being walked through now (counted in its users); door being waited at. */
   gate: Door | null; qDoor: Door | null;
+  /** Inside: slot held; walk in progress (x, y, z triples) and its next point; walking out. */
+  slot: Slot | null;
+  inPts: number[] | null; inK: number; inExit: boolean;
 }
+
+const _from = new THREE.Vector3();
+const _pt = new THREE.Vector3();
 
 export interface NavStats {
   buildMs: number; enclosedCells: number; components: number; grid: string;
@@ -240,7 +255,7 @@ export class SimulationEngine {
         active: 0, phase: Phase.IDLE, dest: null, heldSpot: null, inB: null, inDoor: null,
         pts: null, wp: 0, script: [], sp: 0, scriptInside: false, queued: false, running: false, early: false, nextWander: 0,
         gaitPace: 1, stuck: 0, ghost: 0, replans: 0, noClip: false, lead: -1, followers: 0, paired: false,
-        gate: null, qDoor: null,
+        gate: null, qDoor: null, slot: null, inPts: null, inK: 0, inExit: false,
       });
       c.animFrame = rng() * 10;
       const h = this.household.get(c.homeParcelId);
@@ -315,6 +330,7 @@ export class SimulationEngine {
     this.queue.length = 0;
     for (const b of this.buildings.all) {
       for (const s of b.spots) s.taken = 0;
+      for (const s of b.interior?.slots ?? []) s.taken = 0;
       for (const d of b.doors) {
         d.open = 0; d.users = 0; d.dir = 0; d.hold = 0; d.active = false;
         d.queue.length = 0; d.exitQ.length = 0;
@@ -329,6 +345,8 @@ export class SimulationEngine {
       ag.early = false;
       ag.inB = null;
       ag.inDoor = null;
+      ag.slot = null; ag.inPts = null; ag.inExit = false;
+      this.clearPose(ag.c);
       ag.lead = -1; ag.followers = 0;
       ag.stuck = 0; ag.ghost = 0;
       this.vx[i] = 0; this.vz[i] = 0;
@@ -342,7 +360,7 @@ export class SimulationEngine {
         this.place(i, d.spot.x, d.spot.y, d.spot.z);
         this.arriveSpot(ag, d.spot);
       } else if (d.door && d.b) {
-        this.goInside(i, d.b, d.door);
+        this.goInside(i, d.b, d.door, true);
       } else {
         this.place(i, d.x, 0, d.z);
         this.setPhase(ag, Phase.IDLE);
@@ -401,16 +419,18 @@ export class SimulationEngine {
     this.releaseDoor(i);
     const d = this.destFor(ag, item, ag.inB);
     ag.dest = d;
-    // Same building as now and going indoors again: stay put.
-    if (ag.phase === Phase.INSIDE && d.door && d.b === ag.inB) return;
+    // Same building as now and going indoors again: stay, moving to the slot for the new state.
+    if (ag.phase === Phase.INSIDE && d.door && d.b === ag.inB) {
+      if (ag.inB?.interior) this.takeSlot(i, false);
+      return;
+    }
     this.dropPair(i);
     ag.running = false;
     ag.replans = 0;
     ag.noClip = false;
-    ag.c.faceYaw = undefined;
-    ag.c.activityAnim = undefined;
+    this.clearPose(ag.c);
     const fromB = ag.phase === Phase.INSIDE ? ag.inB : null;
-    if (ag.phase === Phase.INSIDE && ag.inB && ag.inDoor) this.leave(i);
+    if (ag.phase === Phase.INSIDE && ag.inB && ag.inDoor) this.walkOut(i);
     else this.requestRoute(i);
     this.recruitCompanion(i, item, fromB);
   }
@@ -440,7 +460,7 @@ export class SimulationEngine {
       K.early = until > 0 && until < 12;
       this.begin(k, next);
       // Stayed inside (already there), or brought someone of its own along.
-      if (K.phase === Phase.INSIDE || K.followers > 0) continue;
+      if ((K.phase === Phase.INSIDE && !K.inExit) || K.followers > 0) continue;
       K.lead = i;
       ag.followers++;
       // Same stop: share the leader's door, or stand beside its point.
@@ -544,13 +564,130 @@ export class SimulationEngine {
     if (!c.isMoving) { c.vx = 0; c.vz = 0; }
   }
 
-  private goInside(i: number, b: Building, door: Door): void {
+  /** In through the door: to a slot (walking there, or put straight on it when `settle`). */
+  private goInside(i: number, b: Building, door: Door, settle = false): void {
     const ag = this.agents[i];
     ag.inB = b;
     ag.inDoor = door;
+    ag.inExit = false;
     const j = (ag.rng() - 0.5) * Math.min(1.5, door.w);
     this.place(i, door.ix - door.nz * j, door.y, door.iz + door.nx * j);
     this.setPhase(ag, Phase.INSIDE);
+    if (b.interior) this.takeSlot(i, settle);
+  }
+
+  /** The slot the citizen's state asks for in the building they are in, or null (none free). */
+  private pickSlot(ag: Agent, b: Building): Slot | null {
+    const slots = b.interior!.slots;
+    const st = ag.c.state;
+    if (st === 'SLEEPING' && b.parcelId === ag.c.homeParcelId) {
+      let n = 0;
+      for (const s of slots) if (s.kind === 'sleep') n++;
+      let k = n ? (((ag.c.bedNumber - 1) % n) + n) % n : -1;
+      for (const s of slots) if (s.kind === 'sleep' && k-- === 0 && !s.taken) return s;
+    }
+    const want: Slot['kind'][] = st === 'SLEEPING' ? ['sleep']
+      : st === 'WORKING' || st === 'PATROLLING' ? ['work', 'seat']
+      : st === 'WAKING' ? ['hearth', 'seat'] : ['seat', 'hearth'];
+    for (const kind of want) {
+      let free = 0;
+      for (const s of slots) if (s.kind === kind && !s.taken) free++;
+      if (!free) continue;
+      let k = Math.floor(ag.rng() * free);
+      for (const s of slots) if (s.kind === kind && !s.taken && k-- === 0) return s;
+    }
+    return null;
+  }
+
+  /** Take (or change to) the slot for the current state and walk to it; settle = be there now. */
+  private takeSlot(i: number, settle: boolean): void {
+    const ag = this.agents[i];
+    const b = ag.inB!, it = b.interior!;
+    const old = ag.slot;
+    if (old) old.taken--;
+    ag.slot = null;
+    const s = this.pickSlot(ag, b);
+    if (s) { s.taken++; ag.slot = s; }
+    ag.inExit = false;
+    if (s && s === old && !ag.inPts) { this.arriveSlot(ag); return; } // already there
+    const room = s ? s.room : 0;
+    if (!s) freePoint(b, 0, ag.rng(), _pt);
+    if (settle) {
+      if (s) this.place(i, s.x, s.y, s.z); else this.place(i, _pt.x, _pt.y, _pt.z);
+      ag.inPts = null;
+      this.arriveSlot(ag);
+      return;
+    }
+    _from.set(this.px[i], this.py[i], this.pz[i]);
+    const floorY = roomCentre(it, room, _pt.clone()).y;
+    let pts: number[];
+    if (s) {
+      pts = routeInside(b, _from, roomAt(it, this.py[i]), s.ax, floorY, s.az, room);
+      pts.push(s.x, s.y, s.z);
+    } else pts = routeInside(b, _from, roomAt(it, this.py[i]), _pt.x, _pt.y, _pt.z, room);
+    this.startInside(ag, pts, false);
+  }
+
+  /** Leaving: back to the door through the rooms, then out (leave) when there. */
+  private walkOut(i: number): void {
+    const ag = this.agents[i];
+    const b = ag.inB!, d = ag.inDoor!;
+    if (ag.slot) { ag.slot.taken--; ag.slot = null; }
+    this.clearPose(ag.c);
+    if (!b.interior || Math.hypot(this.px[i] - d.ix, this.pz[i] - d.iz) < 0.6) { ag.inPts = null; this.leave(i); return; }
+    _from.set(this.px[i], this.py[i], this.pz[i]);
+    const it = b.interior;
+    const pts = routeInside(b, _from, roomAt(it, this.py[i]), d.ix, roomCentre(it, 0, _pt).y, d.iz, 0);
+    this.startInside(ag, pts, true);
+  }
+
+  private startInside(ag: Agent, pts: number[], exit: boolean): void {
+    ag.inPts = pts;
+    ag.inK = 0;
+    ag.inExit = exit;
+    this.clearPose(ag.c);
+    ag.c.isMoving = true;
+    ag.c.gait = 0;
+  }
+
+  /** Walk on along the inside path; at its end take the slot, or go out. */
+  private insideStep(i: number, ag: Agent, dist: number): void {
+    const s = ag.inPts!;
+    let x = this.px[i], y = this.py[i], z = this.pz[i];
+    while (dist > 0 && ag.inK * 3 < s.length) {
+      const tx = s[ag.inK * 3], ty = s[ag.inK * 3 + 1], tz = s[ag.inK * 3 + 2];
+      const l = Math.hypot(tx - x, tz - z, ty - y);
+      if (l <= dist) { x = tx; y = ty; z = tz; dist -= l; ag.inK++; continue; }
+      const f = dist / l;
+      x += (tx - x) * f; y += (ty - y) * f; z += (tz - z) * f;
+      dist = 0;
+    }
+    this.px[i] = x; this.py[i] = y; this.pz[i] = z;
+    if (ag.inK * 3 < s.length) {
+      ag.c.targetX = s[ag.inK * 3]; ag.c.targetZ = s[ag.inK * 3 + 2];
+      return;
+    }
+    ag.inPts = null;
+    if (ag.inExit) {
+      ag.inExit = false;
+      ag.c.isMoving = false;
+      this.leave(i);
+    } else this.arriveSlot(ag);
+  }
+
+  private arriveSlot(ag: Agent): void {
+    const c = ag.c, s = ag.slot;
+    c.isMoving = false;
+    c.vx = 0; c.vz = 0;
+    c.pose = s && s.pose !== 'stand' ? s.pose : undefined;
+    c.faceYaw = s ? s.yaw : undefined;
+    c.activityAnim = s?.kind === 'work' ? 'work' : 'idle';
+  }
+
+  private clearPose(c: Citizen): void {
+    c.pose = undefined;
+    c.faceYaw = undefined;
+    c.activityAnim = undefined;
   }
 
   private arriveSpot(ag: Agent, s: Spot): void {
@@ -620,6 +757,15 @@ export class SimulationEngine {
   /** Everyone inside a building now (the cutaway shows them). */
   public occupants(b: Building, out: Citizen[] = []): Citizen[] {
     for (const ag of this.agents) if (ag.phase === Phase.INSIDE && ag.inB === b) out.push(ag.c);
+    return out;
+  }
+
+  /** Placement indices of buildings with someone awake inside (lit windows at night). */
+  public awakeInside(out: Set<number>): Set<number> {
+    out.clear();
+    for (const ag of this.agents) {
+      if (ag.phase === Phase.INSIDE && ag.inB && ag.c.pose !== 'lie') out.add(ag.inB.index);
+    }
     return out;
   }
 
@@ -852,6 +998,9 @@ export class SimulationEngine {
         case Phase.QUEUE:
           this.queueStep(i, ag, walk * ag.pace * STROLL * 0.6 * dt);
           break;
+        case Phase.INSIDE:
+          if (ag.inPts) this.insideStep(i, ag, walk * ag.pace * INDOOR * dt);
+          break;
         default:
           break;
       }
@@ -971,7 +1120,8 @@ export class SimulationEngine {
       // Before setting off the leader may still be leaving its door or waiting for a path:
       // walk our own route meanwhile. Once together, any other case (arrived, lost them,
       // re-planning) means finishing alone: our own route is stale by then.
-      if (far || ag.paired || (L.phase !== Phase.ROUTE && L.phase !== Phase.SCRIPT)) {
+      const coming = L.phase === Phase.ROUTE || L.phase === Phase.SCRIPT || (L.phase === Phase.INSIDE && L.inExit);
+      if (far || ag.paired || !coming) {
         this.dropPair(i);
         this.requestRoute(i);
         return;

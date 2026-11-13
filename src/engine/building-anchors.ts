@@ -9,6 +9,9 @@ import type { PlacedModel } from './static-batches';
  *   doors: { p: sill centre on the outer wall face, n: outward normal, w: width, h: height,
  *            stair?: points from the stair foot (outside, on the ground) up to the landing }
  *   spots: { p, yaw (facing, atan2(dx, dz)), tag: work | sell | stand | guard }
+ *   rooms, furniture, slots, ladders: the interior (houses and workshops; format in
+ *            build_assets.py above PROPS). Slots and ladders go to the world here; rooms and
+ *            furniture stay in model space (interiors.ts grids and draws them).
  * Here each placement's matrix takes them to the world.
  */
 
@@ -44,6 +47,30 @@ export interface Door {
 
 export interface Spot { x: number; y: number; z: number; yaw: number; tag: string; taken: number }
 
+/** One storey's floor. r and holes are model-space rectangles [minx, minz, maxx, maxz]. */
+export interface Room { y: number; r: number[]; holes: number[][] }
+/** A piece of furniture: model-space centre of its footprint, yaw, footprint w x d. */
+export interface Furn { prop: string; p: number[]; yaw: number; room: number; w: number; d: number; h?: number }
+/** A place a person uses (world space): lie in a bed, sit at a table, stand at a bench. */
+export interface Slot {
+  kind: 'sleep' | 'seat' | 'work' | 'hearth';
+  pose: 'lie' | 'sit' | 'stand';
+  x: number; y: number; z: number;
+  /** Facing (for lie: from head to feet). */
+  yaw: number;
+  /** World point to walk to before taking the slot. */
+  ax: number; az: number;
+  room: number;
+  taken: number;
+}
+/** Ladder from room `from` up to `to` (world points): foot -> top (same x z) -> off. */
+export interface Ladder { from: number; to: number; foot: THREE.Vector3; top: THREE.Vector3; off: THREE.Vector3 }
+export interface Interior {
+  rooms: Room[]; furniture: Furn[]; slots: Slot[]; ladders: Ladder[];
+  /** Placement matrix (model -> world) and its inverse. */
+  matrix: THREE.Matrix4; inv: THREE.Matrix4;
+}
+
 export interface Building {
   name: string;
   /** Placement index (StaticBatches order): the cutaway hides and redraws it. */
@@ -52,11 +79,17 @@ export interface Building {
   x: number; y: number; z: number;
   doors: Door[];
   spots: Spot[];
+  /** Rooms, furniture and slots (houses and workshops, M6). */
+  interior?: Interior;
 }
 
 interface RawAnchors {
   doors?: { p: number[]; n: number[]; w: number; h?: number; stair?: number[][] }[];
   spots?: { p: number[]; yaw: number; tag: string }[];
+  rooms?: Room[];
+  furniture?: { prop: string; p: number[]; yaw: number; room: number; s: number[]; h?: number }[];
+  slots?: { k: Slot['kind']; pose: Slot['pose']; p: number[]; yaw: number; a: number[]; room: number }[];
+  ladders?: { from: number; to: number; foot: number[]; top: number[]; off: number[] }[];
 }
 
 /** Schedule location ids that name a landmark rather than a parcel. */
@@ -113,6 +146,24 @@ export class BuildingIndex {
         v.fromArray(s.p).applyMatrix4(pm.matrix);
         const [fx, fz] = dir(Math.sin(s.yaw), Math.cos(s.yaw));
         b.spots.push({ x: v.x, y: v.y, z: v.z, yaw: Math.atan2(fx, fz), tag: s.tag, taken: 0 });
+      }
+      if (raw.rooms?.length) {
+        const w = (p: number[]) => new THREE.Vector3().fromArray(p).applyMatrix4(pm.matrix);
+        const slots: Slot[] = (raw.slots ?? []).map((s) => {
+          v.fromArray(s.p).applyMatrix4(pm.matrix);
+          const [fx, fz] = dir(Math.sin(s.yaw), Math.cos(s.yaw));
+          const a = w([s.a[0], s.p[1], s.a[1]]);
+          return { kind: s.k, pose: s.pose, x: v.x, y: v.y, z: v.z, yaw: Math.atan2(fx, fz), ax: a.x, az: a.z,
+            room: s.room, taken: 0 };
+        });
+        b.interior = {
+          rooms: raw.rooms,
+          furniture: (raw.furniture ?? []).map((f) => ({ prop: f.prop, p: f.p, yaw: f.yaw, room: f.room, w: f.s[0], d: f.s[1], h: f.h })),
+          slots,
+          ladders: (raw.ladders ?? []).map((l) => ({ from: l.from, to: l.to, foot: w(l.foot), top: w(l.top), off: w(l.off) })),
+          matrix: pm.matrix,
+          inv: pm.matrix.clone().invert(),
+        };
       }
       this.all.push(b);
       if (pm.parcelId) this.byParcel.set(pm.parcelId, b);

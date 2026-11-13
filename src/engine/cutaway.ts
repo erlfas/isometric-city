@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { StaticBatches } from './static-batches';
+import type { PlacedPart, StaticBatches } from './static-batches';
 
 /**
  * Cutaway view: look into a building, and see through the ones in the way.
@@ -17,6 +17,9 @@ import type { StaticBatches } from './static-batches';
  * roof keeps the interior in shade. An occluder (a building between the camera and the
  * person you watch) uses the same copy with cutY far below ground: the whole building
  * dithers to `fade`.
+ *
+ * The building being looked into (`furnish`) also gets its furniture, plank floors and
+ * ladders from `furniture` (interiors.ts), drawn with the same shader, so they fade with it.
  *
  * Fades run over FADE_S; a copy is dropped and the batch instance shown again once its
  * fade is back at 0.
@@ -38,17 +41,24 @@ export interface CutTarget {
   fade: number;
   /** Warm light inside, if any. */
   fill?: THREE.Vector3;
+  /** Draw the furniture too (the building being looked into, not one merely in the way). */
+  furnish?: boolean;
 }
 
 interface View {
   group: THREE.Group;
   materials: THREE.Material[];
+  made: Map<string, THREE.Material>;
   u: { uCutY: { value: number }; uFade: { value: number }; uFill: { value: THREE.Vector3 }; uFillI: { value: number } };
   fade: number;
   target: number;
   fillI: number;
   fillTarget: number;
+  furnished: boolean;
 }
+
+/** Furniture, floors and ladders of a placement (interiors.ts), drawn with its cutaway. */
+export type FurnitureOf = (placement: number) => readonly PlacedPart[];
 
 const VERT_HEAD = /* glsl */ `
 varying vec3 vCutW;
@@ -104,6 +114,8 @@ export class Cutaway {
   private warm: THREE.Material[] = [];
   private scene: THREE.Scene;
   private statics: StaticBatches;
+  /** Set by the renderer once the furniture model is loaded. */
+  furniture: FurnitureOf | null = null;
 
   constructor(scene: THREE.Scene, statics: StaticBatches) {
     this.scene = scene;
@@ -111,16 +123,19 @@ export class Cutaway {
   }
 
   /**
-   * Compile the cutaway shader variant of every batch material now (call once the batches
-   * are built). Otherwise the first cutaway stalls a frame for ~140 ms. The warm-up materials
-   * are kept: disposing them would release the programs again.
+   * Compile the cutaway shader variant of every batch material (and of `extra` parts, the
+   * furniture) now; call once the batches are built. Otherwise the first cutaway stalls a
+   * frame for ~140 ms. The warm-up materials are kept: disposing them would release the
+   * programs again.
    */
-  prewarm(renderer: THREE.WebGLRenderer, camera: THREE.Camera): Promise<void> {
+  prewarm(renderer: THREE.WebGLRenderer, camera: THREE.Camera, extra: readonly PlacedPart[] = []): Promise<void> {
     const tmp = new THREE.Scene();
     const seen = new Set<THREE.Material>();
     const u: View['u'] = { uCutY: { value: OFF }, uFade: { value: 0 }, uFill: { value: new THREE.Vector3() }, uFillI: { value: 0 } };
-    for (let i = 0; i < this.statics.placements.length; i++) {
-      for (const p of this.statics.partsOfPlacement(i)) {
+    const lists: (readonly PlacedPart[])[] = [extra];
+    for (let i = 0; i < this.statics.placements.length; i++) lists.push(this.statics.partsOfPlacement(i));
+    for (const list of lists) {
+      for (const p of list) {
         if (seen.has(p.material)) continue;
         seen.add(p.material);
         const m = this.material(p.material, WHITE, u);
@@ -148,6 +163,10 @@ export class Cutaway {
     for (const [i, t] of targets) {
       let v = this.views.get(i);
       if (!v) this.views.set(i, (v = this.make(i)));
+      if (t.furnish && !v.furnished && this.furniture) {
+        v.furnished = true;
+        this.add(v, this.furniture(i));
+      }
       v.target = t.fade;
       v.u.uCutY.value = t.cutY;
       if (t.fill) { v.u.uFill.value.copy(t.fill); v.fillTarget = 1; } else v.fillTarget = 0;
@@ -172,24 +191,30 @@ export class Cutaway {
     };
     const group = new THREE.Group();
     group.matrixAutoUpdate = false;
-    const materials: THREE.Material[] = [];
-    const made = new Map<string, THREE.Material>();
-    for (const p of this.statics.partsOfPlacement(i)) {
+    const v: View = { group, materials: [], made: new Map(), u, fade: 0, target: 0, fillI: 0, fillTarget: 0, furnished: false };
+    this.add(v, this.statics.partsOfPlacement(i));
+    this.scene.add(group);
+    this.statics.setPlacementVisible(i, false);
+    return v;
+  }
+
+  /** Draw these parts in a view, with cutaway copies of their materials. */
+  private add(v: View, parts: readonly PlacedPart[]): void {
+    for (const p of parts) {
       const key = `${p.material.uuid}|${p.tint.getHexString()}`;
-      let m = made.get(key);
-      if (!m) made.set(key, (m = this.material(p.material, p.tint, u)));
-      if (m !== p.material) materials.push(m);
+      let m = v.made.get(key);
+      if (!m) {
+        v.made.set(key, (m = this.material(p.material, p.tint, v.u)));
+        if (m !== p.material) v.materials.push(m);
+      }
       const mesh = new THREE.Mesh(p.geometry, m);
       mesh.matrixAutoUpdate = false;
       mesh.matrix.copy(p.matrix);
+      mesh.matrixWorld.copy(p.matrix);
       mesh.castShadow = p.cast;
       mesh.receiveShadow = p.receive;
-      group.add(mesh);
+      v.group.add(mesh);
     }
-    group.updateMatrixWorld(true);
-    this.scene.add(group);
-    this.statics.setPlacementVisible(i, false);
-    return { group, materials: [...new Set(materials)], u, fade: 0, target: 0, fillI: 0, fillTarget: 0 };
   }
 
   private drop(i: number, v: View): void {

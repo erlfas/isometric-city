@@ -99,6 +99,8 @@ export interface Citizen {
   gait?: number;
   /** Stride length factor: travel is shown sped up, so steps lengthen with it. */
   strideScale?: number;
+  /** Lying in a bed (feet at the position, head away from faceYaw) or sitting; unset = standing. */
+  pose?: 'lie' | 'sit';
 }
 
 export interface StreetNode {

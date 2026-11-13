@@ -796,17 +796,193 @@ def anchor_spot(p, face, tag="work"):
     _ANCHORS["spots"].append({"p": _gl(p), "yaw": round(math.atan2(fx, fz), 4), "tag": tag})
 
 
+# -------------------------------------------------------------
+# Interiors (M6): rooms, furniture and the slots people use, placed from data.
+# The furniture meshes live in interior_props.glb (build_interior_props, one node per prop,
+# front = -Y); a house only says which prop stands where. Exported with the anchors:
+#   rooms:     r = [minx, minz, maxx, maxz] glTF floor rectangle inside the walls, y = floor
+#              height, holes = stairwells cut in this floor
+#   furniture: prop, p (centre of its footprint on the floor), yaw, room, s = [w, d] footprint
+#   slots:     k = sleep | seat | work | hearth, pose = lie | sit | stand, p, yaw (facing; for
+#              lie: from head to feet), a = [x, z] where to walk before taking it, room
+#   ladders:   from / to rooms, foot (lower floor) -> top (upper floor, same x z) -> off (step
+#              off beside the hole)
+# A slot holds one person; a bed has two. Rooms are listed ground floor first.
+# -------------------------------------------------------------
+# prop: (w, d, slots); slot = (kind, pose, (x, y, z) local, facing (x, y), approach (x, y))
+PROPS = {
+    "bed":       (1.5, 2.0, [("sleep", "lie", (-0.36, -0.92, 0.5), (0, -1), (-0.36, -1.5)),
+                             ("sleep", "lie", (0.36, -0.92, 0.5), (0, -1), (0.36, -1.5))]),
+    "pallet":    (0.85, 1.95, [("sleep", "lie", (0.0, -0.9, 0.15), (0, -1), (0.0, -1.45))]),
+    "table":     (2.0, 1.9, [("seat", "sit", (sx * 0.62, sy * 0.66, 0.0), (0, -sy), (sx * 0.62, sy * 1.25))
+                             for sy in (-1, 1) for sx in (-1, 0, 1)]),
+    "hearth":    (1.4, 1.2, [("hearth", "stand", (0.0, -0.95, 0.0), (0, 1), (0.0, -1.35))]),
+    "workbench": (1.8, 0.7, [("work", "stand", (sx * 0.45, -0.72, 0.0), (0, 1), (sx * 0.45, -1.15)) for sx in (-1, 1)]),
+    "kneading":  (1.8, 0.65, [("work", "stand", (sx * 0.45, -0.7, 0.0), (0, 1), (sx * 0.45, -1.15)) for sx in (-1, 1)]),
+    "loom":      (1.5, 1.6, [("work", "stand", (0.0, -1.0, 0.0), (0, 1), (0.0, -1.45))]),
+    "wheel":     (1.0, 1.0, [("work", "stand", (0.0, -0.75, 0.0), (0, 1), (0.0, -1.2))]),
+    "vat":       (1.3, 1.3, [("work", "stand", (0.0, -0.95, 0.0), (0, 1), (0.0, -1.4))]),
+    "mash_tun":  (1.7, 1.7, [("work", "stand", (0.0, -1.15, 0.0), (0, 1), (0.0, -1.6))]),
+    "chest":     (1.0, 0.55, []),
+    "shelf":     (1.2, 0.45, []),
+    "barrel":    (0.8, 0.8, []),
+    "sacks":     (1.3, 0.7, []),
+}
+LADDER_W, LADDER_OUT, HOLE_OUT = 0.9, 0.45, 1.0   # stairwell width, climber off the wall, hole depth
+
+_INTERIOR = {"rooms": [], "furniture": [], "slots": [], "ladders": []}
+_ROOM_USED = []                                     # per room: blocked rects (Blender x0, y0, x1, y1)
+
+
+def _rot(lx, ly, th):
+    c, s = math.cos(th), math.sin(th)
+    return (lx * c - ly * s, lx * s + ly * c)
+
+
+def anchor_room(x0, y0, x1, y1, z):
+    """Floor of one storey (Blender model space, inside the walls). Returns the room index."""
+    _INTERIOR["rooms"].append({"r": [round(x0, 3), round(-y1, 3), round(x1, 3), round(-y0, 3)],
+                               "y": round(z, 3), "holes": []})
+    _ROOM_USED.append([])
+    k = len(_INTERIOR["rooms"]) - 1
+    # Keep the way in clear: 1.6 m wide, 2.4 m deep behind every door on this floor.
+    for d in _ANCHORS["doors"]:
+        if abs(d["p"][1] - z) < 0.4:
+            px, py, nx, ny = d["p"][0], -d["p"][2], d["n"][0], -d["n"][2]
+            ex, ey = px - nx * 2.4, py - ny * 2.4
+            _ROOM_USED[k].append((min(px, ex) - 0.8 * abs(ny), min(py, ey) - 0.8 * abs(nx),
+                                  max(px, ex) + 0.8 * abs(ny), max(py, ey) + 0.8 * abs(nx)))
+    return k
+
+
+def _block(room, x, y, w, d, th):
+    hx, hy = _rot(w * 0.5, d * 0.5, th)
+    hx2, hy2 = _rot(w * 0.5, -d * 0.5, th)
+    ex, ey = max(abs(hx), abs(hx2)), max(abs(hy), abs(hy2))
+    _ROOM_USED[room].append((x - ex, y - ey, x + ex, y + ey))
+
+
+def _free(room, x0, y0, x1, y1, pad=0.0):
+    """Inside the room and clear of everything placed (pad: keep that much space around)."""
+    rx0, rz0, rx1, rz1 = _INTERIOR["rooms"][room]["r"]
+    if x0 < rx0 - 1e-3 or x1 > rx1 + 1e-3 or y0 < -rz1 - 1e-3 or y1 > -rz0 + 1e-3:
+        return False
+    x0, y0, x1, y1 = x0 - pad, y0 - pad, x1 + pad, y1 + pad
+    return all(x1 <= a0 + 0.05 or x0 >= a1 - 0.05 or y1 <= b0 + 0.05 or y0 >= b1 - 0.05
+               for a0, b0, a1, b1 in _ROOM_USED[room])
+
+
+def furnish(prop, x, y, face=(0, -1), room=0):
+    """Stand a prop with its front toward `face` (Blender x, y); its slots go with it."""
+    w, d, slots = PROPS[prop]
+    th = math.atan2(face[0], -face[1])               # rotation taking local -Y to `face`
+    z = _INTERIOR["rooms"][room]["y"]
+    _INTERIOR["furniture"].append({"prop": prop, "p": _gl((x, y, z)), "yaw": round(th, 4), "room": room,
+                                   "s": [w, d]})
+    _block(room, x, y, w, d, th)
+    for kind, pose, (lx, ly, lz), (fx, fy), (ax, ay) in slots:
+        ox, oy = _rot(lx, ly, th)
+        gx, gy = _rot(fx, fy, th)
+        qx, qy = _rot(ax, ay, th)
+        _INTERIOR["slots"].append({"k": kind, "pose": pose, "p": _gl((x + ox, y + oy, z + lz)),
+                                   "yaw": round(math.atan2(gx, -gy), 4),
+                                   "a": [round(x + qx, 3), round(-(y + qy), 3)], "room": room})
+
+
+def anchor_ladder(x, y, face, lower, upper):
+    """Ladder against the wall at (x, y), climbed facing the wall, from room `lower` up through
+    a hole in `upper`'s floor; you step off beside the hole."""
+    fx, fy = face
+    ax, ay = -fy, fx                                 # along the wall
+    z0, z1 = _INTERIOR["rooms"][lower]["y"], _INTERIOR["rooms"][upper]["y"]
+    th = math.atan2(fx, -fy)
+    _INTERIOR["furniture"].append({"prop": "ladder", "p": _gl((x + fx * 0.12, y + fy * 0.12, z0)),
+                                   "yaw": round(th, 4), "room": lower, "s": [0.7, 0.3],
+                                   "h": round(z1 - z0 + 0.9, 3)})
+    foot = (x + fx * LADDER_OUT, y + fy * LADDER_OUT)
+    off = (foot[0] + ax * (LADDER_W * 0.5 + 0.45), foot[1] + ay * (LADDER_W * 0.5 + 0.45))
+    _INTERIOR["ladders"].append({"from": lower, "to": upper, "foot": _gl((*foot, z0)), "top": _gl((*foot, z1)),
+                                 "off": _gl((*off, z1))})
+    hx0, hy0 = x - ax * LADDER_W * 0.5, y - ay * LADDER_W * 0.5
+    hx1, hy1 = x + ax * LADDER_W * 0.5 + fx * HOLE_OUT, y + ay * LADDER_W * 0.5 + fy * HOLE_OUT
+    hole = (min(hx0, hx1), min(hy0, hy1), max(hx0, hx1), max(hy0, hy1))
+    _INTERIOR["rooms"][upper]["holes"].append([round(hole[0], 3), round(-hole[3], 3), round(hole[2], 3), round(-hole[1], 3)])
+    for room in (lower, upper):
+        _ROOM_USED[room].append(hole)
+    _ROOM_USED[upper].append((off[0] - 0.3, off[1] - 0.3, off[0] + 0.3, off[1] + 0.3))
+
+
+def fill_sleepers(room, n, beds=1, chest=True):
+    """Beds, then straw pallets, heads to the walls (back wall first, the street front last)
+    wherever the floor is free, until n people can sleep. Returns how many fit."""
+    rx0, rz0, rx1, rz1 = _INTERIOR["rooms"][room]["r"]
+    x0, x1, y0, y1 = rx0, rx1, -rz1, -rz0
+    walls = [((0, -1), y1), ((1, 0), x0), ((-1, 0), x1), ((0, 1), y0)]   # face into the room, wall line
+    got = 0
+    for prop, want in (("bed", beds), ("pallet", 99)):
+        w, d, slots = PROPS[prop]
+        for face, line in walls:
+            if got >= n or (prop == "bed" and want <= 0):
+                break
+            horizontal = face[1] != 0                   # wall runs along x
+            lo, hi = (x0, x1) if horizontal else (y0, y1)
+            t = lo
+            while t + w <= hi + 1e-6 and got < n and not (prop == "bed" and want <= 0):
+                c = t + w * 0.5
+                if horizontal:
+                    cx, cy = c, line + face[1] * d * 0.5
+                    box = (t, min(line, cy + d * 0.5 * face[1]), t + w, max(line, cy + d * 0.5 * face[1]))
+                else:
+                    cx, cy = line + face[0] * d * 0.5, c
+                    box = (min(line, cx + d * 0.5 * face[0]), t, max(line, cx + d * 0.5 * face[0]), t + w)
+                if _free(room, *box):
+                    furnish(prop, cx, cy, face, room)
+                    got += len(slots)
+                    want -= 1
+                    t += w + 0.1
+                else:
+                    t += 0.25
+    if chest:
+        cw, cd, _ = PROPS["chest"]
+        for face, line in walls:
+            horizontal = face[1] != 0
+            lo, hi = (x0, x1) if horizontal else (y0, y1)
+            t, placed = lo + 0.1, False
+            while t + cw <= hi and not placed:
+                if horizontal:
+                    cx, cy = t + cw * 0.5, line + face[1] * cd * 0.5
+                    box = (t, min(line, line + face[1] * cd), t + cw, max(line, line + face[1] * cd))
+                else:
+                    cx, cy = line + face[0] * cd * 0.5, t + cw * 0.5
+                    box = (min(line, line + face[0] * cd), t, max(line, line + face[0] * cd), t + cw)
+                if _free(room, *box, pad=0.4):
+                    furnish("chest", cx, cy, face, room)
+                    placed = True
+                t += 0.25
+            if placed:
+                break
+    if got < n:
+        print(f"  note: room {room} sleeps {got} of {n}")
+    return got
+
+
 def export_object(obj, name):
     apply_material_overrides(obj, name)
     add_world_uvs(obj)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     filepath = os.path.join(OUTPUT_DIR, f"{name}.glb")
     scene = bpy.context.scene
+    out = dict(_ANCHORS)
+    if _INTERIOR["rooms"]:
+        out.update(_INTERIOR)
     if _ANCHORS["doors"] or _ANCHORS["spots"]:
-        scene["anchors"] = json.dumps(_ANCHORS)
+        scene["anchors"] = json.dumps(out)
     elif "anchors" in scene:
         del scene["anchors"]
     _ANCHORS["doors"], _ANCHORS["spots"] = [], []
+    for k in _INTERIOR:
+        _INTERIOR[k] = []
+    _ROOM_USED.clear()
     bpy.ops.object.select_all(action='DESELECT')
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
@@ -1535,6 +1711,17 @@ def build_house_timber_log(mats):
     add_box(bm, 5.2, 0, 0.2, 2.0, 6.0, 0.2, mat_idx=5) # cabbage bed
     add_box(bm, -4.8, 0, 0.6, 0.8, 3.0, 1.0, mat_idx=0) # firewood stack
 
+    # One room: hearth under the chimney, table, a carpenter's / cooper's bench by the
+    # flank window, everyone's beds along the back and the -X wall.
+    anchor_room(-3.85, -5.35, 3.85, 5.35, z0)
+    furnish("hearth", 2.0, 2.0, (-1, 0))
+    furnish("table", -1.3, -2.4)
+    furnish("workbench", 3.45, -2.4, (-1, 0))
+    furnish("barrel", 3.3, -4.85)
+    furnish("sacks", 2.0, -4.95, (0, 1))
+    furnish("shelf", -3.6, -4.2, (1, 0))
+    fill_sleepers(0, 10, beds=2)
+
     bm.normal_update()
     mesh = bpy.data.meshes.new("Mesh_HouseLog")
     bm.to_mesh(mesh)
@@ -1595,6 +1782,20 @@ def build_house_half_timber(mats):
     # Backyard rain barrel and firewood cord
     add_cylinder(bm, 4.8, -4.5, 0.6, radius=0.45, height=1.2, segs=8, mat_idx=1)
     add_box(bm, -4.8, 0, 0.8, 0.8, 3.5, 1.4, mat_idx=1)
+
+    # Shop and kitchen downstairs (counter behind the shutter), sleeping upstairs.
+    anchor_room(-3.85, -5.85, 3.85, 5.85, 0.0)
+    anchor_room(-4.25, -6.15, 4.25, 6.15, 4.4)
+    furnish("workbench", 1.8, -5.3, (0, 1))
+    furnish("workbench", 3.45, 0.5, (-1, 0))
+    furnish("hearth", -2.6, 5.15)
+    furnish("table", 0.8, 3.2)
+    furnish("chest", 3.3, 5.3)
+    furnish("shelf", -3.6, -1.5, (1, 0))
+    furnish("barrel", -3.3, -4.9)
+    furnish("sacks", 3.45, -3.0, (-1, 0))
+    anchor_ladder(-3.85, 2.2, (1, 0), 0, 1)
+    fill_sleepers(1, 11, beds=2)
 
     bm.normal_update()
     mesh = bpy.data.meshes.new("Mesh_HouseHalfTimber")
@@ -1666,6 +1867,22 @@ def build_house_patrician_brick(mats):
     # on the street front and, plainer, on the back
     add_crow_step_gable(bm, 0, -y2, -1.0, H, W, steps=5, step_h=1.3, mat_brick=0, mat_plaster=1)
     add_crow_step_gable(bm, 0, y2, 1.0, H, W, steps=5, step_h=1.3, mat_brick=0, mat_plaster=1, niches=False)
+
+    # Hall downstairs (benches at the street windows, table, hearth, chests), chambers above.
+    anchor_room(-4.35, -6.85, 4.35, 6.85, 0.7)
+    anchor_room(-4.35, -6.85, 4.35, 6.85, 4.1)
+    furnish("workbench", -2.6, -6.45, (0, 1))
+    furnish("workbench", 2.6, -6.45, (0, 1))
+    furnish("workbench", 4.0, -2.0, (-1, 0))
+    furnish("table", 0.0, 1.5)
+    furnish("hearth", 2.9, 6.2)
+    furnish("chest", -3.6, 6.5)
+    furnish("chest", -2.4, 6.5)
+    furnish("shelf", 4.1, 1.8, (-1, 0))
+    furnish("barrel", -3.9, -1.5)
+    furnish("sacks", -3.95, -3.2, (1, 0))
+    anchor_ladder(-4.35, 3.6, (1, 0), 0, 1)
+    fill_sleepers(1, 11, beds=3)
 
     bm.normal_update()
     mesh = bpy.data.meshes.new("Mesh_HousePatrician")
@@ -2451,6 +2668,21 @@ def build_baker_house(mats):
                               (4.55, -4.33, 0.68, 0), (-4.25, -4.95, 0, 0), (-4.3, -4.3, 0, 0)], mat_sack=6)
     _ws_barrel(bm, -4.35, 2.0, 0.0, r=0.42, h=1.05, mat_wood=5, mat_hoop=9)
 
+    # Bakehouse and shop downstairs (kneading troughs, counter, kitchen hearth under the
+    # chimney), the household upstairs.
+    anchor_room(-3.65, -5.45, 3.65, 5.45, z0)
+    anchor_room(-3.9, -5.75, 3.9, 5.75, z1)
+    furnish("workbench", 1.4, -5.05, (0, 1))
+    furnish("kneading", 3.25, -1.4, (-1, 0))
+    furnish("kneading", 3.25, 0.9, (-1, 0))
+    furnish("hearth", 1.3, 4.8)
+    furnish("table", -1.4, 2.4)
+    furnish("sacks", -3.25, -3.6, (1, 0))
+    furnish("shelf", -3.4, -0.6, (1, 0))
+    furnish("barrel", 3.2, 3.0)
+    anchor_ladder(-3.65, 4.5, (1, 0), 0, 1)
+    fill_sleepers(1, 11, beds=2)
+
     _ws_finish(bm, mat_list, "Mesh_HouseBaker", "HouseBaker", "house_baker")
 
 
@@ -2543,6 +2775,16 @@ def build_tanner_workshop(mats):
             add_box(bm, sx + jx, sy + jy, 0.06 + k * 0.12, 1.2, 0.9, 0.11, mat_idx=4 if k % 2 else 5)
     add_beehive_dome(bm, 2.4, -7.7, 0.0, 0.9, 0.55, segs_u=10, segs_v=3, mat_idx=4)
     _ws_barrel(bm, 3.3, -6.2, 0.0, r=0.38, h=0.95, mat_wood=7, mat_hoop=9)
+
+    # One room: two vats and the currier's bench along +X, hearth on -X, beds at the back.
+    anchor_room(-3.35, -5.35, 3.35, 5.35, zp)
+    furnish("vat", 2.55, -3.9, (-1, 0))
+    furnish("vat", 2.55, -2.2, (-1, 0))
+    furnish("workbench", 2.95, 0.2, (-1, 0))
+    furnish("hearth", -2.65, 0.6, (1, 0))
+    furnish("table", 0.1, -1.1)
+    furnish("chest", -2.9, -4.85, (0, 1))
+    fill_sleepers(0, 9, beds=1, chest=False)
 
     _ws_finish(bm, mat_list, "Mesh_Tanner", "HouseTanner", "house_tanner")
 
@@ -2653,6 +2895,26 @@ def build_brewer_malthouse(mats):
     # Forecourt drinking tables
     add_tavern_table_and_benches(bm, -2.2, -d2 - 2.8, 0, mat_wood=4)
     add_tavern_table_and_benches(bm, 2.2, -d2 - 2.8, 0, mat_wood=4)
+
+    # Brewhouse and taproom downstairs (mash tuns over the fire, casks, two tables, the
+    # cooper's bench), malt floor and beds upstairs.
+    anchor_room(-4.15, -6.6, 4.15, 6.6, 0.6)
+    anchor_room(-4.3, -6.75, 4.3, 6.75, zg)
+    furnish("mash_tun", 2.85, -3.9, (-1, 0))
+    furnish("mash_tun", 2.85, -1.5, (-1, 0))
+    furnish("hearth", 3.15, 0.9, (-1, 0))
+    furnish("barrel", 3.6, 3.0)
+    furnish("barrel", 3.6, 3.9)
+    furnish("barrel", 2.75, 3.45)
+    furnish("barrel", -3.6, -5.9)
+    furnish("table", -2.4, -3.2)
+    furnish("table", -2.4, 0.2)
+    furnish("workbench", -3.8, 3.6, (1, 0))
+    furnish("sacks", 0.0, 6.2)
+    anchor_ladder(-4.15, 5.6, (1, 0), 0, 1)
+    furnish("sacks", 3.5, 6.3, (0, -1), room=1)
+    furnish("sacks", 3.85, 4.8, (-1, 0), room=1)
+    fill_sleepers(1, 11, beds=2)
 
     _ws_finish(bm, mat_list, "Mesh_Brewer", "HouseBrewer", "house_brewer")
 
@@ -2815,6 +3077,18 @@ def build_blacksmith_workshop(mats):
     add_beehive_dome(bm, 4.6, 0.0, 0.84, 0.8, 0.42, segs_u=10, segs_v=3, mat_idx=8)
     _ws_barrel(bm, -3.3, -4.4, 0.0, r=0.38, h=0.95, mat_wood=9, mat_hoop=12)
 
+    # Dwelling behind the forge: benches for fine work (armourer, goldsmith), hearth, table;
+    # beds upstairs.
+    anchor_room(-3.25, yb - db + 0.15, 3.25, yb + db - 0.15, 0.5)
+    anchor_room(-3.4, yb - du + 0.15, 3.4, yb + du - 0.15, zg)
+    furnish("workbench", -2.9, 4.5, (1, 0))
+    furnish("workbench", -2.9, 1.0, (1, 0))
+    furnish("hearth", 0.0, 5.45)
+    furnish("table", 0.0, 0.0)
+    furnish("chest", 2.6, 5.7)
+    anchor_ladder(3.25, -0.8, (-1, 0), 0, 1)
+    fill_sleepers(1, 10, beds=2)
+
     _ws_finish(bm, mat_list, "Mesh_Blacksmith", "BlacksmithWorkshop", "blacksmith_workshop")
 
 
@@ -2917,6 +3191,16 @@ def build_potter_workshop(mats):
     add_prop_firewood_pile(bm, cx=7.9, cy=2.4, cz=0, w=1.5, d=1.0, h=1.1, mat_bark=11, mat_end=12)
     for jx in (-2.95, -0.75):
         _ws_pot(bm, jx, -4.95, 0.0, "jar", 5, s=0.8)
+
+    # One room: two kick wheels by the camera-side wall, a bench, the hearth, beds at the back.
+    anchor_room(-3.25, -4.45, 3.25, 4.45, zp)
+    furnish("wheel", 2.6, -3.5, (-1, 0))
+    furnish("wheel", 2.6, -2.0, (-1, 0))
+    furnish("shelf", 3.0, -0.4, (-1, 0))
+    furnish("workbench", -2.9, -0.6, (1, 0))
+    furnish("hearth", 0.5, 0.6)
+    furnish("table", 0.4, -2.5)
+    fill_sleepers(0, 7, beds=1, chest=False)
 
     _ws_finish(bm, mat_list, "Mesh_Potter", "HousePotter", "house_potter")
 
@@ -3084,6 +3368,20 @@ def build_weaver_workshop(mats):
     # Firewood for the dye fires, wool sacks by the door
     add_prop_firewood_pile(bm, cx=5.8, cy=3.5, cz=0, w=1.6, d=1.0, h=1.2, mat_bark=15, mat_end=16)
     add_prop_flour_sacks(bm, [(0.45, -6.4, 0, 0), (1.05, -6.45, 0, 0)], mat_sack=12)
+
+    # Weaving room downstairs (a loom at the big street window, one by the flank, the
+    # tailor's bench), hearth and table at the back; beds upstairs.
+    anchor_room(-3.75, -5.6, 3.75, 5.6, zp)
+    anchor_room(-4.0, -5.85, 4.0, 5.85, z1)
+    furnish("loom", 2.0, -4.75, (0, 1))
+    furnish("loom", 2.9, -1.0, (-1, 0))
+    furnish("workbench", -3.4, -1.5, (1, 0))
+    furnish("hearth", -2.4, 4.95)
+    furnish("table", 0.8, 2.6)
+    furnish("chest", 2.9, 5.25)
+    furnish("sacks", 3.35, 1.6, (-1, 0))
+    anchor_ladder(-3.75, 2.2, (1, 0), 0, 1)
+    fill_sleepers(1, 10, beds=2)
 
     _ws_finish(bm, mat_list, "Mesh_Weaver", "HouseWeaver", "house_weaver")
 
@@ -3721,6 +4019,197 @@ def build_archery_yard(mats):
 # -------------------------------------------------------------
 # Main Execution: Compiling All 28 Historical 3D Assets
 # -------------------------------------------------------------
+# -------------------------------------------------------------
+# Interior furniture (M6): one node per prop ("prop_bed", ...), each standing on the floor
+# at the origin with its front (where you stand or sit to use it) toward -Y. Sizes match
+# PROPS. Houses place them through furnish(); the runtime draws them only in a building
+# you are looking into.
+# -------------------------------------------------------------
+def build_interior_props(mats):
+    clear_scene()
+    mat_list = [
+        mats["timber_dark"],        # 0
+        mats["timber_plank"],       # 1
+        mats["roof_thatch"],        # 2  straw
+        mats["flour_sack_cloth"],   # 3  linen
+        mats["cloth_madder"],       # 4  blanket
+        mats["cloth_indigo"],       # 5
+        mats["stone_limestone"],    # 6
+        mats["fire_orange"],        # 7
+        mats["iron_wrought"],       # 8
+        mats["soot_black"],         # 9
+        mats["pottery_terracotta"], # 10
+        mats["wood_end_grain"],     # 11
+        mats["tannin_water"],       # 12
+        mats["hide_leather"],       # 13
+        mats["bread_golden"],       # 14
+        mats["clay_mound"],         # 15
+        mats["birch_bark"],         # 16
+    ]
+    V = Vector
+
+    def bed(bm):
+        for sx in (-0.7, 0.7):
+            add_box(bm, sx, 0.95, 0.45, 0.1, 0.1, 0.9, mat_idx=0)        # head posts
+            add_box(bm, sx, -0.95, 0.3, 0.1, 0.1, 0.6, mat_idx=0)        # foot posts
+            add_box(bm, sx, 0.0, 0.32, 0.06, 1.8, 0.22, mat_idx=1)       # side boards
+        add_box(bm, 0.0, 0.97, 0.62, 1.3, 0.06, 0.5, mat_idx=1)          # headboard
+        add_box(bm, 0.0, -0.97, 0.38, 1.3, 0.06, 0.24, mat_idx=1)        # footboard
+        add_box(bm, 0.0, 0.0, 0.23, 1.34, 1.84, 0.06, mat_idx=1)         # bottom boards
+        add_box(bm, 0.0, 0.0, 0.38, 1.34, 1.84, 0.24, mat_idx=2)         # straw tick
+        add_box(bm, 0.0, -0.25, 0.51, 1.38, 1.3, 0.05, mat_idx=4)        # blanket
+        add_box(bm, 0.0, 0.7, 0.53, 1.1, 0.34, 0.1, mat_idx=3)           # bolster
+
+    def pallet(bm):
+        add_box(bm, 0.0, 0.0, 0.06, 0.82, 1.92, 0.12, mat_idx=2)
+        add_box(bm, 0.0, -0.3, 0.13, 0.84, 1.1, 0.04, mat_idx=13)        # sheepskin / rough blanket
+        add_box(bm, 0.0, 0.72, 0.15, 0.6, 0.3, 0.08, mat_idx=3)
+
+    def table(bm):
+        add_box(bm, 0.0, 0.0, 0.76, 2.0, 0.8, 0.06, mat_idx=1)
+        for sx in (-0.75, 0.75):
+            for sy in (-0.28, 0.28):
+                add_timber_beam(bm, V((sx, sy, 0.0)), V((sx, 0.0, 0.73)), width=0.09, depth=0.09, mat_idx=0)
+        add_box(bm, 0.0, 0.0, 0.3, 1.5, 0.08, 0.08, mat_idx=0)            # stretcher
+        for sy in (-0.66, 0.66):
+            add_box(bm, 0.0, sy, 0.44, 1.8, 0.3, 0.05, mat_idx=1)        # benches
+            for sx in (-0.75, 0.75):
+                add_box(bm, sx, sy, 0.21, 0.06, 0.24, 0.42, mat_idx=0)
+        _ws_pot(bm, -0.4, 0.05, 0.79, "jug", 10, s=0.7)
+        _ws_pot(bm, 0.3, -0.1, 0.79, "bowl", 10)
+        _ws_pot(bm, 0.65, 0.12, 0.79, "bowl", 10)
+        add_beehive_dome(bm, 0.0, 0.15, 0.79, 0.14, 0.09, segs_u=8, segs_v=2, mat_idx=14)
+
+    def hearth(bm):
+        add_box(bm, 0.0, 0.0, 0.15, 1.4, 1.2, 0.3, mat_idx=6)
+        add_box(bm, 0.0, 0.0, 0.31, 0.9, 0.75, 0.03, mat_idx=9)          # ash bed
+        add_timber_beam(bm, V((-0.3, -0.2, 0.36)), V((0.3, 0.2, 0.36)), width=0.09, depth=0.09, mat_idx=7)
+        add_timber_beam(bm, V((-0.3, 0.2, 0.36)), V((0.3, -0.2, 0.36)), width=0.09, depth=0.09, mat_idx=7)
+        for a in (0.0, 2.1, 4.2):                                       # iron tripod and pot
+            add_timber_beam(bm, V((math.cos(a) * 0.5, math.sin(a) * 0.45, 0.3)), V((0.0, 0.0, 1.15)),
+                            width=0.035, depth=0.035, mat_idx=8)
+        _ws_cyl(bm, (0.0, 0.0, 1.15), (0.0, 0.0, 0.62), 0.012, segs=4, mat=8)
+        _ws_lathe(bm, 0.0, 0.0, 0.45, [(0.1, 0.0), (0.22, 0.06), (0.24, 0.2), (0.2, 0.28)], 10, 9)
+        add_prop_firewood_pile(bm, cx=0.5, cy=0.42, cz=0.3, w=0.4, d=0.3, h=0.25, mat_bark=16, mat_end=11)
+
+    def workbench(bm):
+        add_box(bm, 0.0, 0.0, 0.82, 1.8, 0.7, 0.08, mat_idx=1)
+        for sx in (-0.8, 0.8):
+            for sy in (-0.28, 0.28):
+                add_box(bm, sx, sy, 0.39, 0.08, 0.08, 0.78, mat_idx=0)
+        add_box(bm, 0.0, 0.0, 0.18, 1.6, 0.6, 0.04, mat_idx=1)           # lower shelf
+        add_box(bm, 0.75, -0.25, 0.92, 0.18, 0.2, 0.14, mat_idx=8)       # vise
+        add_box(bm, -0.4, 0.05, 0.92, 0.5, 0.22, 0.12, mat_idx=11)       # work piece
+        add_timber_beam(bm, V((0.1, 0.1, 0.89)), V((0.4, 0.2, 0.89)), width=0.04, depth=0.04, mat_idx=0)
+        add_box(bm, 0.43, 0.21, 0.9, 0.08, 0.14, 0.08, mat_idx=8)        # hammer head
+        add_box(bm, -0.3, 0.1, 0.25, 0.6, 0.35, 0.1, mat_idx=13)         # leather / offcuts
+
+    def kneading(bm):
+        add_box(bm, 0.0, 0.0, 0.62, 1.8, 0.65, 0.04, mat_idx=1)          # trough bottom
+        for sy in (-0.3, 0.3):
+            add_box(bm, 0.0, sy, 0.75, 1.8, 0.05, 0.3, mat_idx=1)
+        for sx in (-0.88, 0.88):
+            add_box(bm, sx, 0.0, 0.75, 0.05, 0.65, 0.3, mat_idx=1)
+            for sy in (-0.25, 0.25):
+                add_box(bm, sx * 0.9, sy, 0.3, 0.08, 0.08, 0.6, mat_idx=0)
+        add_beehive_dome(bm, -0.3, 0.0, 0.64, 0.45, 0.16, segs_u=10, segs_v=2, mat_idx=3)   # dough
+        add_beehive_dome(bm, 0.45, 0.0, 0.64, 0.3, 0.12, segs_u=8, segs_v=2, mat_idx=3)
+
+    def loom(bm):
+        for sx in (-0.7, 0.7):
+            for sy in (-0.7, 0.7):
+                add_box(bm, sx, sy, 0.85, 0.09, 0.09, 1.7, mat_idx=0)
+            add_box(bm, sx, 0.0, 1.66, 0.09, 1.5, 0.08, mat_idx=0)
+            add_box(bm, sx, 0.0, 0.2, 0.09, 1.5, 0.08, mat_idx=0)
+        _ws_cyl(bm, (-0.66, 0.65, 1.0), (0.66, 0.65, 1.0), 0.08, segs=8, mat=1)   # warp beam
+        _ws_cyl(bm, (-0.66, -0.6, 0.85), (0.66, -0.6, 0.85), 0.1, segs=8, mat=4)  # cloth beam
+        add_timber_beam(bm, V((0.0, 0.62, 1.0)), V((0.0, -0.55, 0.9)), width=1.2, depth=0.01, mat_idx=3)   # warp
+        add_box(bm, 0.0, 0.0, 1.45, 1.35, 0.06, 0.06, mat_idx=0)         # heddle bar
+        add_box(bm, 0.0, -0.95, 0.42, 1.2, 0.25, 0.05, mat_idx=1)        # seat plank
+        for sx in (-0.5, 0.5):
+            add_box(bm, sx, -0.95, 0.2, 0.06, 0.2, 0.4, mat_idx=0)
+
+    def wheel(bm):
+        _ws_cyl(bm, (0.0, 0.0, 0.12), (0.0, 0.0, 0.22), 0.42, segs=12, mat=1)
+        _ws_cyl(bm, (0.0, 0.0, 0.22), (0.0, 0.0, 0.76), 0.05, segs=6, mat=0)
+        _ws_cyl(bm, (0.0, 0.0, 0.76), (0.0, 0.0, 0.82), 0.25, segs=10, mat=1)
+        _ws_lathe(bm, 0.0, 0.0, 0.82, [(0.13, 0.0), (0.16, 0.1), (0.11, 0.22)], 8, 15)
+        add_box(bm, 0.0, 0.42, 0.45, 0.9, 0.3, 0.05, mat_idx=1)          # table board behind
+        for sx in (-0.4, 0.4):
+            add_box(bm, sx, 0.42, 0.22, 0.06, 0.25, 0.44, mat_idx=0)
+        _ws_pot(bm, 0.25, 0.42, 0.48, "bowl", 10)
+        _ws_pot(bm, -0.25, 0.42, 0.48, "jug", 10, s=0.6)
+
+    def vat(bm):
+        _ws_tub(bm, 0.0, 0.0, 0.0, 0.62, 0.85, mat_wood=1, mat_fill=12, mat_hoop=8, segs=14, fill=0.8)
+        add_timber_beam(bm, V((0.25, -0.1, 0.5)), V((0.5, -0.55, 1.6)), width=0.05, depth=0.05, mat_idx=0)
+
+    def mash_tun(bm):
+        _ws_tub(bm, 0.0, 0.0, 0.0, 0.82, 1.05, mat_wood=1, mat_fill=12, mat_hoop=8, segs=16, fill=0.78)
+        add_timber_beam(bm, V((-0.2, 0.1, 0.7)), V((-0.55, -0.6, 1.75)), width=0.06, depth=0.06, mat_idx=0)
+        add_box(bm, -0.18, 0.12, 0.66, 0.14, 0.04, 0.3, mat_idx=0)       # paddle blade
+
+    def chest(bm):
+        add_box(bm, 0.0, 0.0, 0.22, 1.0, 0.55, 0.44, mat_idx=1)
+        add_box(bm, 0.0, 0.0, 0.48, 1.04, 0.59, 0.08, mat_idx=1)         # lid
+        for sx in (-0.32, 0.32):
+            add_box(bm, sx, 0.0, 0.26, 0.06, 0.6, 0.5, mat_idx=8)        # iron straps
+        add_box(bm, 0.0, -0.3, 0.38, 0.1, 0.03, 0.1, mat_idx=8)          # hasp
+
+    def shelf(bm):
+        for sx in (-0.58, 0.58):
+            add_box(bm, sx, 0.0, 0.9, 0.05, 0.45, 1.8, mat_idx=0)
+        add_box(bm, 0.0, 0.2, 0.9, 1.16, 0.04, 1.8, mat_idx=1)           # back
+        for k, z in enumerate((0.05, 0.6, 1.15, 1.7)):
+            add_box(bm, 0.0, 0.0, z, 1.16, 0.42, 0.04, mat_idx=1)
+            if k < 3:
+                for i, kind in enumerate(("jug", "bowl", "jar")):
+                    _ws_pot(bm, -0.35 + i * 0.35, 0.02, z + 0.02, kind if (i + k) % 2 else "bowl", 10, s=0.55)
+
+    def barrel(bm):
+        _ws_barrel(bm, 0.0, 0.0, 0.0, r=0.36, h=0.9, mat_wood=1, mat_hoop=8)
+
+    def sacks(bm):
+        add_prop_flour_sacks(bm, [(-0.33, 0.0, 0.0, 0), (0.33, 0.02, 0.0, 0)], mat_sack=3)
+
+    def ladder(bm):
+        # One metre of ladder; the runtime stacks as many as a storey needs.
+        for sx in (-0.27, 0.27):
+            add_box(bm, sx, 0.0, 0.5, 0.07, 0.07, 1.0, mat_idx=0)
+        for z in (0.17, 0.5, 0.83):
+            add_box(bm, 0.0, 0.0, z, 0.5, 0.05, 0.05, mat_idx=0)
+
+    objs = []
+    for name, make in (("bed", bed), ("pallet", pallet), ("table", table), ("hearth", hearth),
+                       ("workbench", workbench), ("kneading", kneading), ("loom", loom), ("wheel", wheel),
+                       ("vat", vat), ("mash_tun", mash_tun), ("chest", chest), ("shelf", shelf),
+                       ("barrel", barrel), ("sacks", sacks), ("ladder", ladder)):
+        bm = bmesh.new()
+        make(bm)
+        bm.normal_update()
+        mesh = bpy.data.meshes.new(f"Mesh_prop_{name}")
+        bm.to_mesh(mesh)
+        bm.free()
+        for m in mat_list:
+            mesh.materials.append(m)
+        obj = bpy.data.objects.new(f"prop_{name}", mesh)
+        bpy.context.collection.objects.link(obj)
+        add_world_uvs(obj)
+        objs.append(obj)
+
+    scene = bpy.context.scene
+    if "anchors" in scene:
+        del scene["anchors"]
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in objs:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = objs[0]
+    filepath = os.path.join(OUTPUT_DIR, "interior_props.glb")
+    bpy.ops.export_scene.gltf(filepath=filepath, export_format='GLB', use_selection=True,
+                              export_apply=True, export_extras=True)
+    print(f"Exported: {filepath} ({os.path.getsize(filepath):,} bytes)")
+
+
 def main():
     print("==================================================")
     print("  Compiling High-Quality 3D Assets via Blender CLI")
@@ -3766,6 +4255,7 @@ def main():
         "market_cart": build_market_cart,
         "town_well": build_town_well,
         "tree_oak": build_tree_oak,
+        "interior_props": build_interior_props,
     }
 
     # Optional model filter after "--": blender ... --python build_assets.py -- house_half_timber town_hall

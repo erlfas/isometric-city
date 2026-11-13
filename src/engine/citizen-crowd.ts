@@ -119,6 +119,9 @@ const CULL_RADIUS = 3.5;
 const LOD_IN_PX = 36;
 const LOD_OUT_PX = 44;
 const FIGURE_M = 1.75;
+/** Bench height (m), and how far a lying figure's back is below its pivot after tipping. */
+const SEAT_H = 0.45;
+const LIE_BACK = 0.12;
 
 export function hashId(id: string): number {
   let h = 2166136261;
@@ -647,9 +650,25 @@ export class CitizenCrowd {
         bob += Math.sin(t * 2.2) * 0.004 * still;
       }
 
-      _e.set(0, m.yaw, s * 0.03, 'YXZ');
+      // Lying in bed / sitting at a table (indoors, M6): only while standing still.
+      const pose = m.amp < 0.05 ? c.pose : undefined;
+      let rise = 0, pitch = 0;
+      if (pose === 'lie') {
+        // Tipped onto the back about the feet: the head goes away from the facing.
+        pitch = -Math.PI / 2;
+        legL = legR = armL = armR = headPitch = headYaw = lean = 0;
+        bob = LIE_BACK;
+      } else if (pose === 'sit') {
+        // Thighs forward (the legs are one piece: they stick out under the table), hips on
+        // the seat, forearms toward the table.
+        legL = legR = -1.45;
+        armL = -0.45 + armL * 0.3; armR = -0.4 + armR * 0.3;
+        lean = 0.04;
+        rise = SEAT_H - arch.pivots[4][0] * look.height;
+      }
+      _e.set(pitch, m.yaw, pose ? 0 : s * 0.03, 'YXZ');
       _q.setFromEuler(_e);
-      _p.set(x, y + bob, z);
+      _p.set(x, y + bob + rise, z);
       _s.set(look.girth, look.height, look.girth);
       _root.compose(_p, _q, _s);
 
