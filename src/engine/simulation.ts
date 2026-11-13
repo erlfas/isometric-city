@@ -106,6 +106,8 @@ const TALK_MIN = 4, TALK_MAX = 9; // real s of a chat
 const TALK_GAP = 0.6;           // sim h before the same person chats again
 const SERVE_MIN = 2.5;          // sim minutes at a baker's window (water: 2)
 const SVC_STEP = 0.8;           // m between people in a service line
+// Off-screen (M8)
+const VIEW_MARGIN = 30;         // m around the camera's ground rectangle simulated in full
 type Phase = (typeof Phase)[keyof typeof Phase];
 
 interface Dest {
@@ -178,6 +180,8 @@ export interface NavStats {
   phases: Record<string, number>; running: number;
   /** Walkers now: stuck (> STUCK_ASIDE), pairs walking together; totals since start. */
   stuckNow: number; pairs: number; replans: number; asides: number; stepMs: number;
+  /** Walkers now off view, gliding along their routes without avoidance (M8). */
+  gliding: number;
   /** Doors now open or moving, people queueing outside / waiting inside; totals since start. */
   doorsOpen: number; queueing: number; waitingInside: number; doorOpenings: number;
 }
@@ -232,7 +236,10 @@ export class SimulationEngine {
   private marketSpots: Spot[] = [];
   private offGridDoors = 0;
   private stat = { routes: 0, cacheHits: 0, straight: 0, failures: 0, expanded: 0, routeMs: 0,
-    replans: 0, asides: 0, stepMs: 0, doorOpenings: 0, talks: 0, served: 0, errands: 0 };
+    replans: 0, asides: 0, stepMs: 0, doorOpenings: 0, talks: 0, served: 0, errands: 0, gliding: 0 };
+  // Ground rectangle seen by the camera plus VIEW_MARGIN (M8); everything counts as in view
+  // until the renderer reports one.
+  private vx0 = -Infinity; private vz0 = -Infinity; private vx1 = Infinity; private vz1 = Infinity;
   private world: LifeWorld;
   private realT = 0; // real seconds of simulated stepping
   // Steering velocity (m/s, shown speed) per agent.
@@ -1114,13 +1121,19 @@ export class SimulationEngine {
     const t0 = performance.now();
     this.buildNeighbours();
     const walk = this.walkSpeed;
+    let gliding = 0;
     for (let i = 0; i < n; i++) {
       const ag = this.agents[i];
       const c = ag.c;
       switch (ag.phase) {
-        case Phase.WALK:
-          this.walkStep(i, ag, dt, walk * ag.pace * ag.gaitPace * (ag.running ? RUN : 1));
+        case Phase.WALK: {
+          const speed = walk * ag.pace * ag.gaitPace * (ag.running ? RUN : 1);
+          // Off view and walking alone: glide along the route (M8). Followers keep their
+          // leader's side through walkStep, without avoidance (steer checks the view).
+          if (ag.lead < 0 && this.offView(i)) { this.glide(i, ag, dt, speed); gliding++; }
+          else this.walkStep(i, ag, dt, speed);
           break;
+        }
         case Phase.SCRIPT:
           this.scriptStep(i, ag, walk * ag.pace * DOOR_PACE * dt);
           this.vx[i] = (this.px[i] - this.ox[i]) / dt;
@@ -1158,6 +1171,46 @@ export class SimulationEngine {
     this.updateDoors(dt);
     this.updateServices();
     this.stat.stepMs = performance.now() - t0;
+    this.stat.gliding = gliding;
+  }
+
+  /**
+   * The ground rectangle the camera sees (axis-aligned, world x/z). Walkers outside it plus
+   * VIEW_MARGIN glide along their routes instead of steering around people and walls.
+   */
+  public setView(x0: number, z0: number, x1: number, z1: number): void {
+    this.vx0 = x0 - VIEW_MARGIN; this.vz0 = z0 - VIEW_MARGIN;
+    this.vx1 = x1 + VIEW_MARGIN; this.vz1 = z1 + VIEW_MARGIN;
+  }
+
+  private offView(i: number): boolean {
+    const x = this.px[i], z = this.pz[i];
+    return x < this.vx0 || x > this.vx1 || z < this.vz0 || z > this.vz1;
+  }
+
+  /**
+   * Off-view walking (M8): position is a function of route distance only - no avoidance, no
+   * wall sliding, no stuck handling. Velocity points along the route, so a walker that comes
+   * into view carries on under full steering without a jolt.
+   */
+  private glide(i: number, ag: Agent, dt: number, speed: number): void {
+    const pts = ag.pts!;
+    if (ag.followers > 0) speed *= 0.9;
+    let x = this.px[i], z = this.pz[i], left = speed * dt, hx = 0, hz = 0;
+    while (ag.wp * 2 < pts.length) {
+      const tx = pts[ag.wp * 2], tz = pts[ag.wp * 2 + 1];
+      const d = Math.hypot(tx - x, tz - z);
+      if (d <= left) { x = tx; z = tz; left -= d; ag.wp++; continue; }
+      hx = (tx - x) / d; hz = (tz - z) / d;
+      x += hx * left; z += hz * left;
+      break;
+    }
+    this.px[i] = x; this.pz[i] = z;
+    this.py[i] = this.groundAt(x, z);
+    ag.stuck = 0;
+    if (ag.wp * 2 >= pts.length) { this.arrive(i, ag); return; }
+    this.vx[i] = hx * speed; this.vz[i] = hz * speed;
+    ag.c.targetX = pts[ag.wp * 2]; ag.c.targetZ = pts[ag.wp * 2 + 1];
   }
 
   /** Bucket everyone outdoors into NB-metre cells (linked lists in typed arrays). */
@@ -1322,6 +1375,7 @@ export class SimulationEngine {
   private steer(i: number, ag: Agent, dt: number, dvx: number, dvz: number, want: number, people: boolean): void {
     const x = this.px[i], z = this.pz[i];
     if (ag.ghost > 0) { ag.ghost -= dt; people = false; }
+    if (people && this.offView(i)) people = false;
     const blocker = this.avoid(i, ag, people);
     let vx = this.vx[i] + ((dvx - this.vx[i]) / RELAX + this.force.x) * dt;
     let vz = this.vz[i] + ((dvz - this.vz[i]) / RELAX + this.force.z) * dt;
@@ -1642,6 +1696,7 @@ export class SimulationEngine {
       queue: this.queue.length, avgExpanded: s.routes ? Math.round(s.expanded / s.routes) : 0,
       routeMsLastFrame: Math.round(s.routeMs * 100) / 100, phases, running,
       stuckNow, pairs, replans: s.replans, asides: s.asides, stepMs: Math.round(s.stepMs * 100) / 100,
+      gliding: s.gliding,
       doorsOpen: this.activeDoors.length, queueing, waitingInside, doorOpenings: s.doorOpenings,
     };
   }

@@ -416,3 +416,32 @@ In the baseline simulation, the 1,500 simulated citizens were represented by rud
 4. **Variation = variant groups + palettes in the GLB.** Kit metadata (groups weighted `[male, female]`, palettes tagged by wealth tier) travels as scene extras, so a trade's look is defined in one place (`build_kit_*`). `check_models.py` checks that the metadata matches the meshes.
 5. **Inspect characters with `#pause&lineup=char_tanner,6[,work|walk]`**: it stands the citizens in a row on open ground at face zoom, three-quarter facing the camera.
 6. **Readability traps found in the pilot**: the scene has no environment map, so metallic > ~0.3 renders near black (the tanner's knife vanished). White head cloths over a hidden hairline read as white hair, and thick coif ties as a white beard: show a hair fringe under every head cloth. A torso that narrows above the sleeve tops leaves a ledge that reads as epaulettes; fill the shoulder line on the torso instead.
+
+## 19. Navigation, Interiors & Citizen Life (plan milestones M1–M8)
+
+**Context**: 1,500 citizens slid in straight lines through walls and each other on a timetable shared by everyone. The plan (claude.ai doc "Lublin 1392 — Navigation, Interiors & Citizen Life Plan") added routing, steering, doors, cutaways, furnished interiors, needs-driven days and off-screen simulation.
+
+1. **Crowd drawing (M1b)**:
+   - In WebGL (ANGLE), a `BatchedMesh` multi-draw costs one GPU draw per instance, so it is no cheaper than separate meshes for crowds. Keep `InstancedMesh` for many identical things.
+   - Near citizens: one `BatchedMesh` per kit holding only the pieces each citizen wears. Unworn variants used to be collapsed in the vertex shader, but the GPU still processed them in both passes.
+   - Far citizens (under ~36 px tall): LOD1 `InstancedMesh` per (kit, part) and blob shadows instead of a shadow pass.
+2. **Walkable grid from the placed models (M2, `nav-grid.ts`)**:
+   - Rasterise only geometry in a 0.7–1.9 m height slab. A slab starting at 0.25 m marked the Kraków drawbridge deck as a wall.
+   - Seal enclosed pockets under 4,000 cells (courtyards with no gap).
+   - Route over a 4 m waypoint graph, not the raw grid: grid A* took 8 ms on average and 120 ms at worst per route, the graph 0.95 ms.
+   - Doors come from GLB scene extras (`anchors`). Expect a few that face walled gaps (28 here) and let those legs ignore the grid.
+3. **Never drive a schedule from the wrapped hour.** Comparing against the 0–24 hour replayed the whole timetable at midnight. Keep an unwrapped clock and plan departures from estimated trip length (leave early enough to arrive on time).
+4. **Steering (M3)**: time-to-collision power law (Karamouzas) with a typed-array neighbour grid, a keep-right term for head-on meetings and a push down the grid's distance field. Stuck → ask a standing blocker to step aside → re-plan; after two re-plans the walker ignores the grid. Couples walk as leader and follower, not as two independent walkers.
+5. **Do it at runtime when Blender would mean rebuilding every model**:
+   - **Doors (M4)**: leaves are drawn at runtime (`door-leaves.ts`, only open doors). The baked leaf sticks out up to 0.11 m, so the dark opening quad sits 0.135 m proud of the wall.
+   - **Cutaway (M5)**: a shader copy of the building instead of hollow shells: dithered discard above floor + 2.2 m, back faces drawn as inner wall and plank floor. Prewarm the shader variants: the first open hitched 139 ms, 28 ms prewarmed.
+   - Cost of the cutaway approach: walls are paper-thin at the cut.
+6. **Interiors (M6)**: furniture placed from anchors in `build_assets.py`, drawn only in the cutaway. Merge a building's furniture into one mesh per material: cutaway draw calls fell from 270 to 196.
+7. **Needs-driven days (M7, `life.ts`)**:
+   - Fixed blocks per role (work, watch, curfew) plus needs that pick free time. Tune rates so needs stay around 0.4–0.7 over a day; the first rates drove needs too high and households ran out of bread.
+   - A random event rolled after an early return never happens: the apprentices' errand roll had to move above the fixed-work return.
+   - Service lines (bakers' windows, the well) only work if the facility is near: with one well, a third of households live too far away and never fetch water.
+   - Spreading the day out did more for performance than any rendering change: the noon market crowd fell from ~900 to ~100.
+8. **Test life at 5–12x sim speed.** Walking speed scales with sim speed only up to 12.5x, so at 30x every trip takes sim hours and people leave early for everything. Numbers measured there mislead.
+9. **Off-screen simulation (M8)**: walkers outside the camera's ground rectangle plus 30 m glide along their route polylines (position from route distance only, no avoidance or wall sliding). Velocity points along the route, so a walker coming into view carries on under full steering without a jolt. At the evening rush 60–75% of walkers glide. A step was already only 1–1.4 ms, so the saving is small. Avoidance was never the main cost: measure before optimising.
+10. **Workstation limits**: run one dev server at a time (15 GB machine). Claude Code kills servers when memory runs low. PowerShell 5.1 `Get-Content`/`Set-Content` garble UTF-8 files and add a BOM, so edit with the Edit tool.

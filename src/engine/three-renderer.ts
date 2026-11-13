@@ -11,6 +11,9 @@ import { InteriorProps, roomAt, roomCentre } from './interiors';
 import { parcelHash, parcelKind } from './parcel-kind';
 import { StaticBatches, type PlacedModel, type Placement, type Tint } from './static-batches';
 
+const _gvDir = new THREE.Vector3();
+const _gvP = new THREE.Vector3();
+
 const UP = new THREE.Vector3(0, 1, 0);
 const hsl = { h: 0, s: 0, l: 0 };
 
@@ -992,6 +995,25 @@ totalEmissiveRadiance += vec3(${g.r.toFixed(3)}, ${g.g.toFixed(3)}, ${g.b.toFixe
     this.currentRotationAngle += diff * Math.min(1.0, dt * 8.0);
 
     this.updateCameraTransform();
+  }
+
+  /**
+   * Axis-aligned world rectangle (x0, z0, x1, z1) around what the camera sees of the ground
+   * plane y = 0: the four screen corners cast along the view direction.
+   */
+  public groundView(out: number[] = [0, 0, 0, 0]): number[] {
+    const cam = this.camera;
+    const dir = cam.getWorldDirection(_gvDir);
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      const p = _gvP.set(sx, sy, -1).unproject(cam);
+      const t = dir.y < -1e-4 ? -p.y / dir.y : 0;
+      const x = p.x + dir.x * t, z = p.z + dir.z * t;
+      if (x < x0) x0 = x; if (x > x1) x1 = x;
+      if (z < z0) z0 = z; if (z > z1) z1 = z;
+    }
+    out[0] = x0; out[1] = z0; out[2] = x1; out[3] = z1;
+    return out;
   }
 
   private updateCameraTransform(): void {

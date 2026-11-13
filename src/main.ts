@@ -336,6 +336,7 @@ async function bootstrap() {
   const awake = new Set<number>();
   const hearths = new Set<Building>();
   let windowsT = 0;
+  const view = [0, 0, 0, 0];
 
   function animate(now: number) {
     const dt = Math.min((now - lastTime) / 1000.0, 0.1);
@@ -346,6 +347,9 @@ async function bootstrap() {
 
     // 2. Update Three.js camera & lighting
     threeRenderer.updateCamera(dt);
+    // Full steering only in view (plus a margin); everyone else glides (M8). Used next frame.
+    threeRenderer.groundView(view);
+    sim.setView(view[0], view[1], view[2], view[3]);
     threeRenderer.updateDayNightLighting(sim.simTimeHours);
     // Cutaway: the followed citizen's building (or the peeked one) opens up, and the people
     // inside it - hidden while indoors - are drawn for this frame.
