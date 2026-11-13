@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Building, Interior, Room } from './building-anchors';
 import type { PlacedPart } from './static-batches';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /**
  * Interiors (M6): walking inside a building, and the furniture you see when it is cut away.
@@ -320,13 +321,15 @@ export class InteriorProps {
       } else place(f.prop, pos, yaw);
     }
     for (let k = 0; k < it.rooms.length; k++) out.push(this.floor(it, k));
-    this.cache.set(b.index, out);
+    const merged = mergeByMaterial(out);
+    for (const p of out) if (p.material === this.floorMat) p.geometry.dispose(); // copied into `merged`
+    this.cache.set(b.index, merged);
     if (this.cache.size > CACHE) {
       const [oldest, parts] = this.cache.entries().next().value!;
       this.cache.delete(oldest);
-      for (const p of parts) if (p.material === this.floorMat) p.geometry.dispose();
+      for (const p of parts) p.geometry.dispose(); // all built here (merged copies / floors)
     }
-    return out;
+    return merged;
   }
 
   /** Plank floor of a room, running under the walls, with the stairwells left open. */
@@ -365,4 +368,32 @@ export class InteriorProps {
     g.computeBoundingSphere();
     return { geometry: g, material: this.floorMat, matrix: new THREE.Matrix4(), tint: WHITE, cast: false, receive: true };
   }
+}
+
+/**
+ * One geometry per (material, shadow flags, attribute set), baked to world space: a furnished
+ * house is ~100 parts, which drawn one by one doubled the cutaway's draw calls. Returns new
+ * geometries only (the props' own are never handed out), so the caller may dispose them all.
+ */
+function mergeByMaterial(parts: PlacedPart[]): PlacedPart[] {
+  const groups = new Map<string, PlacedPart[]>();
+  for (const p of parts) {
+    const key = `${p.material.uuid}|${p.cast}|${p.receive}|${Object.keys(p.geometry.attributes).sort().join()}|${p.geometry.index ? 1 : 0}`;
+    const list = groups.get(key);
+    if (list) list.push(p); else groups.set(key, [p]);
+  }
+  const out: PlacedPart[] = [];
+  const identity = new THREE.Matrix4();
+  for (const list of groups.values()) {
+    const geos = list.map((p) => p.geometry.clone().applyMatrix4(p.matrix));
+    const g = geos.length > 1 ? mergeGeometries(geos) : geos[0];
+    if (g && g !== geos[0]) for (const x of geos) x.dispose();
+    if (!g) { // incompatible attributes after all: keep them separate
+      list.forEach((p, i) => out.push({ ...p, geometry: geos[i], matrix: identity }));
+      continue;
+    }
+    g.computeBoundingSphere();
+    out.push({ ...list[0], geometry: g, matrix: identity });
+  }
+  return out;
 }

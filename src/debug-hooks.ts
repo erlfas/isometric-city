@@ -141,7 +141,9 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
       const [who, zoom] = follow.split(',');
       const pick = () => (who === 'walk'
         ? sim.citizens.find((c) => c.isMoving && !c.hidden)
-        : who === 'inside' ? sim.citizens.find((c) => c.hidden && sim.insideOf(c))
+        // inside: someone in a furnished building; after 5 s anyone indoors
+        : who === 'inside' ? (sim.citizens.find((c) => sim.insideOf(c)?.b.interior)
+          ?? (tries > 20 ? sim.citizens.find((c) => c.hidden && sim.insideOf(c)) : undefined))
         : /^\d+$/.test(who) ? sim.citizens[Number(who)] : sim.citizens.find((c) => c.id === who));
       let tries = 0;
       const t = setInterval(() => {
