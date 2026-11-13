@@ -640,6 +640,7 @@ export class CitizenCrowd {
         wp.armL = breathe; wp.armR = -breathe; wp.headPitch = 0; wp.headYaw = Math.sin(t * 0.37) * 0.35; wp.lean = 0;
         const anim = c.activityAnim ?? (c.state === 'WORKING' || c.state === 'PATROLLING' ? 'work' : 'idle');
         if (anim === 'work') this.workAnim[i]?.(t, wp);
+        else if (anim !== 'idle') WORK_ANIMS[anim]?.(t, wp); // gossip, pay, draw_water (M7)
         armL = armL * m.amp + wp.armL * still;
         armR = armR * m.amp + wp.armR * still;
         headPitch = wp.headPitch * still;
@@ -649,6 +650,10 @@ export class CitizenCrowd {
         legR *= m.amp;
         bob += Math.sin(t * 2.2) * 0.004 * still;
       }
+
+      // Carrying home (M7): loaves held to the chest, or a heavy bucket that barely swings.
+      if (c.carrying === 'bread') armL = -0.95;
+      else if (c.carrying === 'water') { armR = armR * 0.15 + 0.08; lean -= 0.04; }
 
       // Lying in bed / sitting at a table (indoors, M6): only while standing still.
       const pose = m.amp < 0.05 ? c.pose : undefined;

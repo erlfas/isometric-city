@@ -1,4 +1,5 @@
-import type { CityPlan, Citizen, Parcel, BellHourInfo, FairEvent, StreetNode, ScheduleItem } from '../types';
+import type { CityPlan, Citizen, Parcel, BellHourInfo, FairEvent, StreetNode } from '../types';
+import { Life, type Activity, type LifeWorld, type Service } from './life';
 import { SpatialHashGrid } from './spatial-hash';
 import { NavGrid } from './nav-grid';
 import * as THREE from 'three';
@@ -7,15 +8,22 @@ import { hashId, mulberry32 } from './citizen-crowd';
 import { freePoint, roomAt, roomCentre, routeInside } from './interiors';
 
 /**
- * Citizens' day: schedule -> destination -> route on the navigation grid -> door / stair legs.
+ * Citizens' day: activity (life.ts: blocks + needs) -> destination -> route on the navigation
+ * grid -> door / stair legs. Each agent's needs tick and its planner re-thinks once per real
+ * second at most (staggered); an activity runs until its time is up or something more urgent
+ * comes (carrying bread or water home always comes first). Service lines (baker's windows,
+ * the well) and chats between acquaintances (TALK) live here too; the phases below add
+ *   TALK      stopped to chat, facing the other (gossip loop), then back to the route
+ *   SERVE     in a service line, or at the window / well being served
  *
  * Movement runs at a fixed STEP (20 Hz) on its own seeded RNG, so a run is reproducible for
  * a given start time; positions handed to the renderer are interpolated between steps.
  *
  * Clock vs walking: at the default 5x speed one real second is one sim minute, so walking at
  * a real 1.35 m/s would make a 300 m commute take four sim hours. Travel is therefore shown
- * sped up (TRAVEL_SCALE x walking pace, scaled with sim speed) and every trip leaves early by
- * its estimated duration so people arrive about on the hour. Late starters run.
+ * sped up (TRAVEL_SCALE x walking pace, scaled with sim speed up to 12.5x) and people leave
+ * for a block early by the trip's estimated duration so they arrive about on time. Late
+ * starters run. Above 12.5x trips take longer in sim hours (tune and test at 5-12x).
  *
  * Phases per citizen:
  *   IDLE      standing at a point destination (square, wall walk), wanders now and then
@@ -61,7 +69,6 @@ const DOOR_PACE = 0.55;         // door and stair legs, fraction of walking pace
 const ROUTE_BUDGET = 40_000;    // A* expansions per frame
 const ROUTE_CACHE = 3000;
 const MARKET = { x0: -30, x1: 30, z0: -24, z1: 24 };
-const TRAVEL = new Set(['COMMUTING', 'RETURNING']);
 
 // Steering (speeds are the shown, sped-up ones: ~3 m/s walking, ~5.5 m/s running).
 const NB = 2;                   // neighbour grid cell, m
@@ -90,7 +97,15 @@ const QUEUE_STEP = 0.75;        // m between people queueing at a door
 const STAIR_STRIDE = 0.55;      // stride on steps, fraction of the walking stride
 const INDOOR = 0.6;             // walking pace indoors, fraction of the street pace
 
-const Phase = { IDLE: 0, ROUTE: 1, WALK: 2, SCRIPT: 3, INSIDE: 4, SPOT: 5, QUEUE: 6 } as const;
+const Phase = { IDLE: 0, ROUTE: 1, WALK: 2, SCRIPT: 3, INSIDE: 4, SPOT: 5, QUEUE: 6, TALK: 7, SERVE: 8 } as const;
+const PHASE_NAMES = ['IDLE', 'ROUTE', 'WALK', 'SCRIPT', 'INSIDE', 'SPOT', 'QUEUE', 'TALK', 'SERVE'];
+
+// Life (M7).
+const TALK_R = 1.8;             // m: acquaintances this close may stop for a chat
+const TALK_MIN = 4, TALK_MAX = 9; // real s of a chat
+const TALK_GAP = 0.6;           // sim h before the same person chats again
+const SERVE_MIN = 2.5;          // sim minutes at a baker's window (water: 2)
+const SVC_STEP = 0.8;           // m between people in a service line
 type Phase = (typeof Phase)[keyof typeof Phase];
 
 interface Dest {
@@ -101,14 +116,23 @@ interface Dest {
   x: number; z: number;
   /** Open-ground destinations: wander radius around (cx, cz). */
   wander: number; cx: number; cz: number;
+  /** A service to line up at (x, z is a point near the end of its line). */
+  svc?: Service;
 }
 
 interface Agent {
   c: Citizen;
   rng: () => number;
   pace: number;
-  items: ScheduleItem[];
-  active: number;
+  /** What the citizen is doing (life.ts decides); next staggered re-think (clock). */
+  act: Activity | null;
+  nextThink: number;
+  /** Talking: real seconds left, with whom; no new chat before this clock. */
+  talkT: number; talkWith: number; nextTalk: number;
+  /** Phase to go back to after a chat (IDLE or SPOT stand; anything else re-routes). */
+  talkFrom: Phase;
+  /** Service (baker's window, well) queued at or being served at. */
+  svc: Service | null;
   phase: Phase;
   dest: Dest | null;
   heldSpot: Spot | null;
@@ -122,8 +146,6 @@ interface Agent {
   scriptInside: boolean;
   queued: boolean;
   running: boolean;
-  /** Left for the active entry before its hour (that hour has not come yet). */
-  early: boolean;
   /** Sim clock (hours since start, not wrapped) of the next wander. */
   nextWander: number;
   /** Gait pace factor for this leg (stroll / patrol / brisk). */
@@ -136,6 +158,8 @@ interface Agent {
   lead: number; followers: number;
   /** Has walked at the leader's side on this trip. */
   paired: boolean;
+  /** Has reached the current activity's place (its arrival effects are done). */
+  there: boolean;
   /** Door being walked through now (counted in its users); door being waited at. */
   gate: Door | null; qDoor: Door | null;
   /** Inside: slot held; walk in progress (x, y, z triples) and its next point; walking out. */
@@ -186,6 +210,10 @@ export class SimulationEngine {
   public onEventTriggered: ((event: FairEvent) => void) | null = null;
   /** A door starts opening (true) or has just shut (false). */
   public onDoor: ((door: Door, opening: boolean) => void) | null = null;
+  /** Two acquaintances stop to talk (speech bubble, voice). */
+  public onTalk: ((a: Citizen, b: Citizen) => void) | null = null;
+  /** Needs, households and the activity planner (M7). */
+  readonly life: Life;
   /** Doors open or moving (the renderer draws their leaves). */
   readonly activeDoors: Door[] = [];
 
@@ -204,7 +232,8 @@ export class SimulationEngine {
   private marketSpots: Spot[] = [];
   private offGridDoors = 0;
   private stat = { routes: 0, cacheHits: 0, straight: 0, failures: 0, expanded: 0, routeMs: 0,
-    replans: 0, asides: 0, stepMs: 0, doorOpenings: 0 };
+    replans: 0, asides: 0, stepMs: 0, doorOpenings: 0, talks: 0, served: 0, errands: 0 };
+  private world: LifeWorld;
   private realT = 0; // real seconds of simulated stepping
   // Steering velocity (m/s, shown speed) per agent.
   private vx: Float32Array; private vz: Float32Array;
@@ -251,17 +280,84 @@ export class SimulationEngine {
       const rng = mulberry32(hashId(c.id) ^ 0x5eed);
       this.agents.push({
         c, rng, pace: 0.88 + rng() * 0.24,
-        items: [...c.schedule].sort((a, b) => a.hour - b.hour),
-        active: 0, phase: Phase.IDLE, dest: null, heldSpot: null, inB: null, inDoor: null,
-        pts: null, wp: 0, script: [], sp: 0, scriptInside: false, queued: false, running: false, early: false, nextWander: 0,
-        gaitPace: 1, stuck: 0, ghost: 0, replans: 0, noClip: false, lead: -1, followers: 0, paired: false,
+        act: null, nextThink: 0, talkT: 0, talkWith: -1, nextTalk: 0, talkFrom: Phase.IDLE, svc: null,
+        phase: Phase.IDLE, dest: null, heldSpot: null, inB: null, inDoor: null,
+        pts: null, wp: 0, script: [], sp: 0, scriptInside: false, queued: false, running: false, nextWander: 0,
+        gaitPace: 1, stuck: 0, ghost: 0, replans: 0, noClip: false, lead: -1, followers: 0, paired: false, there: false,
         gate: null, qDoor: null, slot: null, inPts: null, inK: 0, inExit: false,
       });
       c.animFrame = rng() * 10;
       const h = this.household.get(c.homeParcelId);
       if (h) h.push(i); else this.household.set(c.homeParcelId, [i]);
     }
+    this.life = new Life(this.citizens, this.household, this.parcelMap, this.buildServices(), this.lifePlaces(),
+      this.agents.map((a) => a.rng));
+    const sim = this;
+    this.world = {
+      get hour() { return sim.simTimeHours; },
+      get clock() { return sim.clock; },
+      travel: (i, loc) => this.leadHours(i, loc),
+      pos: (i) => [this.px[i], this.pz[i]],
+      wallet: (i) => this.citizens[i].walletGroschen,
+    };
     this.seatEveryone();
+  }
+
+  /** Baker's windows (beside the shop door) and the four sides of the town well. */
+  private buildServices(): Service[] {
+    const out: Service[] = [];
+    const free = (x: number, z: number) => this.nav.isFree(x, z) && this.nav.clearance(x, z) >= 0.5;
+    for (const b of this.buildings.all) {
+      const p = b.parcelId ? this.parcelMap.get(b.parcelId) : undefined;
+      if (p?.craft?.id !== 'baker' || !b.doors.length) continue;
+      const d = b.doors[0];
+      // The window counter: along the front beside the door, or the door itself.
+      for (const s of [1.6, -1.6, 0]) {
+        const x = d.ax - d.nz * s, z = d.az + d.nx * s;
+        if (!free(x, z) || !free(x + d.nx * SVC_STEP, z + d.nz * SVC_STEP)) continue;
+        out.push({ kind: 'bread', x, z, fx: -d.nx, fz: -d.nz, nx: d.nx, nz: d.nz,
+          name: p.name ?? `the baker on ${p.streetName}`, line: [], user: -1, doneT: 0 });
+        break;
+      }
+    }
+    const wx = -14, wz = 10; // three-renderer places town_well here
+    for (let k = 0; k < 4; k++) {
+      const a = (k * Math.PI) / 2 + Math.PI / 4;
+      const nx = Math.sin(a), nz = Math.cos(a);
+      for (let r = 1.0; r <= 3; r += 0.25) {
+        const x = wx + nx * r, z = wz + nz * r;
+        if (!free(x, z)) continue;
+        out.push({ kind: 'water', x, z, fx: -nx, fz: -nz, nx, nz, name: 'the town well', line: [], user: -1, doneT: 0 });
+        break;
+      }
+    }
+    return out;
+  }
+
+  /** Churches, taverns (brewers), workshops (errands) and the wall checkpoints. */
+  private lifePlaces() {
+    const churches = [];
+    for (const [id, name] of [['parish_fara', "St Michael's (Fara)"], ['dominican_monastery', "the Dominicans' St Stanislaus"]]) {
+      const b = this.buildings.resolve(id);
+      if (b?.doors.length) churches.push({ id, name, x: b.x, z: b.z });
+    }
+    const taverns = [], workshops = [];
+    for (const b of this.buildings.all) {
+      const p = b.parcelId ? this.parcelMap.get(b.parcelId) : undefined;
+      if (!p?.craft || !b.doors.length) continue;
+      const place = { id: p.id, x: b.x, z: b.z, name: p.name ?? `the ${p.craft.id} on ${p.streetName}` };
+      workshops.push(place);
+      if (p.craft.id === 'brewer') taverns.push(place);
+    }
+    // Inner side of each tower and gate, in order round the wall.
+    const per = [...this.plan.defense.perimeterPoints].sort((a, b) => Math.atan2(a.z, a.x) - Math.atan2(b.z, b.x));
+    const checkpoints = [];
+    for (const p of per) {
+      const l = Math.hypot(p.x, p.z) || 1;
+      const c = this.nav.nearestFree(p.x - (p.x / l) * 9, p.z - (p.z / l) * 9, 12);
+      if (c >= 0) checkpoints.push({ x: this.nav.cx(c), z: this.nav.cz(c) });
+    }
+    return { churches, taverns, workshops, checkpoints };
   }
 
   public setSpeed(speed: number): void {
@@ -316,18 +412,17 @@ export class SimulationEngine {
 
   // ---------------------------------------------------------------- schedule
 
-  /** Item whose hour came last before now (wrapping over midnight). */
-  private itemAt(ag: Agent, hour: number): number {
-    let best = 0, bestAge = Infinity;
-    for (let k = 0; k < ag.items.length; k++) {
-      const age = (((hour - ag.items[k].hour) % 24) + 24) % 24;
-      if (age < bestAge) { bestAge = age; best = k; }
-    }
-    return best;
-  }
-
   private seatEveryone(): void {
     this.queue.length = 0;
+    for (const s of this.life.services) { s.line.length = 0; s.user = -1; }
+    // Households' stores and everyone's needs as they would be at this hour; the planner
+    // then says where each one is.
+    for (let i = 0; i < this.agents.length; i++) {
+      const ag = this.agents[i];
+      this.life.seed(i, this.simTimeHours, this.clock, ag.rng);
+      this.px[i] = this.citizens[i].currentX ?? 0;
+      this.pz[i] = this.citizens[i].currentZ ?? 0;
+    }
     for (const b of this.buildings.all) {
       for (const s of b.spots) s.taken = 0;
       for (const s of b.interior?.slots ?? []) s.taken = 0;
@@ -342,20 +437,31 @@ export class SimulationEngine {
       ag.queued = false;
       ag.gate = null; ag.qDoor = null;
       ag.heldSpot = null;
-      ag.early = false;
       ag.inB = null;
       ag.inDoor = null;
       ag.slot = null; ag.inPts = null; ag.inExit = false;
+      ag.svc = null; ag.talkT = 0; ag.talkWith = -1;
       this.clearPose(ag.c);
+      ag.c.carriedItem = this.life.minds[i].tool;
+      ag.c.carrying = undefined;
       ag.lead = -1; ag.followers = 0;
       ag.stuck = 0; ag.ghost = 0;
       this.vx[i] = 0; this.vz[i] = 0;
-      ag.active = this.itemAt(ag, this.simTimeHours);
-      const item = ag.items[ag.active];
-      ag.c.state = item.state;
-      ag.c.currentTask = item.task;
-      const d = this.destFor(ag, item, null);
+      const act = this.life.decide(i, ag.c, null, this.world, ag.rng);
+      // Errands and services in progress are not seated: rest at home instead.
+      if (act.kind === 'bread' || act.kind === 'water' || act.kind === 'errand') {
+        this.life.release(i);
+        act.kind = 'home'; act.state = 'RESTING'; act.location = this.life.minds[i].hh.home; act.task = 'At home';
+      }
+      ag.act = act;
+      ag.nextThink = this.clock + ag.rng() * 0.2;
+      ag.nextTalk = this.clock + ag.rng() * TALK_GAP;
+      ag.c.state = act.state;
+      ag.c.currentTask = act.task;
+      this.life.note(this.life.minds[i], act, this.simTimeHours);
+      const d = this.destFor(ag, act, null);
       ag.dest = d;
+      ag.there = true;
       if (d.spot) {
         this.place(i, d.spot.x, d.spot.y, d.spot.z);
         this.arriveSpot(ag, d.spot);
@@ -369,58 +475,59 @@ export class SimulationEngine {
     }
   }
 
-  /** Leave for the next item once its estimated trip time before the hour has come. */
+  /** Needs over time, then ask the planner whether to keep going or do something else. */
   private evaluate(i: number): void {
     const ag = this.agents[i];
-    const n = ag.items.length;
-    const cur = ag.items[ag.active];
-    const nextK = (ag.active + 1) % n;
-    const next = ag.items[nextK];
-    const gap = ((((next.hour - cur.hour) % 24) + 24) % 24) || 24;
-    let since = (((this.simTimeHours - cur.hour) % 24) + 24) % 24;
-    // Left early for `cur` and its hour has not come yet: the clock reads "almost a day since".
-    if (ag.early) {
-      if (since > gap) since = 0;
-      else ag.early = false;
-    }
-    // Travel entries (COMMUTING, RETURNING) start on the hour; others are arrived at by it.
-    const lead = TRAVEL.has(next.state) ? 0 : Math.min(gap * 0.8, this.leadHours(i, next));
-    if (since < gap - lead) return;
-    ag.active = nextK;
-    ag.early = since < gap;
+    const life = this.life;
+    life.tick(i, this.clock, this.simTimeHours, ag.act, ag.there && ag.phase !== Phase.TALK, ag.c);
+    if (ag.phase === Phase.TALK) return;
+    if (ag.phase === Phase.IDLE || ag.phase === Phase.WALK) this.maybeTalk(i, ag);
+    if ((ag.phase as Phase) === Phase.TALK) return;
+    const cur = ag.act;
+    // Served and carrying: decide now (take it home).
+    const forced = !!life.minds[i].carrying && cur?.kind !== 'drop';
+    if (!forced && cur && this.clock < cur.until && this.clock < ag.nextThink) return;
+    // Waiting in a line or at the window: keep going while the activity lasts.
+    if (!forced && ag.svc && cur && this.clock < cur.until) return;
+    ag.nextThink = this.clock + 0.1 + ag.rng() * 0.1;
+    const next = life.decide(i, ag.c, cur, this.world, ag.rng);
+    if (next === cur) return;
+    if (cur && (cur.kind === 'bread' || cur.kind === 'water') && !life.minds[i].carrying) life.release(i);
+    if (next.kind === 'errand') this.stat.errands++;
+    ag.act = next;
     this.begin(i, next);
   }
 
-  /** Hour the current trip should end by: a travel entry's following entry, else its own. */
-  private deadline(ag: Agent): number {
-    const item = ag.items[ag.active];
-    if (!TRAVEL.has(item.state)) return item.hour;
-    return ag.items[(ag.active + 1) % ag.items.length].hour;
-  }
-
-  /** Estimated trip (sim hours) from where the citizen is to an item's place. */
-  private leadHours(i: number, item: ScheduleItem): number {
+  /** Estimated trip (sim hours) from where the citizen is to a location. */
+  private leadHours(i: number, loc: string): number {
     const ag = this.agents[i];
-    const b = this.buildings.resolve(item.location);
+    const b = this.buildings.resolve(loc);
     if (b && ag.inB === b) return 0;
     let tx: number, tz: number;
     if (b) { tx = b.x; tz = b.z; }
-    else if (item.location === 'market_square') { tx = 0; tz = 0; }
+    else if (loc === 'market_square') { tx = 0; tz = 0; }
+    else if (loc.startsWith('svc:')) { const s = this.life.services[+loc.slice(4)]; tx = s.x; tz = s.z; }
+    else if (loc.startsWith('wall:')) { const p = this.life.checkpoint(+loc.slice(5)); tx = p.x; tz = p.z; }
     else return 0.15;
     const metres = Math.hypot(tx - this.px[i], tz - this.pz[i]) * 1.35 + 6;
     return (metres / (this.walkSpeed * ag.pace)) * this.hoursPerSec + 0.05;
   }
 
-  private begin(i: number, item: ScheduleItem): void {
+  private begin(i: number, act: Activity): void {
     const ag = this.agents[i];
-    ag.c.state = item.state;
-    ag.c.currentTask = item.task;
+    ag.c.state = act.state;
+    ag.c.currentTask = act.task;
+    this.life.note(this.life.minds[i], act, this.simTimeHours);
     if (ag.heldSpot) { ag.heldSpot.taken--; ag.heldSpot = null; }
     this.releaseDoor(i);
-    const d = this.destFor(ag, item, ag.inB);
+    this.leaveService(i);
+    ag.c.activityAnim = undefined;
+    const d = this.destFor(ag, act, ag.inB);
     ag.dest = d;
+    ag.there = false;
     // Same building as now and going indoors again: stay, moving to the slot for the new state.
     if (ag.phase === Phase.INSIDE && d.door && d.b === ag.inB) {
+      this.reached(i);
       if (ag.inB?.interior) this.takeSlot(i, false);
       return;
     }
@@ -432,32 +539,44 @@ export class SimulationEngine {
     const fromB = ag.phase === Phase.INSIDE ? ag.inB : null;
     if (ag.phase === Phase.INSIDE && ag.inB && ag.inDoor) this.walkOut(i);
     else this.requestRoute(i);
-    this.recruitCompanion(i, item, fromB);
+    this.recruitCompanion(i, act, fromB);
   }
 
-  /** A household member at the same place, due at the same place within 45 min, comes along. */
-  private recruitCompanion(i: number, item: ScheduleItem, fromB: Building | null): void {
+  /**
+   * A household member at the same place comes along: to the same block place (work, home)
+   * when theirs starts within 45 min, or to a free outing (market, church, tavern, home) when
+   * they are only resting or strolling themselves.
+   */
+  private recruitCompanion(i: number, act: Activity, fromB: Building | null): void {
     const ag = this.agents[i];
     if (ag.lead >= 0 || ag.followers > 0) return;
     const fam = this.household.get(ag.c.homeParcelId);
     if (!fam || fam.length < 2) return;
+    const outing = act.kind === 'market' || act.kind === 'church' || act.kind === 'tavern' || act.kind === 'home'
+      || act.kind === 'eat_out';
     for (const k of fam) {
       if (k === i) continue;
       const K = this.agents[k];
-      if (K.lead >= 0 || K.followers > 0) continue;
+      if (K.lead >= 0 || K.followers > 0 || K.phase === Phase.TALK || K.svc) continue;
       if (fromB) {
         if (K.phase !== Phase.INSIDE || K.inB !== fromB) continue;
       } else {
         if (K.phase !== Phase.IDLE && K.phase !== Phase.SPOT) continue;
         if (Math.hypot(this.px[k] - this.px[i], this.pz[k] - this.pz[i]) > PAIR_JOIN) continue;
       }
-      const nk = (K.active + 1) % K.items.length;
-      const next = K.items[nk];
-      if (next.location !== item.location) continue;
-      const until = (((next.hour - this.simTimeHours) % 24) + 24) % 24;
-      if (until > 0.75 && until < 23.5) continue;
-      K.active = nk;
-      K.early = until > 0 && until < 12;
+      const ka = K.act;
+      if (!ka || ka.location === act.location) continue;
+      let next: Activity | null = null;
+      if (ka.fixed || ka.kind === 'bread' || ka.kind === 'water' || ka.kind === 'errand' || ka.kind === 'drop') continue;
+      const soon = this.life.blockSoon(k, this.simTimeHours, 0.75);
+      const same = soon === 'home' ? this.life.minds[k].hh.home : soon === 'work' ? K.c.workParcelId : null;
+      if (same === act.location && (act.kind === 'work' || act.kind === 'home' || act.kind === 'sleep')) {
+        next = { ...act };
+      } else if (outing && (ka.kind === 'home' || ka.kind === 'market')) {
+        next = { ...act };
+      }
+      if (!next) continue;
+      K.act = next;
       this.begin(k, next);
       // Stayed inside (already there), or brought someone of its own along.
       if ((K.phase === Phase.INSIDE && !K.inExit) || K.followers > 0) continue;
@@ -492,9 +611,22 @@ export class SimulationEngine {
     }
   }
 
-  private destFor(ag: Agent, item: ScheduleItem, from: Building | null): Dest {
+  private destFor(ag: Agent, item: Activity, from: Building | null): Dest {
     const loc = item.location;
     const working = item.state === 'WORKING' || item.state === 'PATROLLING';
+    if (loc.startsWith('svc:')) {
+      // Walk to just past the end of the line; join it there.
+      const s = this.life.services[+loc.slice(4)];
+      const k = s.line.length + 1;
+      let x = s.x + s.nx * SVC_STEP * k, z = s.z + s.nz * SVC_STEP * k;
+      const cell = this.nav.nearestFree(x, z, 6);
+      if (cell >= 0) { x = this.nav.cx(cell); z = this.nav.cz(cell); }
+      return { b: null, door: null, spot: null, x, z, wander: 0, cx: x, cz: z, svc: s };
+    }
+    if (loc.startsWith('wall:')) {
+      const p = this.life.checkpoint(+loc.slice(5));
+      return { b: null, door: null, spot: null, x: p.x, z: p.z, wander: 3, cx: p.x, cz: p.z };
+    }
     const point = (x: number, z: number, wander: number): Dest => {
       const cell = this.nav.nearestFree(x, z, 8);
       const px = cell >= 0 ? this.nav.cx(cell) : x, pz = cell >= 0 ? this.nav.cz(cell) : z;
@@ -573,6 +705,7 @@ export class SimulationEngine {
     const j = (ag.rng() - 0.5) * Math.min(1.5, door.w);
     this.place(i, door.ix - door.nz * j, door.y, door.iz + door.nx * j);
     this.setPhase(ag, Phase.INSIDE);
+    if (ag.dest?.b === b) this.reached(i);
     if (b.interior) this.takeSlot(i, settle);
   }
 
@@ -691,6 +824,7 @@ export class SimulationEngine {
   }
 
   private arriveSpot(ag: Agent, s: Spot): void {
+    ag.c.pose = undefined;
     ag.c.faceYaw = s.yaw;
     ag.c.activityAnim = s.tag === 'stand' ? 'idle' : 'work';
     this.setPhase(ag, Phase.SPOT);
@@ -957,9 +1091,9 @@ export class SimulationEngine {
     ag.gaitPace = c.state === 'PATROLLING' ? PATROL : c.guildRank === 'apprentice' ? BRISK : 1;
     let len = 0;
     for (let k = 2; k < pts.length; k += 2) len += Math.hypot(pts[k] - pts[k - 2], pts[k + 1] - pts[k - 1]);
-    const hoursLeft = (((this.deadline(ag) - this.simTimeHours) % 24) + 24) % 24;
-    // Past the hour (wrapped to almost a day): late, hurry.
-    const realLeft = hoursLeft > 12 ? 0 : hoursLeft / this.hoursPerSec;
+    // Due somewhere by a time (work, curfew): late means hurry.
+    const due = ag.act?.due ?? Infinity;
+    const realLeft = isFinite(due) ? Math.max(0, due - this.clock) / this.hoursPerSec : 1e9;
     const need = len / Math.max(realLeft, 1);
     const errand = c.guildRank === 'apprentice' ? 0.15 : 0.05;
     ag.running = len > 15 && (need > this.walkSpeed * ag.pace * ag.gaitPace * 1.15 || ag.rng() < errand);
@@ -1001,6 +1135,13 @@ export class SimulationEngine {
         case Phase.INSIDE:
           if (ag.inPts) this.insideStep(i, ag, walk * ag.pace * INDOOR * dt);
           break;
+        case Phase.SERVE:
+          this.serviceStep(i, ag, walk * ag.pace * STROLL * 0.6 * dt);
+          break;
+        case Phase.TALK:
+          ag.talkT -= dt;
+          if (ag.talkT <= 0) this.endTalk(i, ag);
+          break;
         default:
           break;
       }
@@ -1010,11 +1151,12 @@ export class SimulationEngine {
         c.animFrame = ((c.animFrame ?? 0) + dt * 8.0) % 8;
       } else {
         this.vx[i] = 0; this.vz[i] = 0;
-        if (ag.phase === Phase.QUEUE) { c.vx = 0; c.vz = 0; }
+        if (ag.phase === Phase.QUEUE || ag.phase === Phase.SERVE) { c.vx = 0; c.vz = 0; }
       }
     }
     this.realT += dt;
     this.updateDoors(dt);
+    this.updateServices();
     this.stat.stepMs = performance.now() - t0;
   }
 
@@ -1237,15 +1379,190 @@ export class SimulationEngine {
     this.vx[i] = 0; this.vz[i] = 0;
     ag.pts = null;
     const d = ag.dest!;
-    if (d.door && d.b) this.enter(i, d.door);
+    if (d.svc) this.joinService(i, d.svc);
+    else if (d.door && d.b) this.enter(i, d.door);
     else if (d.spot) {
       this.py[i] = d.spot.y;
       this.arriveSpot(ag, d.spot);
+      this.reached(i);
     } else {
       this.setPhase(ag, Phase.IDLE);
       ag.c.activityAnim = 'idle';
       ag.nextWander = this.clock + 0.1 + ag.rng() * 0.5;
+      this.reached(i);
     }
+  }
+
+  /** At the current activity's place: its arrival effects, once. */
+  private reached(i: number): void {
+    const ag = this.agents[i];
+    if (ag.there || !ag.act) return;
+    ag.there = true;
+    this.life.arrived(i, ag.act, ag.c);
+  }
+
+  // ---------------------------------------------------------------- services (M7)
+
+  private joinService(i: number, s: Service): void {
+    const ag = this.agents[i];
+    s.line.push(i);
+    ag.svc = s;
+    this.setPhase(ag, Phase.SERVE);
+  }
+
+  private leaveService(i: number): void {
+    const ag = this.agents[i];
+    const s = ag.svc;
+    if (!s) return;
+    if (s.user === i) s.user = -1;
+    const k = s.line.indexOf(i);
+    if (k >= 0) s.line.splice(k, 1);
+    ag.svc = null;
+  }
+
+  /** Where the k-th person in a service line stands (0 = next to be served). */
+  private servicePoint(s: Service, k: number): [number, number] {
+    const side = (k & 1 ? 1 : -1) * 0.12;
+    const x = s.x + s.nx * SVC_STEP * (k + 1) - s.nz * side, z = s.z + s.nz * SVC_STEP * (k + 1) + s.nx * side;
+    if (this.nav.isFree(x, z)) return [x, z];
+    // Out of room straight back: bend the line along the front.
+    const t = k & 1 ? 1 : -1, a = Math.ceil((k + 1) / 2) * SVC_STEP;
+    return [s.x + s.nx * SVC_STEP - s.nz * a * t, s.z + s.nz * SVC_STEP + s.nx * a * t];
+  }
+
+  /** Shuffle up in the line, or step up to the window / well and be served. */
+  private serviceStep(i: number, ag: Agent, dist: number): void {
+    const s = ag.svc;
+    const c = ag.c;
+    if (!s) { this.requestRoute(i); return; }
+    let tx: number, tz: number;
+    if (s.user === i) { tx = s.x; tz = s.z; }
+    else {
+      const k = s.line.indexOf(i);
+      if (k < 0) { this.requestRoute(i); return; }
+      [tx, tz] = this.servicePoint(s, k);
+    }
+    const x = this.px[i], z = this.pz[i];
+    const l = Math.hypot(tx - x, tz - z);
+    if (l < 0.03) {
+      c.isMoving = false;
+      c.faceYaw = s.user === i ? Math.atan2(s.fx, s.fz) : Math.atan2(s.x - x, s.z - z);
+      if (s.user === i && !ag.there) {
+        ag.there = true;
+        c.activityAnim = s.kind === 'water' ? 'draw_water' : 'pay';
+        s.doneT = this.realT + ((s.kind === 'water' ? SERVE_MIN * 0.8 : SERVE_MIN) / 60) / this.hoursPerSec;
+      }
+      return;
+    }
+    const f = Math.min(1, dist / l);
+    this.px[i] = x + (tx - x) * f;
+    this.pz[i] = z + (tz - z) * f;
+    this.py[i] = this.groundAt(this.px[i], this.pz[i]);
+    c.isMoving = true;
+    c.gait = 0;
+    c.targetX = tx; c.targetZ = tz;
+  }
+
+  /** Next customer up; the one served pays, takes the bread or water, and goes. */
+  private updateServices(): void {
+    for (const s of this.life.services) {
+      if (s.user >= 0) {
+        const ag = this.agents[s.user];
+        if (!ag.there || this.realT < s.doneT) continue;
+        const i = s.user;
+        s.user = -1;
+        ag.svc = null;
+        ag.c.activityAnim = undefined;
+        ag.c.faceYaw = undefined;
+        this.life.served(i, s, ag.c);
+        this.stat.served++;
+        this.setPhase(ag, Phase.IDLE);
+        ag.dest = { b: null, door: null, spot: null, x: this.px[i], z: this.pz[i], wander: 0, cx: this.px[i], cz: this.pz[i] };
+        ag.nextThink = 0;
+        this.evaluate(i);
+      }
+      if (s.user < 0 && s.line.length) {
+        const i = s.line[0];
+        const [qx, qz] = this.servicePoint(s, 0);
+        if (Math.hypot(this.px[i] - qx, this.pz[i] - qz) > 0.4 && this.agents[i].phase === Phase.SERVE) continue;
+        s.line.shift();
+        s.user = i;
+        this.agents[i].there = false;
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- chats (M7)
+
+  /** Same household, workshop or trade, or living near each other. */
+  private acquainted(i: number, j: number): boolean {
+    const a = this.citizens[i], b = this.citizens[j];
+    if (a.homeParcelId === b.homeParcelId || a.workParcelId === b.workParcelId || a.trade === b.trade) return true;
+    const pa = this.parcelMap.get(a.homeParcelId), pb = this.parcelMap.get(b.homeParcelId);
+    return !!pa && !!pb && Math.hypot(pa.x - pb.x, pa.z - pb.z) < 45;
+  }
+
+  /** Free to stop for a chat: not late, not walking with someone, not on a fixed errand. */
+  private chatty(ag: Agent, i: number): boolean {
+    if (ag.running || ag.lead >= 0 || ag.followers > 0 || ag.svc || this.clock < ag.nextTalk) return false;
+    if (ag.phase !== Phase.IDLE && ag.phase !== Phase.WALK) return false;
+    const a = ag.act;
+    if (!a || (isFinite(a.due) && a.due - this.clock < 0.4) || a.kind === 'drop') return false;
+    if (this.life.minds[i].social <= 0.3) return false;
+    // Not in a narrow lane or a doorway, where two standing people block the way.
+    return this.nav.clearance(this.px[i], this.pz[i]) >= 1.4;
+  }
+
+  private maybeTalk(i: number, ag: Agent): void {
+    if (!this.chatty(ag, i)) return;
+    ag.nextTalk = this.clock + 0.05;
+    if (ag.rng() > 0.4) return;
+    const x = this.px[i], z = this.pz[i];
+    const gx = Math.floor((x - this.nav.minX) / NB), gz = Math.floor((z - this.nav.minZ) / NB);
+    for (let cz = gz - 1; cz <= gz + 1; cz++) {
+      if (cz < 0 || cz >= this.nbH) continue;
+      for (let cx = gx - 1; cx <= gx + 1; cx++) {
+        if (cx < 0 || cx >= this.nbW) continue;
+        for (let j = this.nbHead[cz * this.nbW + cx]; j >= 0; j = this.nbNext[j]) {
+          if (j === i) continue;
+          const dx = this.px[j] - x, dz = this.pz[j] - z;
+          if (dx * dx + dz * dz > TALK_R * TALK_R) continue;
+          const J = this.agents[j];
+          if (!this.chatty(J, j) || !this.acquainted(i, j)) continue;
+          this.startTalk(i, j);
+          return;
+        }
+      }
+    }
+  }
+
+  private startTalk(i: number, j: number): void {
+    const t = TALK_MIN + this.agents[i].rng() * (TALK_MAX - TALK_MIN);
+    for (const [a, b] of [[i, j], [j, i]]) {
+      const ag = this.agents[a];
+      ag.talkFrom = ag.phase;
+      ag.talkT = t;
+      ag.talkWith = b;
+      ag.nextTalk = this.clock + TALK_GAP;
+      this.dropPair(a);
+      this.setPhase(ag, Phase.TALK);
+      this.vx[a] = 0; this.vz[a] = 0;
+      ag.c.faceYaw = Math.atan2(this.px[b] - this.px[a], this.pz[b] - this.pz[a]);
+      ag.c.activityAnim = 'gossip';
+      this.life.talked(a);
+    }
+    this.stat.talks++;
+    this.onTalk?.(this.citizens[i], this.citizens[j]);
+  }
+
+  private endTalk(i: number, ag: Agent): void {
+    ag.talkWith = -1;
+    ag.c.activityAnim = undefined;
+    ag.c.faceYaw = undefined;
+    if (ag.talkFrom === Phase.IDLE) {
+      this.setPhase(ag, Phase.IDLE);
+      ag.nextWander = this.clock + 0.05 + ag.rng() * 0.3;
+    } else this.requestRoute(i);
   }
 
   private scriptStep(i: number, ag: Agent, dist: number): void {
@@ -1302,7 +1619,7 @@ export class SimulationEngine {
   // ---------------------------------------------------------------- stats
 
   public navStats(): NavStats {
-    const names = ['IDLE', 'ROUTE', 'WALK', 'SCRIPT', 'INSIDE', 'SPOT', 'QUEUE'];
+    const names = PHASE_NAMES;
     let queueing = 0, waitingInside = 0;
     for (const d of this.activeDoors) { queueing += d.queue.length; waitingInside += d.exitQ.length; }
     const phases: Record<string, number> = {};
@@ -1359,6 +1676,46 @@ export class SimulationEngine {
         this.lastTriggeredEvents.delete(ev.id); // reset for the next day
       }
     }
+  }
+
+  /** Life (M7): what people are doing, households' stores, lines, chats, errands. */
+  public lifeStats() {
+    const acts: Record<string, number> = {};
+    for (const ag of this.agents) if (ag.act) acts[ag.act.kind] = (acts[ag.act.kind] ?? 0) + 1;
+    const hh = this.life.households;
+    const avg = (f: (h: (typeof hh)[number]) => number) => Math.round((hh.reduce((s, h) => s + f(h), 0) / hh.length) * 100) / 100;
+    const ms = this.life.minds;
+    const need = (k: 'hunger' | 'thirst' | 'fatigue' | 'social' | 'piety') =>
+      Math.round((ms.reduce((s, m) => s + m[k], 0) / ms.length) * 100) / 100;
+    return {
+      hour: Math.round(this.simTimeHours * 100) / 100, acts,
+      needs: { hunger: need('hunger'), thirst: need('thirst'), fatigue: need('fatigue'), social: need('social'), piety: need('piety') },
+      bread: avg((h) => h.bread), water: avg((h) => h.water), noBread: hh.filter((h) => h.bread <= 0).length,
+      noWater: hh.filter((h) => h.water <= 0).length,
+      lines: this.life.services.map((s) => s.line.length + (s.user >= 0 ? 1 : 0)),
+      talking: this.agents.filter((a) => a.phase === Phase.TALK).length,
+      talks: this.stat.talks, served: this.stat.served, errands: this.stat.errands,
+      purse: Math.round(this.citizens.reduce((s, c) => s + c.walletGroschen, 0) / this.citizens.length),
+    };
+  }
+
+  /** Buildings whose hearth burns: someone awake inside, or a smith / baker working at it. */
+  public hearths(out: Set<Building>): Set<Building> {
+    out.clear();
+    const h = this.simTimeHours;
+    for (const ag of this.agents) {
+      const b = ag.phase === Phase.INSIDE ? ag.inB : ag.phase === Phase.SPOT && ag.act?.kind === 'work' ? ag.dest?.b : null;
+      if (!b || !b.chimneys.length || ag.c.pose === 'lie') continue;
+      // At home the fire is banked overnight; workshops burn while worked.
+      if (ag.act?.kind === 'work' || (h > 4.5 && h < 22.5)) out.add(b);
+    }
+    return out;
+  }
+
+  /** Needs (0 fine .. 1 urgent) and the last activities of one citizen (inspector). */
+  public mindOf(c: Citizen) {
+    const i = this.citizens.indexOf(c);
+    return i >= 0 ? this.life.minds[i] : null;
   }
 
   public tollCivicBellManually(): void {

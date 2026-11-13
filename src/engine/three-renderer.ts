@@ -4,6 +4,7 @@ import type { CityPlan, Citizen } from '../types';
 import { TextureLibrary } from './texture-library';
 import { CitizenCrowd } from './citizen-crowd';
 import { DoorLeaves, nightFactor } from './door-leaves';
+import { ChimneySmoke } from './chimney-smoke';
 import type { Building, Door } from './building-anchors';
 import { Cutaway, type CutTarget } from './cutaway';
 import { InteriorProps, roomAt, roomCentre } from './interiors';
@@ -113,6 +114,7 @@ export class ThreeIsometricRenderer {
   private groundPlane: THREE.Mesh;
   private crowd: CitizenCrowd;
   private doorLeaves: DoorLeaves;
+  private smoke: ChimneySmoke;
   /** Buildings, walls, stalls, trees: instanced per chunk (static-batches.ts). */
   private statics = new StaticBatches();
   private cutaway: Cutaway;
@@ -150,6 +152,7 @@ export class ThreeIsometricRenderer {
     this.scene.background = new THREE.Color(0x4a6572); // Medieval daylight sky
     this.crowd = new CitizenCrowd(this.scene);
     this.doorLeaves = new DoorLeaves(this.scene, this.textures);
+    this.smoke = new ChimneySmoke(this.scene);
     this.cutaway = new Cutaway(this.scene, this.statics);
 
     // Orthographic Isometric Camera
@@ -828,6 +831,15 @@ export class ThreeIsometricRenderer {
     this.crowd.update(citizens, (c) => this.getCitizenArchetype(c), dt, performance.now() * 0.001, this.camera,
       this.canvas.clientHeight);
   }
+
+  /** Chimney smoke: flues = tops of the chimneys burning now (null: unchanged). */
+  public updateSmoke(flues: Iterable<THREE.Vector3> | null, dt: number, hour: number): void {
+    if (flues) this.smoke.setFlues(flues);
+    this.smoke.update(dt, this.camera, hour);
+  }
+
+  /** Flues smoking now (debug). */
+  public smokeStats() { return { flues: this.smoke.burning }; }
 
   /** Leaves and openings of the doors the simulation has open (sim.activeDoors). */
   public updateDoors(doors: readonly Door[], hour: number): void {

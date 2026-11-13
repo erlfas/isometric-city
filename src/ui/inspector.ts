@@ -213,17 +213,23 @@ export class UIController {
     const homeP = this.sim.parcelMap.get(c.homeParcelId);
     const workP = this.sim.parcelMap.get(c.workParcelId);
 
-    const scheduleRows = c.schedule.map((item) => {
-      const isActive = Math.floor(this.sim.simTimeHours) >= item.hour &&
-        (!c.schedule.find(next => next.hour > item.hour && Math.floor(this.sim.simTimeHours) >= next.hour));
-      return `
-        <div class="schedule-item ${isActive ? 'active-schedule' : ''}">
-          <span class="sched-hour">${String(item.hour).padStart(2, '0')}:00</span>
+    // Today so far (M7: the day comes from needs and bells), newest last, then the needs.
+    const mind = this.sim.mindOf(c);
+    const hhmm = (h: number) => h < 0 ? '--:--'
+      : `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
+    const diary = mind?.diary ?? [];
+    const needBar = (label: string, v: number) => `
+        <div class="schedule-item">
+          <span class="sched-hour">${label}</span>
+          <span class="sched-task"><span style="display:inline-block;width:${Math.round(v * 100)}%;max-width:100%;height:6px;border-radius:3px;background:${v > 0.7 ? '#c0503a' : v > 0.4 ? '#c8a040' : '#6a9a5a'}"></span></span>
+        </div>`;
+    const scheduleRows = diary.map((item, k) => `
+        <div class="schedule-item ${k === diary.length - 1 ? 'active-schedule' : ''}">
+          <span class="sched-hour">${hhmm(item.h)}</span>
           <span class="sched-state badge-${item.state.toLowerCase()}">${item.state}</span>
           <span class="sched-task">${item.task}</span>
-        </div>
-      `;
-    }).join('');
+        </div>`).join('') + (mind ? needBar('Hunger', mind.hunger) + needBar('Thirst', mind.thirst)
+          + needBar('Tired', mind.fatigue) + needBar('Company', mind.social) + needBar('Piety', mind.piety) : '');
 
     this.inspectorContent.innerHTML = `
       <div class="inspector-header">

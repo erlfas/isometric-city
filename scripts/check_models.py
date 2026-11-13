@@ -248,8 +248,12 @@ def main():
             fail(f"{', '.join(kits)}: kit.anim '{anim}' has no src/engine/work-anims/{anim}.ts")
         if len(kits) > 1:
             fail(f"work-anims/{anim}.ts is used by {len(kits)} kits ({', '.join(kits)}); give each kit its own loop")
+    # Loops the simulation plays by name (Citizen.activityAnim), whatever the kit.
+    sim_src = open(os.path.join(os.path.dirname(WORK_ANIMS), "simulation.ts"), encoding="utf-8").read()
     for anim in sorted(anim_files - set(anim_users)):
-        fail(f"work-anims/{anim}.ts is used by no kit (kit.anim); delete it or reference it")
+        if f"'{anim}'" in sim_src:
+            continue
+        fail(f"work-anims/{anim}.ts is used by no kit (kit.anim) nor by simulation.ts; delete it or reference it")
 
     manifest_path = os.path.join(TEXTURES, "manifest.json")
     manifest = json.load(open(manifest_path, encoding="utf-8")) if os.path.exists(manifest_path) else {}

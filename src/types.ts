@@ -101,6 +101,8 @@ export interface Citizen {
   strideScale?: number;
   /** Lying in a bed (feet at the position, head away from faceYaw) or sitting; unset = standing. */
   pose?: 'lie' | 'sit';
+  /** Carrying home: loaves in the crook of the left arm, or a full bucket in the right hand. */
+  carrying?: 'bread' | 'water';
 }
 
 export interface StreetNode {

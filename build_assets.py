@@ -558,6 +558,7 @@ def add_ashlar_chimney(bm, cx, cy, z_base, w, d, h, mat_stone=0, mat_soot=1):
     z_cap = z_shaft + h_shaft
     add_box(bm, cx, cy, z_cap + h_cap * 0.5, w_top + 0.22, d_top + 0.22, h_cap, mat_idx=mat_stone)
     add_box(bm, cx, cy, z_cap + h_cap + 0.01, w_top * 0.6, d_top * 0.6, 0.02, mat_idx=mat_soot)
+    anchor_chimney(cx, cy, z_cap + h_cap)
 
 def add_barrel(bm, cx, cy, cz, radius=0.45, height=1.1, segs=10, mat_wood=0, mat_iron=1):
     add_cylinder(bm, cx, cy, cz, radius, height, segs=segs, mat_idx=mat_wood)
@@ -747,8 +748,9 @@ def add_world_uvs(obj):
 #          stair = optional path [foot on the ground, ..., landing in front of the door]
 #   spots: p = where to stand (on the ground or a deck), yaw = facing (radians, glTF
 #          atan2(x, z) convention), tag = what happens there (work | sell | stand | guard)
+#   chimneys: [x, y, z] top of each flue (smoke rises from there while the hearth is lit)
 # -------------------------------------------------------------
-_ANCHORS = {"doors": [], "spots": []}
+_ANCHORS = {"doors": [], "spots": [], "chimneys": []}
 
 
 def _gl(v):
@@ -787,6 +789,11 @@ def add_door_steps(bm, p, n, w, mat_idx, tread=0.3, landing=0.35):
     foot = (p[0] + nx * (out + 0.35), p[1] + ny * (out + 0.35), 0.0)
     land = (p[0] + nx * landing * 0.5, p[1] + ny * landing * 0.5, zs)
     return [foot, land]
+
+
+def anchor_chimney(x, y, z_top):
+    """Top of a flue (Blender model space)."""
+    _ANCHORS["chimneys"].append(_gl((x, y, z_top)))
 
 
 def anchor_spot(p, face, tag="work"):
@@ -973,13 +980,15 @@ def export_object(obj, name):
     filepath = os.path.join(OUTPUT_DIR, f"{name}.glb")
     scene = bpy.context.scene
     out = dict(_ANCHORS)
+    if not out["chimneys"]:
+        del out["chimneys"]
     if _INTERIOR["rooms"]:
         out.update(_INTERIOR)
     if _ANCHORS["doors"] or _ANCHORS["spots"]:
         scene["anchors"] = json.dumps(out)
     elif "anchors" in scene:
         del scene["anchors"]
-    _ANCHORS["doors"], _ANCHORS["spots"] = [], []
+    _ANCHORS["doors"], _ANCHORS["spots"], _ANCHORS["chimneys"] = [], [], []
     for k in _INTERIOR:
         _INTERIOR[k] = []
     _ROOM_USED.clear()
@@ -1706,6 +1715,7 @@ def build_house_timber_log(mats):
 
     # Chimney
     add_box(bm, 2.0, 2.0, 8.5, 1.1, 1.1, 4.5, mat_idx=4)
+    anchor_chimney(2.0, 2.0, 10.75)
 
     # Yard doodads: split-rail fence, vegetable patch, firewood cord
     add_box(bm, 5.2, 0, 0.2, 2.0, 6.0, 0.2, mat_idx=5) # cabbage bed

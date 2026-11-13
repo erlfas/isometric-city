@@ -3,7 +3,9 @@ import { ThreeIsometricRenderer } from './engine/three-renderer';
 import { SpatialHashGrid } from './engine/spatial-hash';
 import { SimulationEngine } from './engine/simulation';
 import { NavGrid } from './engine/nav-grid';
-import { BuildingIndex } from './engine/building-anchors';
+import { BuildingIndex, type Building } from './engine/building-anchors';
+import type * as THREE from 'three';
+import { talkLine, barkLine } from './engine/chatter';
 import { Soundscape, type Listener } from './engine/audio';
 import { UIController } from './ui/inspector';
 import { IsometricCamera } from './engine/camera';
@@ -101,33 +103,22 @@ async function bootstrap() {
   for (const b of musicBtns) b?.addEventListener('click', toggleMusic);
   showAudioState();
 
-  // Initial speech bubbles (matching images 3 & 4)
-  threeRenderer.triggerSpeechBubble('b1', 'Hello, carpenter!', -12, -14);
-  threeRenderer.triggerSpeechBubble('b2', 'Crossbows! They\'re shooting crossbows!', -4, 4);
-  threeRenderer.triggerSpeechBubble('b3', 'Town watch! Halt, you villains!', 6, 8);
-
-  // Setup periodic medieval dialogue shouts (matching images 3 & 4)
-  const medievalBarks = [
-    'Hello, carpenter!',
-    'Fine Flemish broadcloth here!',
-    'Tokaji wine fresh from Hungary!',
-    'Crossbows! They\'re shooting crossbows!',
-    'Run!',
-    'You want me? Come on, then!',
-    'Murderers on the square!',
-    'Town watch! Halt, you villains!',
-    'Smoked herring and Baltic amber!',
-    'God give you good day, master smith!',
-    'Praise King Jagiełło for this fair!'
-  ];
-
+  // Speech: acquaintances who stop to chat (M7), and sellers crying their wares now and then.
+  const near = (c: Citizen) => Math.hypot((c.currentX ?? 0) - threeRenderer.targetPos.x,
+    (c.currentZ ?? 0) - threeRenderer.targetPos.z) < threeRenderer.zoom * 1.2;
+  sim.onTalk = (a, b) => {
+    if (!near(a)) return;
+    threeRenderer.triggerSpeechBubble(a.id, talkLine(a, b), a.currentX ?? 0, a.currentZ ?? 0);
+    audio.voice(a.currentX ?? 0, a.currentZ ?? 0, a.gender === 'female');
+  };
   window.setInterval(() => {
-    if (sim.citizens.length === 0) return;
-    const randCit = sim.citizens[Math.floor(Math.random() * sim.citizens.length)];
-    const text = medievalBarks[Math.floor(Math.random() * medievalBarks.length)];
-    threeRenderer.triggerSpeechBubble(randCit.id, text, randCit.currentX ?? 0, randCit.currentZ ?? 0);
-    audio.voice(randCit.currentX ?? 0, randCit.currentZ ?? 0, randCit.gender === 'female');
-  }, 3800);
+    const sellers = sim.citizens.filter((c) => !c.hidden && c.state === 'WORKING' && c.activityAnim === 'work'
+      && c.faceYaw !== undefined && near(c));
+    if (!sellers.length || sim.isPaused) return;
+    const c = sellers[Math.floor(Math.random() * sellers.length)];
+    threeRenderer.triggerSpeechBubble(c.id, barkLine(c), c.currentX ?? 0, c.currentZ ?? 0);
+    audio.voice(c.currentX ?? 0, c.currentZ ?? 0, c.gender === 'female');
+  }, 5200);
 
   // Resize handler
   function handleResize() {
@@ -343,6 +334,7 @@ async function bootstrap() {
   let lastTime = performance.now();
   const shownInside: Citizen[] = [];
   const awake = new Set<number>();
+  const hearths = new Set<Building>();
   let windowsT = 0;
 
   function animate(now: number) {
@@ -372,10 +364,14 @@ async function bootstrap() {
     for (const c of shownInside) c.hidden = true;
     threeRenderer.updateDoors(sim.activeDoors, sim.simTimeHours);
     windowsT -= dt;
+    let flues: THREE.Vector3[] | null = null;
     if (windowsT <= 0) {
       windowsT = 0.5;
       threeRenderer.updateWindows(sim.awakeInside(awake), sim.simTimeHours);
+      flues = [];
+      for (const b of sim.hearths(hearths)) flues.push(...b.chimneys);
     }
+    threeRenderer.updateSmoke(flues, sim.isPaused ? 0 : dt, sim.simTimeHours);
     threeRenderer.updateSpeechBubbles(dt);
     listener.x = threeRenderer.targetPos.x;
     listener.z = threeRenderer.targetPos.z;

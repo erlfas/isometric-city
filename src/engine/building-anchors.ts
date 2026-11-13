@@ -81,6 +81,9 @@ export interface Building {
   spots: Spot[];
   /** Rooms, furniture and slots (houses and workshops, M6). */
   interior?: Interior;
+  /** World tops of its flues (smoke while the hearth burns); houses without a chimney get
+   *  a smoke vent at the middle of the roof ridge. */
+  chimneys: THREE.Vector3[];
 }
 
 interface RawAnchors {
@@ -90,6 +93,26 @@ interface RawAnchors {
   furniture?: { prop: string; p: number[]; yaw: number; room: number; s: number[]; h?: number }[];
   slots?: { k: Slot['kind']; pose: Slot['pose']; p: number[]; yaw: number; a: number[]; room: number }[];
   ladders?: { from: number; to: number; foot: number[]; top: number[]; off: number[] }[];
+  chimneys?: number[][];
+}
+
+/** Top centre of a model's bounds (model space), per template. */
+const ridgeTop = new WeakMap<THREE.Object3D, THREE.Vector3>();
+function ridgeOf(t: THREE.Object3D): THREE.Vector3 {
+  let p = ridgeTop.get(t);
+  if (!p) {
+    const box = new THREE.Box3();
+    t.updateMatrixWorld(true);
+    t.traverse((o) => {
+      const g = (o as THREE.Mesh).geometry;
+      if (!g) return;
+      if (!g.boundingBox) g.computeBoundingBox();
+      box.union(g.boundingBox!.clone().applyMatrix4(o.matrixWorld));
+    });
+    p = new THREE.Vector3((box.min.x + box.max.x) / 2, box.max.y, (box.min.z + box.max.z) / 2);
+    ridgeTop.set(t, p);
+  }
+  return p;
 }
 
 /** Schedule location ids that name a landmark rather than a parcel. */
@@ -124,7 +147,10 @@ export class BuildingIndex {
         return [wx / l, wz / l];
       };
       v.setFromMatrixPosition(pm.matrix);
-      const b: Building = { name: pm.template.name, index, parcelId: pm.parcelId, x: v.x, y: v.y, z: v.z, doors: [], spots: [] };
+      const b: Building = { name: pm.template.name, index, parcelId: pm.parcelId, x: v.x, y: v.y, z: v.z, doors: [], spots: [],
+        chimneys: [] };
+      for (const c of raw.chimneys ?? []) b.chimneys.push(new THREE.Vector3().fromArray(c).applyMatrix4(pm.matrix));
+      if (!b.chimneys.length && raw.rooms?.length) b.chimneys.push(ridgeOf(pm.template).clone().applyMatrix4(pm.matrix));
       for (const d of raw.doors ?? []) {
         v.fromArray(d.p).applyMatrix4(pm.matrix);
         const [nx, nz] = dir(d.n[0], d.n[2]);
