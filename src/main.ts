@@ -10,6 +10,7 @@ import type * as THREE from 'three';
 import { talkLine, barkLine } from './engine/chatter';
 import { Soundscape, type Listener } from './engine/audio';
 import { Birds, installBirdDebug, treeSizes } from './engine/birds';
+import { Wildlife, installWildlifeDebug } from './engine/wildlife';
 import { UIController } from './ui/inspector';
 import { IsometricCamera } from './engine/camera';
 import { TouchGestureManager } from './engine/touch';
@@ -64,6 +65,8 @@ async function bootstrap() {
   // Birds over the forest and the river (territory from plan.vegetation + plan.river).
   const birds = new Birds(threeRenderer.scene, plan, treeSizes(threeRenderer.models));
   birds.onCall = (kind, x, z) => audio.birdCall(kind, x, z);
+  // Red deer drinking at the banks at dawn and dusk, mallards on the water (wildlife.ts).
+  const wildlife = new Wildlife(threeRenderer.scene, plan, threeRenderer.river);
   const listener: Listener = {
     x: 0, z: 0, zoom: 40,
     pan: (x, z) => (threeRenderer.worldToScreen(x, 0, z).x / webglCanvas.clientWidth) * 2 - 1,
@@ -374,6 +377,7 @@ async function bootstrap() {
     }
     threeRenderer.updateSmoke(flues, sim.isPaused ? 0 : dt, sim.simTimeHours);
     birds.update(sim.isPaused ? 0 : dt, sim.simTimeHours, threeRenderer.camera, view, threeRenderer.zoom);
+    wildlife.update(sim.simTimeHours, sim.citizens, view);
     threeRenderer.updateSpeechBubbles(dt);
     listener.x = threeRenderer.targetPos.x;
     listener.z = threeRenderer.targetPos.z;
@@ -482,6 +486,7 @@ async function bootstrap() {
     const { installDebugHooks } = await import('./debug-hooks');
     installDebugHooks(threeRenderer, sim, audio);
     installBirdDebug(birds, threeRenderer.camera, (x, z, zoom) => threeRenderer.snapTo(x, z, zoom));
+    installWildlifeDebug(wildlife, (x, z, zoom) => threeRenderer.snapTo(x, z, zoom));
   }
   requestAnimationFrame(animate);
   console.log('[Lublin 1392] High-fidelity simulation running with Blender 3D assets & soft shadows!');

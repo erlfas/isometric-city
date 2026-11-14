@@ -19,7 +19,8 @@ Checks:
      variants per part and colour slots fit the crowd renderer's limits.
   7. Work loops: every kit.anim name is a file in src/engine/work-anims/ (or "idle"), each file
      is used by exactly one kit (parallel kit authors overwrite a shared name).
-  8. Vegetation triangle budgets (MODEL_TRIS, by model name prefix).
+  8. Vegetation and wildlife triangle budgets (MODEL_TRIS, by model name prefix); wildlife parts
+     have pivots (check_animal).
 """
 import glob
 import json
@@ -120,7 +121,24 @@ KIT_MAX_SLOTS = 31        # colour slots per kit: columns of the crowd's slot te
 
 # Vegetation (build_assets.py "Vegetation"): up to thousands of instances each, so triangle
 # budgets per model, by name prefix (first match wins).
-MODEL_TRIS = [("tree_", 1300), ("bush_", 320), ("fern_", 220), ("reed_", 220), ("rock_", 500), ("log_", 200)]
+MODEL_TRIS = [("tree_", 1300), ("bush_", 320), ("fern_", 220), ("reed_", 220), ("rock_", 500), ("log_", 200),
+              # wildlife (build_animals.py): a few dozen instances, but every one animated in view
+              ("animal_deer_", 1500), ("animal_duck_", 900)]
+
+
+def check_animal(name, gltf):
+    """Wildlife (build_animals.py export): every part but the body has a pivot in scene extras."""
+    scenes = gltf.get("scenes", [])
+    raw = scenes[0].get("extras", {}).get("animal") if scenes else None
+    if raw is None:
+        if name.startswith("animal_"):
+            fail(f"{name}: no scene extras 'animal' (build_animals.py export)")
+        return
+    pivots = json.loads(raw).get("pivots", {})
+    for node in gltf.get("nodes", []):
+        part = node.get("extras", {}).get("part")
+        if "mesh" in node and part != "body" and part not in pivots:
+            fail(f"{name}: part {part} (node '{node.get('name')}') has no pivot")
 
 
 def model_tris(gltf):
@@ -233,6 +251,7 @@ def main():
         mats = gltf.get("materials", [])
         seen_materials.update(m.get("name", "") for m in mats)
         check_kit(name, gltf)
+        check_animal(name, gltf)
         budget = next((b for prefix, b in MODEL_TRIS if name.startswith(prefix)), None)
         if budget is not None:
             tris = model_tris(gltf)
