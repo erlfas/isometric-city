@@ -296,6 +296,7 @@ VEG_RADIUS = {
 }
 LEANS_TO_WATER = {"tree_willow_weeping", "tree_alder_b"}   # modelled leaning toward +X
 GLADE = -100.0                          # generate_forest field(): inside a glade
+BANK = -200.0                           # generate_forest field(): on an open river bank
 
 
 class _ValueNoise:
@@ -571,6 +572,26 @@ def generate_forest(river, frames, paths, mill_site, clearance, old_trees):
     path_pts = [([(p["x"], p["z"]) for p in path["points"]], path["width"]) for path in paths]
     race = [(p["x"], p["z"]) for p in river["mills"][0]["race"]]
     mx, mz = mill_site["x"], mill_site["z"]
+    # Open banks: stretches of water meadow, gravel and grass where the woods stand back from
+    # the river (the water and the animals at it can be seen from the usual camera), wider on
+    # the inside of bends (point bars). Noise along the course, its own RNG and one per bank.
+    bank_rng = random.Random(FOREST_SEED + 7)
+    bank_n = {1: _ValueNoise(bank_rng, 55.0), -1: _ValueNoise(bank_rng, 55.0)}
+    bank_n2 = {1: _ValueNoise(bank_rng, 19.0), -1: _ValueNoise(bank_rng, 19.0)}
+    bank_w = {}
+    for side_ in (1, -1):
+        for k, f in enumerate(frames):
+            s = k * RIVER_STEP
+            n = bank_n[side_](s, 0.5) * 0.8 + bank_n2[side_](s, 0.5) * 0.35
+            inside = max(0.0, min(1.0, side_ * f["curv"] / 0.035))
+            w = 0.0
+            if n > -0.05:
+                w = 7.0 + 26.0 * max(0.0, min(1.0, (n + 0.05) / 0.55))
+            w += 20.0 * inside * (1.0 if n > -0.45 else 0.3)
+            bank_w[(k, side_)] = w
+
+    def open_bank(i, side):
+        return bank_w.get((i, side), 0.0)
 
     def kept_clear(x, z, r_crown, under):
         """Bridge, mill yard, race and paths: trees may overhang a path with a crown, not a trunk."""
@@ -601,6 +622,13 @@ def generate_forest(river, frames, paths, mill_site, clearance, old_trees):
             f_glade = max(f_glade, (14.0 - d) / 5.0)
         f_edge = min(MAP_HALF_X - abs(x), MAP_HALF_Z - abs(z)) / 4.0
         rest = min(f_meadow, f_band, f_edge, 2.0)
+        if i >= 0 and d > 0:
+            w_open = open_bank(i, side)
+            if w_open > 0:
+                f_bank = (d - w_open) / 7.0
+                if f_bank <= 0:
+                    return BANK, d, side, i, curv           # water meadow: open sky over the bank
+                rest = min(rest, f_bank)
         if f_glade <= 0 < rest - 0.3:
             return GLADE, d, side, i, curv              # inside a glade: lone trees only
         return max(GLADE + 1.0, min(rest, f_glade)), d, side, i, curv
@@ -677,8 +705,13 @@ def generate_forest(river, frames, paths, mill_site, clearance, old_trees):
         if abs(x) > MAP_HALF_X - MAP_INSET or abs(z) > MAP_HALF_Z - MAP_INSET:
             continue
         F, d, side, i, curv = field(x, z)
-        lone = F == GLADE
-        if lone:
+        lone = F == GLADE or F == BANK
+        if F == BANK:
+            # Water meadows: a lone willow or alder now and then, mostly near the water.
+            if rng.random() > (0.02 if d < 5 else 0.004):
+                continue
+            kind = rng.choice(("tree_willow", "tree_willow_weeping", "tree_alder", "tree_alder_b", "tree_alder"))
+        elif lone:
             # Glades: now and then a lone veteran oak, lime or birch standing in the grass.
             if rng.random() > 0.035:
                 continue
@@ -708,7 +741,7 @@ def generate_forest(river, frames, paths, mill_site, clearance, old_trees):
             rot = toward_water(x, z, i, rng.uniform(-30, 30))
         else:
             rot = rng.uniform(0, 360)
-        zone = "glade" if lone else "riverbank" if d < 13 else ("far_woods" if side < 0 else "near_woods")
+        zone = "water_meadow" if F == BANK else "glade" if lone else "riverbank" if d < 13 else ("far_woods" if side < 0 else "near_woods")
         trees.append((x, z, r, kind))
         emit(kind, x, z, s, rot, zone)
 

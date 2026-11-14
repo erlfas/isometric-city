@@ -2334,7 +2334,7 @@ def build_tree_lime(mats):
 
 
 # --- willows --------------------------------------------------------------------------
-WILLOW_LEAF, WILLOW_BARK = _vc("#8A9E78"), _vc("#6A6255", BARK_TEX_LIN)
+WILLOW_LEAF, WILLOW_BARK = _vc("#7B9168"), _vc("#6A6255", BARK_TEX_LIN)
 
 
 def build_tree_willow(mats):
