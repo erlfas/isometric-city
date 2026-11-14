@@ -32,7 +32,7 @@ export interface Listener {
 }
 
 interface Point { x: number; z: number }
-type EmitterKind = 'forge' | 'cooper' | 'saw' | 'loom';
+type EmitterKind = 'forge' | 'cooper' | 'saw' | 'loom' | 'mill';
 interface Emitter extends Point { kind: EmitterKind; next: number; pitch: number }
 type BellName = 'tenor' | 'treble' | 'friary';
 
@@ -45,6 +45,7 @@ function soundOf(p: Parcel, index: number): EmitterKind | 'water' | null {
     case 'smith': return 'forge';
     case 'weaver': return craft === 'tailor' ? null : 'loom';
     case 'logging': return 'saw';
+    case 'watermill': return 'mill'; // the wheel turns day and night
     case 'brick': case 'half_timber': case 'log': case 'district':
       // ordinary houses: the trade worked inside decides
       if (craft === 'cooper' || p.buildingType.includes('cooper')) return 'cooper';
@@ -54,7 +55,7 @@ function soundOf(p: Parcel, index: number): EmitterKind | 'water' | null {
   }
 }
 /** Reference distance (m) per kind: full volume within it, falling off beyond (see reach). */
-const EMITTER_REF: Record<EmitterKind, number> = { forge: 14, cooper: 9, saw: 7, loom: 7 };
+const EMITTER_REF: Record<EmitterKind, number> = { forge: 14, cooper: 9, saw: 7, loom: 7, mill: 14 };
 const MAX_ACTIVE_EMITTERS = 5;
 const DOOR_RATE = 3;   // door sounds per second, sustained
 const DOOR_BURST = 4;
@@ -488,7 +489,7 @@ export class Soundscape {
     const rate = hour >= 12 && hour < 13 ? 0.4 : 1; // the midday meal
     for (const e of this.active) {
       if (t < e.next) continue;
-      if (!working || Math.random() > rate) {
+      if (e.kind !== 'mill' && (!working || Math.random() > rate)) {
         e.next = t + rand(3, 6);
         continue;
       }
@@ -531,6 +532,14 @@ export class Soundscape {
         const n = 2 + Math.floor(Math.random() * 4);
         for (let i = 0; i < n; i++) R.loomCycle(ctx, out, t + i * 1.1, nz);
         return n * 1.1 + rand(1, 3);
+      }
+      case 'mill': {
+        // One sixteenth of a turn per paddle (riverside.ts: a turn in ~15 s): a paddle slaps
+        // into the race every ~0.9 s, the axle creaks now and then.
+        const n = 4 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < n; i++) R.paddleSplash(ctx, out, t + i * rand(0.88, 0.96), nz, rand(0.6, 1));
+        if (Math.random() < 0.6) R.wheelCreak(ctx, out, t + rand(0.2, 1.5), nz, 70 + e.pitch * 25, rand(0.7, 1.3), rand(0.6, 1));
+        return n * 0.92;
       }
     }
   }

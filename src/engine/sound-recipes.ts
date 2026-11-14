@@ -198,6 +198,36 @@ export function loomCycle(ctx: BaseAudioContext, out: AudioNode, t: number, nois
   }
 }
 
+/** Mill wheel: the oak axle groaning in its bearing, a slow rubbed creak (stick-slip:
+ *  a pulse train sliding in pitch through a wooden body resonance). */
+export function wheelCreak(ctx: BaseAudioContext, out: AudioNode, t: number, noise: Noise, f: number, dur: number, vel: number): void {
+  const o = ctx.createOscillator();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(f, t);
+  o.frequency.linearRampToValueAtTime(f * 1.35, t + dur * 0.6);
+  o.frequency.linearRampToValueAtTime(f * 1.15, t + dur);
+  const body = filtered(ctx, 'bandpass', 520, 3);
+  const body2 = filtered(ctx, 'bandpass', 1350, 5);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.16 * vel, t + dur * 0.2);
+  g.gain.linearRampToValueAtTime(0.1 * vel, t + dur * 0.8);
+  g.gain.linearRampToValueAtTime(0, t + dur);
+  o.connect(body).connect(g);
+  o.connect(body2).connect(g);
+  g.connect(out);
+  o.start(t);
+  o.stop(t + dur + 0.05);
+  noiseBurst(ctx, out, t, noise.white, 'bandpass', 800, 2, 0.06 * vel, dur * 0.8, dur * 0.3);
+}
+
+/** A paddle slapping into the race and the water it throws: a low slosh and a bright spray. */
+export function paddleSplash(ctx: BaseAudioContext, out: AudioNode, t: number, noise: Noise, vel: number): void {
+  noiseBurst(ctx, out, t, noise.pink, 'lowpass', 520, 0.8, 0.5 * vel, 0.32, 0.01);
+  noiseBurst(ctx, out, t + 0.02, noise.white, 'bandpass', 2600, 0.9, 0.16 * vel, 0.45, 0.03);
+  tone(ctx, out, t, 'sine', 140 + Math.random() * 40, 0.12 * vel, 0.004, 0.12);
+}
+
 // ---------------------------------------------------------------- voices and animals
 
 const VOWELS: [number, number][] = [[800, 1200], [500, 1800], [320, 2300], [500, 900], [360, 750], [650, 1500]];
