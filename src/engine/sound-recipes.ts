@@ -262,6 +262,99 @@ export function birdCall(ctx: BaseAudioContext, out: AudioNode, t: number, peak:
   }
 }
 
+/** Rook "kaah" (or a jackdaw's higher, shorter "tchak"): a rough, falling sawtooth through
+ *  two nasal formants, roughened by a fast amplitude wobble, once to three times. */
+export function caw(ctx: BaseAudioContext, out: AudioNode, t: number, noise: Noise, peak: number, jackdaw: boolean): void {
+  const n = 1 + Math.floor(Math.random() * (jackdaw ? 2 : 3));
+  let at = t;
+  for (let i = 0; i < n; i++) {
+    const dur = jackdaw ? 0.09 + Math.random() * 0.05 : 0.2 + Math.random() * 0.12;
+    const f0 = (jackdaw ? 640 : 380) * (0.9 + Math.random() * 0.2);
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f0 * 1.1, at);
+    o.frequency.linearRampToValueAtTime(f0 * 0.82, at + dur);
+    const rough = ctx.createGain();
+    rough.gain.value = 0.6;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 55 + Math.random() * 30;
+    const depth = ctx.createGain();
+    depth.gain.value = 0.4;
+    lfo.connect(depth).connect(rough.gain);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, at);
+    env.gain.linearRampToValueAtTime(peak, at + 0.02);
+    env.gain.setValueAtTime(peak * 0.8, at + dur * 0.7);
+    env.gain.linearRampToValueAtTime(0, at + dur);
+    const a = filtered(ctx, 'bandpass', jackdaw ? 1700 : 1250, 2.2);
+    const b = filtered(ctx, 'bandpass', jackdaw ? 3200 : 2500, 4);
+    const bg = ctx.createGain();
+    bg.gain.value = 0.5;
+    o.connect(rough);
+    rough.connect(a).connect(env);
+    rough.connect(b).connect(bg).connect(env);
+    env.connect(out);
+    o.start(at); lfo.start(at);
+    o.stop(at + dur + 0.02); lfo.stop(at + dur + 0.02);
+    noiseBurst(ctx, out, at, noise.white, 'bandpass', 1900, 1.5, peak * 0.15, dur * 0.8, 0.02);
+    at += dur + 0.12 + Math.random() * 0.15;
+  }
+}
+
+/** Red kite: a thin, wavering whistle "weee-ooo" with a few quick notes after.
+ *  Buzzard: one plaintive, falling mew "pee-yow". */
+export function raptorCall(ctx: BaseAudioContext, out: AudioNode, t: number, peak: number, kite: boolean): void {
+  const notes: [number, number, number, number][] = kite // [start, dur, f from, f to]
+    ? [[0, 0.7, 2500, 1500], [0.8, 0.12, 2300, 2000], [0.95, 0.12, 2300, 2000], [1.1, 0.12, 2200, 1900]]
+    : [[0, 0.95, 2000, 950]];
+  for (const [dt, dur, f1, f2] of notes) {
+    const at = t + dt;
+    const o = ctx.createOscillator();
+    o.type = kite ? 'sine' : 'triangle';
+    o.frequency.setValueAtTime(f1 * 0.9, at);
+    o.frequency.linearRampToValueAtTime(f1, at + dur * 0.2);
+    o.frequency.exponentialRampToValueAtTime(f2, at + dur);
+    const vib = ctx.createOscillator();
+    vib.frequency.value = kite ? 9 : 6;
+    const vd = ctx.createGain();
+    vd.gain.value = kite ? 60 : 25;
+    vib.connect(vd).connect(o.frequency);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(peak, at + 0.06);
+    g.gain.setValueAtTime(peak * 0.8, at + dur * 0.6);
+    g.gain.linearRampToValueAtTime(0, at + dur);
+    o.connect(g).connect(out);
+    o.start(at); vib.start(at);
+    o.stop(at + dur + 0.02); vib.stop(at + dur + 0.02);
+  }
+}
+
+/** Grey heron taking off: a harsh, low "fraank". */
+export function heronCroak(ctx: BaseAudioContext, out: AudioNode, t: number, noise: Noise, peak: number): void {
+  const dur = 0.35;
+  const o = ctx.createOscillator();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(200, t);
+  o.frequency.linearRampToValueAtTime(140, t + dur);
+  const chop = ctx.createGain();
+  chop.gain.value = 0.5;
+  const lfo = ctx.createOscillator();
+  lfo.type = 'square';
+  lfo.frequency.value = 38;
+  const depth = ctx.createGain();
+  depth.gain.value = 0.5;
+  lfo.connect(depth).connect(chop.gain);
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(peak, t + 0.03);
+  env.gain.linearRampToValueAtTime(0, t + dur);
+  o.connect(filtered(ctx, 'bandpass', 950, 1.1)).connect(chop).connect(env).connect(out);
+  o.start(t); lfo.start(t);
+  o.stop(t + dur + 0.02); lfo.stop(t + dur + 0.02);
+  noiseBurst(ctx, out, t, noise.pink, 'bandpass', 1400, 1, peak * 0.3, dur, 0.02);
+}
+
 /** Cricket: a train of three to four 4.4 kHz pulses. */
 export function cricket(ctx: BaseAudioContext, out: AudioNode, t: number, f: number, peak: number): void {
   const n = 3 + Math.floor(Math.random() * 2);

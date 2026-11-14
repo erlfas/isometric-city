@@ -251,6 +251,25 @@ export class Soundscape {
     if (opening) R.doorOpen(ctx, out, at, this.noise, 0.5);
     else R.doorClose(ctx, out, at, this.noise, 0.5);
   }
+  /** A bird of the flocks (birds.ts onCall): rooks, jackdaws, raptors, the heron. Rate-limited
+   *  like doors (a whole rookery caws at dusk). */
+  public birdCall(kind: 'rook' | 'jackdaw' | 'kite' | 'buzzard' | 'heron', x: number, z: number): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+    const t = ctx.currentTime;
+    this.cawTokens = Math.min(3, this.cawTokens + (t - this.cawT) * 2);
+    this.cawT = t;
+    if (this.cawTokens < 1) return;
+    const r = this.reach(x, z, kind === 'kite' || kind === 'buzzard' ? 45 : 30);
+    if (!r) return;
+    this.cawTokens--;
+    const at = t + 0.02 + Math.random() * 0.1;
+    if (kind === 'rook' || kind === 'jackdaw') R.caw(ctx, this.spot(r.gain * 0.15, r.pan, 0.35), at, this.noise, 0.5, kind === 'jackdaw');
+    else if (kind === 'heron') R.heronCroak(ctx, this.spot(r.gain * 0.3, r.pan, 0.35), at, this.noise, 0.5);
+    else R.raptorCall(ctx, this.spot(r.gain * 0.14, r.pan, 0.5), at, 0.5, kind === 'kite');
+  }
+  private cawTokens = 3;
+  private cawT = 0;
   private doorTokens = DOOR_BURST;
   private doorT = 0;
 
