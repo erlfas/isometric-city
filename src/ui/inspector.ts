@@ -49,20 +49,6 @@ export class UIController {
     this.playPauseBtn.addEventListener('click', togglePlayHandler);
     this.mobilePlayBtn?.addEventListener('click', togglePlayHandler);
 
-    // Speed buttons (Both Desktop header & Mobile bottom sheet)
-    document.querySelectorAll('[data-speed]').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        const el = e.currentTarget as HTMLElement;
-        const spdVal = el.getAttribute('data-speed');
-        document.querySelectorAll('[data-speed]').forEach((b) => {
-          b.classList.toggle('active', b.getAttribute('data-speed') === spdVal);
-        });
-        const spd = parseFloat(spdVal || '5');
-        this.sim.setSpeed(spd);
-        this.closeMobileSheet();
-      });
-    });
-
     // Time Jump buttons
     document.querySelectorAll('[data-jump-hour]').forEach((btn) => {
       btn.addEventListener('click', (e) => {
@@ -123,14 +109,12 @@ export class UIController {
 
     // Mobile sheet openers
     const sheetTitle = document.getElementById('sheet-title');
-    const secSpeed = document.getElementById('sheet-section-speed');
     const secTime = document.getElementById('sheet-section-time');
     const secLayers = document.getElementById('sheet-section-layers');
 
     document.getElementById('btn-open-menu')?.addEventListener('click', () => {
       if (this.mobileSheet) {
-        if (sheetTitle) sheetTitle.textContent = '⏱️ Time & Speed Controls';
-        if (secSpeed) secSpeed.style.display = 'flex';
+        if (sheetTitle) sheetTitle.textContent = '⏱️ Time Controls';
         if (secTime) secTime.style.display = 'flex';
         if (secLayers) secLayers.style.display = 'none';
         this.mobileSheet.classList.add('open');
@@ -140,7 +124,6 @@ export class UIController {
     document.getElementById('btn-open-layers')?.addEventListener('click', () => {
       if (this.mobileSheet) {
         if (sheetTitle) sheetTitle.textContent = '🗺️ Visualization Overlays';
-        if (secSpeed) secSpeed.style.display = 'none';
         if (secTime) secTime.style.display = 'none';
         if (secLayers) secLayers.style.display = 'flex';
         this.mobileSheet.classList.add('open');

@@ -43,10 +43,6 @@
           <!-- Desktop button groups -->
           <div class="btn-group desktop-only">
             <button id="btn-play-pause" class="active" title="Toggle Simulation Time">⏸ Pause</button>
-            <button data-speed="1" title="Realtime 1 Sim Min = 1 Sec">1x</button>
-            <button data-speed="5" class="active" title="Standard 5x Speed">5x</button>
-            <button data-speed="20" title="Brisk 20x Speed">20x</button>
-            <button data-speed="60" title="Fast Day Cycle">60x</button>
           </div>
 
           <div class="time-jumps desktop-only">
@@ -64,7 +60,7 @@
           <div class="mobile-actions">
             <button id="btn-mobile-play" class="icon-btn active" title="Play / Pause">⏸</button>
             <button id="btn-mobile-audio" class="icon-btn" title="Toggle Sound">🔊</button>
-            <button id="btn-open-menu" class="icon-btn gold-btn" title="Time & Speed Controls">⏱️</button>
+            <button id="btn-open-menu" class="icon-btn gold-btn" title="Time Controls">⏱️</button>
             <button id="btn-open-layers" class="icon-btn" title="Visualization Layers">🗺️</button>
             <button id="btn-fullscreen" class="icon-btn" title="Toggle Fullscreen">⛶</button>
           </div>
@@ -118,7 +114,7 @@
         </div>
       </aside>
 
-      <!-- Mobile Control Bottom Sheet (Time, Speed, Layers) -->
+      <!-- Mobile Control Bottom Sheet (Time, Layers) -->
       <div id="mobile-sheet" class="mobile-sheet">
         <div class="sheet-backdrop" id="sheet-backdrop"></div>
         <div class="sheet-card">
@@ -130,17 +126,6 @@
             <button id="btn-close-sheet" class="close-btn" title="Close Controls">✕</button>
           </div>
           <div class="sheet-content">
-            <!-- Speed controls -->
-            <div class="sheet-section" id="sheet-section-speed">
-              <div class="section-title">⏱️ Simulation Speed</div>
-              <div class="sheet-btn-row">
-                <button data-speed="1" title="Realtime 1 Sim Min = 1 Sec">1x</button>
-                <button data-speed="5" class="active" title="Standard 5x Speed">5x</button>
-                <button data-speed="20" title="Brisk 20x Speed">20x</button>
-                <button data-speed="60" title="Fast Day Cycle">60x</button>
-              </div>
-            </div>
-
             <!-- Time jumps -->
             <div class="sheet-section" id="sheet-section-time">
               <div class="section-title">🌅 Time of Day</div>

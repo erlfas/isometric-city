@@ -20,11 +20,10 @@ import { freePoint, roomAt, roomCentre, routeInside } from './interiors';
  * Movement runs at a fixed STEP (20 Hz) on its own seeded RNG, so a run is reproducible for
  * a given start time; positions handed to the renderer are interpolated between steps.
  *
- * Clock vs walking: at the default 5x speed one real second is one sim minute, so walking at
- * a real 1.35 m/s would make a 300 m commute take four sim hours. Travel is therefore shown
- * sped up (TRAVEL_SCALE x walking pace, scaled with sim speed up to 12.5x) and people leave
- * for a block early by the trip's estimated duration so they arrive about on time. Late
- * starters run. Above 12.5x trips take longer in sim hours (tune and test at 5-12x).
+ * Clock vs walking: the clock runs at one fixed speed, one real second = one sim minute, so
+ * walking at a real 1.35 m/s would make a 300 m commute take four sim hours. Travel is
+ * therefore shown sped up (TRAVEL_SCALE x walking pace) and people leave for a block early
+ * by the trip's estimated duration so they arrive about on time. Late starters run.
  *
  * Phases per citizen:
  *   IDLE      standing at a point destination (square, wall walk), wanders now and then
@@ -64,7 +63,8 @@ import { freePoint, roomAt, roomCentre, routeInside } from './interiors';
 const STEP = 1 / 20;
 const MAX_STEPS = 4;
 const WALK = 1.35;              // real walking pace, m/s
-const TRAVEL_SCALE = 2.2;       // shown speed-up at 5x sim speed
+const TRAVEL_SCALE = 2.2;       // shown speed-up of walking against the clock
+const HOURS_PER_SEC = 1 / 60;   // the clock: one real second = one sim minute
 const RUN = 1.85;               // running pace / walking pace
 const DOOR_PACE = 0.55;         // door and stair legs, fraction of walking pace
 const ROUTE_BUDGET = 40_000;    // A* expansions per frame
@@ -195,7 +195,6 @@ export class SimulationEngine {
 
   // Time & Clock state
   public simTimeHours: number = 9.0; // Starts at 9:00 AM (Terce - Royal Fair Opening)
-  public simSpeed: number = 5.0;     // 5x default
   public isPaused: boolean = false;
   public currentBellKey: string = 'terce';
   public currentBellInfo: BellHourInfo;
@@ -372,11 +371,6 @@ export class SimulationEngine {
     return { churches, taverns, workshops, checkpoints };
   }
 
-  public setSpeed(speed: number): void {
-    this.simSpeed = speed;
-    if (speed > 0) this.isPaused = false;
-  }
-
   public togglePause(): boolean {
     this.isPaused = !this.isPaused;
     return this.isPaused;
@@ -390,9 +384,9 @@ export class SimulationEngine {
   }
 
   /** Sim hours that pass per real second. */
-  private get hoursPerSec(): number { return (1.0 / 60.0) * (this.simSpeed / 5.0); }
+  private get hoursPerSec(): number { return HOURS_PER_SEC; }
   /** Shown walking speed (m per real second) for pace 1. */
-  private get walkSpeed(): number { return WALK * TRAVEL_SCALE * Math.min(2.5, Math.max(0.5, this.simSpeed / 5)); }
+  private get walkSpeed(): number { return WALK * TRAVEL_SCALE; }
 
   public update(dt: number): void {
     if (this.isPaused) return;
