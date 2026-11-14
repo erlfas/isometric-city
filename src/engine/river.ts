@@ -10,8 +10,8 @@ import { riverFrames, type RiverFrame } from './river-course';
  * Flow: the shader scrolls three noise layers (broad swell, fine ripples, long flow streaks)
  * downstream along the ribbon's v (arc length, m) at the local current, two phases cross-faded
  * every FLOW_PERIOD seconds so the cross-stream shear stays bounded. The current is fastest
- * mid-stream and on the outside of bends, slow at the banks (riverSpeed / flowSpeed: keep the
- * GLSL and TS copies the same). Everything runs on real time, not sim time.
+ * mid-stream and on the outside of bends, slow at the banks (flowSpeed; the shader's riverSpeed
+ * is generated from the same FLOW constants). Everything runs on real time, not sim time.
  *
  * Light: the water is a MeshStandardMaterial (lit by the scene's sun, hemisphere and ambient,
  * receives the sun's shadow) whose colour, normal and alpha come from the shader; a sky
@@ -40,14 +40,20 @@ const RISES_PER_MIN = 2.6;
 /** Ground plane half-extents (m): the water fades out at its edge (the course runs past it). */
 const GROUND_HALF = [350, 275];
 
+/** Current profile, shared by flowSpeed() and the shader's riverSpeed() (injected below):
+ *  speed at the banks (x mid-stream), bend gain per unit curvature, its cap, and how much of
+ *  it goes to the outside of the bend. */
+const FLOW = { bank: 0.3, curvGain: 22, bendMax: 0.55, outside: 0.9 };
+
 /** Current speed (m/s) at u (-1..1 across the water, + = left bank) where the course curves by curv. */
 export function flowSpeed(u: number, curv: number): number {
   const uc = Math.max(-1, Math.min(1, u));
-  const profile = 0.3 + 0.7 * (1 - uc * uc);
-  const bend = Math.min(0.55, Math.abs(curv) * 22);
+  const profile = FLOW.bank + (1 - FLOW.bank) * (1 - uc * uc);
+  const bend = Math.min(FLOW.bendMax, Math.abs(curv) * FLOW.curvGain);
   const outside = -Math.sign(curv) * uc; // > 0 on the outside of the bend
-  return FLOW_BASE * profile * (1 + bend * outside * 0.9);
+  return FLOW_BASE * profile * (1 + bend * outside * FLOW.outside);
 }
+const glf = (v: number) => v.toFixed(4);
 
 /** The light preset fields the water uses (LIGHT_PRESETS in three-renderer.ts). */
 export interface RiverLight { sun: number; sunI: number; sky: number; hemiI: number; bg: number }
@@ -114,11 +120,11 @@ vec3 gnoised(vec2 p) {
     ga + u.x * (gb - ga) + u.y * (gc - ga) + u.x * u.y * (ga - gb - gc + gd)
     + du * (u.yx * (va - vb - vc + vd) + vec2(vb, vc) - va));
 }
-// Keep in step with flowSpeed() in river.ts.
+// flowSpeed() in river.ts, same constants (FLOW).
 float riverSpeed(float u, float curv) {
-  float profile = 0.3 + 0.7 * (1.0 - u * u);
-  float bend = min(0.55, abs(curv) * 22.0);
-  return ${FLOW_BASE.toFixed(3)} * profile * (1.0 + bend * (-sign(curv) * u) * 0.9);
+  float profile = ${glf(FLOW.bank)} + ${glf(1 - FLOW.bank)} * (1.0 - u * u);
+  float bend = min(${glf(FLOW.bendMax)}, abs(curv) * ${glf(FLOW.curvGain)});
+  return ${glf(FLOW_BASE)} * profile * (1.0 + bend * (-sign(curv) * u) * ${glf(FLOW.outside)});
 }
 `;
 
