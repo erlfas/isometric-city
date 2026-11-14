@@ -61,11 +61,13 @@ interface KindCfg {
   flapOn: [number, number]; glide: [number, number]; // bout lengths, s
   col: number[]; acc: number[]; tipShade: number;
   floor: number;     // least brightness at night
+  sheen?: number[];  // gloss on the upper wings (rooks' blue-black: tells them from a dark canopy at dusk)
 }
 
 const CFG: Record<Kind, KindCfg> = {
-  corvid: { span: 0.9, boost: 1.0, freq: 3.4, amp: 0.62, dihedral: 0.06, cruise: 9, maxSpeed: 14, minSpeed: 5, maxAcc: 8,
-    flapOn: [1.2, 3.5], glide: [0.4, 1.4], col: [0.075, 0.075, 0.09], acc: [0.06, 0.06, 0.07], tipShade: 0.8, floor: 0 },
+  corvid: { span: 0.9, boost: 1.2, freq: 3.4, amp: 0.62, dihedral: 0.06, cruise: 9, maxSpeed: 14, minSpeed: 5, maxAcc: 8,
+    flapOn: [1.2, 3.5], glide: [0.4, 1.4], col: [0.075, 0.075, 0.09], acc: [0.06, 0.06, 0.07], tipShade: 0.8, floor: 0,
+    sheen: [0.06, 0.075, 0.13] },
   kite: { span: 1.6, boost: 1.0, freq: 2.2, amp: 0.45, dihedral: 0.1, cruise: 8, maxSpeed: 13, minSpeed: 6, maxAcc: 3.2,
     flapOn: [0.8, 1.6], glide: [12, 30], col: [0.5, 0.27, 0.13], acc: [0.62, 0.33, 0.15], tipShade: 0.3, floor: 0 },
   buzzard: { span: 1.25, boost: 1.05, freq: 2.6, amp: 0.45, dihedral: 0.2, cruise: 7.5, maxSpeed: 12, minSpeed: 5.5, maxAcc: 3.2,
@@ -161,6 +163,7 @@ uniform vec3 uCol; uniform vec3 uAcc;
 uniform vec4 uWing;    // shoulder, wrist, amplitude, dihedral
 uniform vec4 uStand;   // stand pitch, leg lift, leg pivot z, neck pivot z
 uniform float uLight; uniform float uFloor; uniform float uBoost;
+uniform vec3 uSheen;
 varying vec3 vCol;
 vec3 rotX(vec3 v, float a) { float c = cos(a), s = sin(a); return vec3(v.x, v.y * c + v.z * s, -v.y * s + v.z * c); }
 void main() {
@@ -196,6 +199,8 @@ void main() {
   p = vec3(p.x * cy + p.z * sy, p.y, -p.x * sy + p.z * cy);
   vec3 wp = iPos + p + vec3(0.0, uStand.y * S * stand, 0.0);
   vCol = mix(uCol, uAcc, aPart.z) * (0.85 + 0.3 * iTint) * shade * max(uLight, uFloor);
+  // gloss: strongest on the inner wings when level, the body a little
+  vCol += uSheen * (part > 0.5 && part < 1.5 ? shade : 0.45) * max(uLight, uFloor);
   gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
 }`;
 
@@ -447,10 +452,11 @@ export class Birds {
     const r = this.rnd;
     // rooks and jackdaws: more and bigger flocks the more forest there is
     if (this.rookery) {
-      const nFlocks = clamp(Math.round(this.trees.length / 300) + 2, 2, 5);
+      // (a few loose flocks: five of up to 22 all over the rookery's wood read as a swarm)
+      const nFlocks = clamp(Math.round(this.trees.length / 450) + 1, 2, 4);
       const homes = this.woods.slice(0, Math.max(1, Math.min(this.woods.length, nFlocks + 2)));
       for (let k = 0; k < nFlocks; k++) {
-        const n = 8 + Math.floor(r() * 15);
+        const n = 6 + Math.floor(r() * 9);
         const home = homes[k % homes.length];
         const birds: Bird[] = [];
         for (let i = 0; i < n; i++) {
@@ -508,6 +514,7 @@ export class Birds {
         uCol: { value: new THREE.Color(...cfg.col) }, uAcc: { value: new THREE.Color(...cfg.acc) },
         uWing: { value: new THREE.Vector4(shape.sh, shape.wr, cfg.amp, cfg.dihedral) },
         uStand: { value: HERON_STAND }, uLight: this.uLight, uFloor: { value: cfg.floor }, uBoost: this.uBoost,
+        uSheen: { value: new THREE.Color(...(cfg.sheen ?? [0, 0, 0])) },
       },
       vertexShader: VERT, fragmentShader: FRAG, side: THREE.DoubleSide,
     });
@@ -545,7 +552,12 @@ export class Birds {
       f.sitting = false;
       const R = this.rookery!;
       if (f.mode === 'gather') { const a = r() * 6.28; f.ax = R.x + Math.sin(a) * 30; f.az = R.z + Math.cos(a) * 30; f.ay = 26; f.heading = a + Math.PI / 2; }
-      else { const w = this.homeWay(f); f.ax = w.x + (r() - 0.5) * 60; f.az = w.z + (r() - 0.5) * 60; f.ay = 18 + r() * 12; f.heading = r() * 6.28; this.newWay(f); }
+      else {
+        // by day the flocks are spread over their range, not all over the rookery
+        const near = this.ways.filter((w) => Math.hypot(w.x - f.home.x, w.z - f.home.z) < 230);
+        const w = near.length ? near[Math.floor(r() * near.length)] : this.homeWay(f);
+        f.ax = w.x + (r() - 0.5) * 40; f.az = w.z + (r() - 0.5) * 40; f.ay = 18 + r() * 12; f.heading = r() * 6.28; this.newWay(f);
+      }
       f.vx = Math.sin(f.heading) * 8.5; f.vz = Math.cos(f.heading) * 8.5; f.vy = 0;
       for (const b of f.birds) {
         if (f.mode === 'gather' && this.roosting(b, h) && b.roost) this.sit(b, b.roost, true);
