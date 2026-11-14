@@ -52,6 +52,10 @@ export interface Parcel {
   residents: string[];    // citizen IDs
   workplaceFor: string[]; // citizen IDs
   commodities: Record<string, number>;
+  /** Explicit model (industry sites): placed unscaled, ahead of every parcel-kind rule. */
+  model?: string;
+  /** Industry site the parcel belongs to (`CityPlan.industrySites` key). */
+  site?: string;
 }
 
 export interface ScheduleItem {
@@ -217,6 +221,16 @@ export interface GroundPath {
   points: { x: number; z: number }[];
 }
 
+/** Painted ground outside the walls (generate_city_plan.py INDUSTRY_GROUNDS): pale stone
+ *  dust in the quarry, trodden earth in a yard, dark peat mud, standing pools in the bog. */
+export interface GroundPatch {
+  id: string;
+  kind: 'spoil' | 'yard' | 'mud' | 'pool';
+  points: { x: number; z: number }[];
+}
+
+export interface IndustrySite { x: number; z: number; parcels: string[] }
+
 export interface RiverPoint {
   x: number;
   z: number;
@@ -258,6 +272,8 @@ export interface CityPlan {
   river?: River;
   /** Footpaths and forest rides (ground paint only). */
   paths?: GroundPath[];
+  grounds?: GroundPatch[];
+  industrySites?: Record<string, IndustrySite>;
   citizens: Citizen[];
   bellHours: Record<string, BellHourInfo>;
   fairEvents: FairEvent[];

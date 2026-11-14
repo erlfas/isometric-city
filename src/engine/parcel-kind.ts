@@ -7,6 +7,7 @@ export type ParcelKind =
   | 'shed' | 'baker' | 'tanner' | 'brewer' | 'smith' | 'potter' | 'weaver'
   | 'watermill' | 'windmill' | 'quarry' | 'logging' | 'harbor'
   | 'brick' | 'half_timber' | 'log'
+  | 'industry' // explicit model (quarry, ironworks): Parcel.model
   | 'district'; // no rule matched: the renderer picks by district and hash
 
 /** Stable per-parcel hash (drives fallbacks and per-instance variation). */
@@ -26,6 +27,7 @@ export function parcelKind(p: Parcel, hash: number): ParcelKind {
   const has = (...parts: string[]) => parts.some((s) => t.includes(s));
   const is = (...crafts: string[]) => crafts.includes(craft);
 
+  if (p.model) return 'industry';
   if (p.isShed || t.startsWith('shed_')) return 'shed';
   if (is('baker') || has('baker')) return 'baker';
   if (is('tanner') || has('tanner')) return 'tanner';

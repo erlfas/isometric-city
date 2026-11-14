@@ -91,16 +91,37 @@ export function deckHeight(crossings: readonly RiverCrossing[], x: number, z: nu
   return null;
 }
 
+/** Splat colour (R cobble, G tone 128 = neutral, B dirt) and blur (px) per ground kind:
+ *  pale stone dust, trodden earth, dark wet peat; pools are mud under the water. */
+const GROUND_PAINT: Record<string, [string, number]> = {
+  spoil: ['rgb(0,205,235)', 6],
+  yard: ['rgb(0,118,190)', 8],
+  mud: ['rgb(0,42,255)', 5],
+  pool: ['rgb(0,24,255)', 2],
+};
+
 /** Footpaths, the mill track and forest rides as trodden dirt in the ground splat (blue). */
 export function paintPaths(ctx: CanvasRenderingContext2D, plan: CityPlan): void {
   const paths = plan.paths ?? [];
   const mills = plan.river?.mills ?? [];
-  if (!paths.length && !mills.length) return;
+  const grounds = plan.grounds ?? [];
+  if (!paths.length && !mills.length && !grounds.length) return;
   ctx.save();
   // world (x -350..350, z -275..275) -> canvas 2048 x 2048
   ctx.setTransform(2048 / 700, 0, 0, 2048 / 550, (350 * 2048) / 700, (275 * 2048) / 550);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  // Industry grounds under the tracks (source-over: they replace the meadow's tone).
+  for (const g of grounds) {
+    const [style, blurPx] = GROUND_PAINT[g.kind] ?? GROUND_PAINT.yard;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.filter = `blur(${blurPx}px)`;
+    ctx.fillStyle = style;
+    ctx.beginPath();
+    g.points.forEach((p, k) => (k ? ctx.lineTo(p.x, p.z) : ctx.moveTo(p.x, p.z)));
+    ctx.closePath();
+    ctx.fill();
+  }
   const stroke = (pts: { x: number; z: number }[], width: number, style: string, blurPx: number, op: GlobalCompositeOperation) => {
     ctx.globalCompositeOperation = op;
     ctx.filter = blurPx > 0 ? `blur(${blurPx}px)` : 'none';

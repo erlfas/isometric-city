@@ -915,6 +915,234 @@ def add_watermill(parcels, citizens, site):
     return mill
 
 
+# ------------------------------------------------------------------------------------------
+# Industry outside the walls (stage 5): the limestone quarry south-east of the town and the
+# bog-iron works in the south-bank woods. Like the mill, everything here runs after the
+# citizens on its own RNG (INDUSTRY_SEED), so every existing parcel, citizen and plant keeps
+# its id and content; plants are only removed (clearings) or appended (reeds by the bog).
+# Each site is a few parcels with an explicit `model` (the renderer places it unscaled).
+# Coordinates are world metres (three.js x, z); orientation as for every parcel (degrees
+# about +Y, local +Z -> world (sin, cos)). The default camera looks from +x+z, so the
+# quarry's hill stands at the north-west of the pit and its benches open toward the viewer.
+# ------------------------------------------------------------------------------------------
+INDUSTRY_SEED = 1392_21
+
+QUARRY_CRAFT = {"id": "quarryman", "name": "Quarryman", "sign": "Pick & Iron Wedge",
+                "guild": "Masons Confraternity", "wealth": "plebeian"}
+CARTER_CRAFT = {"id": "carter", "name": "Carter", "sign": "Ox Yoke", "guild": "Masons Confraternity",
+                "wealth": "plebeian"}
+ORE_DIGGER_CRAFT = {"id": "ore_digger", "name": "Bog-Ore Digger", "sign": "Spade & Ore Basket",
+                    "guild": "Smiths & Armorers Guild", "wealth": "plebeian"}
+COLLIER_CRAFT = {"id": "collier", "name": "Collier", "sign": "Charcoal Rake", "guild": "Smiths & Armorers Guild",
+                 "wealth": "plebeian"}
+SMELTER_CRAFT = {"id": "smelter", "name": "Bloomery Smelter", "sign": "Bellows & Bloom",
+                 "guild": "Smiths & Armorers Guild", "wealth": "plebeian"}
+
+QUARRY_SITE = {"x": 230.0, "z": 195.0}
+IRONWORKS_SITE = {"x": 198.0, "z": -125.0}
+
+# id suffix, model, x, z, width, depth, orientation, buildingType, name, craft, carried item
+QUARRY_PARCELS = [
+    ("face", "quarry_face", 212.0, 188.0, 64.0, 52.0, 0.0, "limestone_quarry_face",
+     "Kamieniołom (Limestone Quarry)", QUARRY_CRAFT),
+    ("yard", "quarry_yard", 262.0, 202.0, 26.0, 30.0, 0.0, "quarry_stone_yard",
+     "Plac kamieniarski (Stone Yard)", CARTER_CRAFT),
+    ("lodge_1", "masons_lodge", 262.0, 172.0, 12.0, 7.0, 0.0, "quarry_masons_lodge",
+     "Loża kamieniarzy (Masons' Lodge)", None),
+    ("lodge_2", "masons_lodge", 287.0, 200.0, 12.0, 7.0, -90.0, "quarry_masons_lodge",
+     "Loża kamieniarzy (Masons' Lodge)", None),
+    ("lodge_3", "masons_lodge", 246.0, 229.0, 12.0, 7.0, 0.0, "quarry_masons_lodge",
+     "Loża kamieniarzy (Masons' Lodge)", None),
+]
+IRONWORKS_PARCELS = [
+    # The bog fills the meander bay south of the works (river bank ~4 m beyond its edge).
+    ("bog", "bog_works", 205.0, -148.0, 34.0, 16.0, 0.0, "ironworks_bog_ore_pits",
+     "Torfowisko rudy darniowej (Bog-Ore Pits)", ORE_DIGGER_CRAFT),
+    ("clamp", "charcoal_clamp", 172.0, -118.0, 18.0, 14.0, 0.0, "ironworks_charcoal_clamp",
+     "Mielerz (Charcoal Clamp)", COLLIER_CRAFT),
+    ("bloomery", "bloomery", 200.0, -122.0, 18.0, 12.0, 0.0, "ironworks_bloomery",
+     "Dymarki (Bloomery Furnaces)", SMELTER_CRAFT),
+    ("forge", "forge_shed", 222.0, -108.0, 9.0, 6.0, 0.0, "ironworks_forge_shed",
+     "Kuźnia polowa (Forge Shed)", None),
+    ("hut_1", "smithy_hut", 224.0, -127.0, 7.0, 5.0, -90.0, "ironworks_smithy_hut",
+     "Chata hutnika (Ironworker's Hut)", None),
+    ("hut_2", "smithy_hut", 205.0, -97.0, 7.0, 5.0, 0.0, "ironworks_smithy_hut",
+     "Chata hutnika (Ironworker's Hut)", None),
+]
+
+# Clearings (plants removed inside; world x0, z0, x1, z1) and the ground painted under them.
+QUARRY_CLEARING = (176.0, 150.0, 302.0, 246.0)
+IRONWORKS_CLEARING = (152.0, -162.0, 232.0, -86.0)
+# kind: spoil = pale trodden stone dust, mud = dark wet peat, yard = trodden earth,
+# pool = standing water in the bog (drawn as water, blocked for walkers).
+INDUSTRY_GROUNDS = [
+    ("quarry_floor", "spoil", [(181, 160), (246, 158), (300, 168), (300, 240), (240, 244), (183, 216)]),
+    ("ironworks_yard", "yard", [(160, -126), (186, -134), (214, -136), (230, -126), (228, -100), (206, -90), (164, -106)]),
+    ("bog_mud", "mud", [(188, -152), (205, -160), (222, -160), (226, -150), (222, -138), (200, -136), (187, -141)]),
+    ("bog_pool_1", "pool", [(192, -150), (197, -153), (201, -150), (198, -146), (193, -146)]),
+    ("bog_pool_2", "pool", [(206, -155), (212, -157), (215, -153), (210, -150)]),
+    ("bog_pool_3", "pool", [(216, -146), (221, -147), (222, -142), (217, -141)]),
+]
+INDUSTRY_PATHS = [
+    ("path_quarry", "track", 3.2, [(193.0, 26.0), (196.0, 60.0), (194.0, 100.0), (205.0, 135.0), (238.0, 150.0),
+                                   (258.0, 160.0), (268.0, 184.0)]),
+    ("path_ironworks", "track", 2.4, [(200.0, 14.0), (206.0, -25.0), (203.0, -60.0), (197.0, -88.0),
+                                      (198.0, -104.0), (194.0, -112.0)]),
+]
+
+# (site, parcel suffix, trade, count, carried item)
+INDUSTRY_CREWS = [
+    ("quarry", "face", "Quarryman", 16, "Iron Pick & Splitting Wedges"),
+    ("quarry", "yard", "Carter", 2, "Ox Goad & Rope"),
+    ("quarry", "lodge_1", "Stone Mason", 2, "Mallet, Claw Chisel & Square"),
+    ("quarry", "lodge_2", "Stone Mason", 2, "Mallet, Claw Chisel & Square"),
+    ("quarry", "lodge_3", "Stone Mason", 2, "Mallet, Claw Chisel & Square"),
+    ("ironworks", "bog", "Bog-Ore Digger", 4, "Iron-Shod Spade & Ore Basket"),
+    ("ironworks", "clamp", "Collier", 2, "Charcoal Rake & Turf Spade"),
+    ("ironworks", "bloomery", "Bloomery Smelter", 4, "Bloom Tongs & Leather Gloves"),
+    ("ironworks", "forge", "Blacksmith", 4, "Hammer & Bloom Tongs"),
+]
+# The ironworks' two huts house the households of one smelter and one smith.
+HUT_HOUSEHOLDS = [("hut_1", "Bloomery Smelter"), ("hut_2", "Blacksmith")]
+
+
+def _site_parcel(site, spec):
+    suffix, model, x, z, w, d, rot, btype, name, craft = spec
+    return {
+        "id": f"p_{site}_{suffix}", "district": "krakow_suburb" if site == "ironworks" else "castle_hill",
+        "streetName": "Kamieniołom" if site == "quarry" else "Dymarki nad Bystrzycą",
+        "x": x, "z": z, "width": w, "depth": d, "orientation": rot, "elevation": 0.0,
+        "buildingType": btype, "model": model, "site": site, "isShed": False, "craft": craft,
+        "aging": {"ageYears": 30, "ridgeSag": 0.08, "wallLeanAngle": 0.3, "woodGraying": 0.6,
+                  "mossFoundation": 0.7, "maintenanceState": "weathered"},
+        "clutter": [], "scaffolding": False, "wealthClass": "plebeian",
+        "residents": [], "workplaceFor": [], "commodities": {}, "name": name,
+    }
+
+
+def _in_box(x, z, box, pad=0.0):
+    return box[0] - pad < x < box[2] + pad and box[1] - pad < z < box[3] + pad
+
+
+def add_industry(parcels, citizens, vegetation, paths, river):
+    """Quarry and ironworks: parcels, crews (moved like the millers), the ironworks' resident
+    households, clearings, painted grounds and tracks. Returns (grounds, sites)."""
+    rng = random.Random(INDUSTRY_SEED)
+    by_id = {p["id"]: p for p in parcels}
+    new = {}
+    for site, specs in (("quarry", QUARRY_PARCELS), ("ironworks", IRONWORKS_PARCELS)):
+        for spec in specs:
+            p = _site_parcel(site, spec)
+            new[p["id"]] = p
+    masons = next(c for c in CRAFTS if c["id"] == "mason")
+    smith = next(c for c in CRAFTS if c["id"] == "blacksmith")
+    for pid, p in new.items():
+        if p["craft"] is None:
+            p["craft"] = masons if "lodge" in pid else smith if "forge" in pid else None
+
+    # Crews: labouring men living nearest each site (not woodcutters or millers).
+    moved = set()
+    for site, suffix, trade, count, item in INDUSTRY_CREWS:
+        dest = new[f"p_{site}_{suffix}"]
+        sx, sz = (QUARRY_SITE if site == "quarry" else IRONWORKS_SITE).values()
+        pool = [c for c in citizens if c["id"] not in moved and c["gender"] == "male"
+                and c["wealthClass"] == "plebeian" and c["guildRank"] in ("journeyman", "laborer")
+                and c["trade"] not in ("Woodcutter", "Miller") and c["workParcelId"] in by_id
+                and c["homeParcelId"] in by_id]
+        pool.sort(key=lambda c: math.hypot(by_id[c["homeParcelId"]]["x"] - sx, by_id[c["homeParcelId"]]["z"] - sz))
+        for c in rng.sample(pool[:max(40, count * 3)], count):
+            old = by_id.get(c["workParcelId"])
+            if old and c["id"] in old["workplaceFor"]:
+                old["workplaceFor"].remove(c["id"])
+            dest["workplaceFor"].append(c["id"])
+            for s in c["schedule"]:
+                if s["location"] == c["workParcelId"]:
+                    s["location"] = dest["id"]
+                s["task"] = s["task"].replace(f"({c['trade']})", f"({trade})")
+            c["trade"] = trade
+            c["workParcelId"] = dest["id"]
+            c["carriedItem"] = item
+            moved.add(c["id"])
+
+    # The huts: the whole household of one smelter and one smith moves in (beds renumbered
+    # in the same order). Their old house stands empty.
+    cit_by_id = {c["id"]: c for c in citizens}
+    for suffix, trade in HUT_HOUSEHOLDS:
+        hut = new[f"p_ironworks_{suffix}"]
+        crew = [c for c in citizens if c["trade"] == trade and c["workParcelId"].startswith("p_ironworks_")
+                and c["homeParcelId"] in by_id and 2 <= len(by_id[c["homeParcelId"]]["residents"]) <= 5]
+        if not crew:
+            continue
+        head = rng.choice(crew)
+        old = by_id[head["homeParcelId"]]
+        for k, rid in enumerate(list(old["residents"])):
+            c = cit_by_id[rid]
+            for s in c["schedule"]:
+                if s["location"] == old["id"]:
+                    s["location"] = hut["id"]
+            c["homeParcelId"] = hut["id"]
+            c["bedNumber"] = k + 1
+            hut["residents"].append(rid)
+        old["residents"] = []
+
+    parcels.extend(new.values())
+
+    # Clearings: no plant inside, except reeds, alders and willows within 6 m of the water.
+    def water_dist(x, z):
+        best = float("inf")
+        for a, b in zip(river["points"], river["points"][1:]):
+            if abs(a["x"] - x) > 40 and abs(b["x"] - x) > 40:
+                continue
+            best = min(best, _seg_dist(x, z, a["x"], a["z"], b["x"], b["z"]) - a["width"] * 0.5)
+        return best
+    keep_wet = {"reed_clump", "tree_alder", "tree_alder_b", "tree_willow", "tree_willow_weeping"}
+    track_lines = [pts for _, _, _, pts in INDUSTRY_PATHS]
+    before = len(vegetation)
+    vegetation[:] = [v for v in vegetation
+                     if not (_in_box(v["x"], v["z"], QUARRY_CLEARING)
+                             or (_in_box(v["x"], v["z"], IRONWORKS_CLEARING)
+                                 and not (v["type"] in keep_wet and water_dist(v["x"], v["z"]) < 6.0))
+                             or min(_polyline_dist(v["x"], v["z"], pl) for pl in track_lines)
+                             < (2.6 if v["type"].startswith("tree_") else 1.8))]
+    removed = before - len(vegetation)
+
+    # Reeds round the bog pools (appended, ids veg_ind_NNN).
+    grounds = [{"id": gid, "kind": kind, "points": [{"x": float(x), "z": float(z)} for x, z in pts]}
+               for gid, kind, pts in INDUSTRY_GROUNDS]
+    added = 0
+    for g in grounds:
+        if g["kind"] != "pool":
+            continue
+        ring = [(q["x"], q["z"]) for q in g["points"]]
+        cx = sum(x for x, _ in ring) / len(ring)
+        cz = sum(z for _, z in ring) / len(ring)
+        for k in range(len(ring)):
+            (ax, az), (bx, bz) = ring[k], ring[(k + 1) % len(ring)]
+            for t in (0.2, 0.7):
+                x, z = ax + (bx - ax) * t, az + (bz - az) * t
+                ox, oz = x - cx, z - cz
+                ln = math.hypot(ox, oz) or 1.0
+                x, z = x + ox / ln * 0.9, z + oz / ln * 0.9   # just outside the water's edge
+                added += 1
+                vegetation.append({"id": f"veg_ind_{added:03d}", "type": "reed_clump", "x": round(x, 2),
+                                   "z": round(z, 2), "scale": round(rng.uniform(0.8, 1.25), 2),
+                                   "rotation": round(rng.uniform(0, 360), 1), "zone": "ironworks_bog"})
+
+    for pid, kind, width, pts in INDUSTRY_PATHS:
+        paths.append({"id": pid, "kind": kind, "width": width,
+                      "points": [{"x": round(x, 2), "z": round(z, 2)} for x, z in _smooth_path(pts, rng, 1.2)]})
+
+    sites = {
+        "quarry": {**QUARRY_SITE, "parcels": [p for p in new if p.startswith("p_quarry_")]},
+        "ironworks": {**IRONWORKS_SITE, "parcels": [p for p in new if p.startswith("p_ironworks_")]},
+    }
+    crew_n = sum(len(p["workplaceFor"]) for p in new.values())
+    homes = sum(len(p["residents"]) for p in new.values())
+    print(f"[CityPlanGenerator] Industry: quarry + ironworks, {len(new)} parcels, {crew_n} workers moved, "
+          f"{homes} living in the huts; cleared {removed} plants, {added} reeds by the bog pools.")
+    return grounds, sites
+
+
 def generate_lublin_city_plan():
     print("[CityPlanGenerator] Synthesizing Lublin 1392 morphology & agent schedules...")
 
@@ -1740,6 +1968,7 @@ def generate_lublin_city_plan():
 
     assign_woodcutters(parcels, citizens)
     add_watermill(parcels, citizens, mill_site)
+    grounds, industry_sites = add_industry(parcels, citizens, vegetation, paths, river)
     print(f"[CityPlanGenerator] Simulated {len(citizens)} persistent citizens across {len(home_parcels)} households.")
 
     # 4. Royal Fair Systemic Events Specification
@@ -1798,12 +2027,15 @@ def generate_lublin_city_plan():
         "vegetation": vegetation,
         "river": river,
         "paths": paths,
+        "grounds": grounds,
+        "industrySites": industry_sites,
         "citizens": citizens,
         "bellHours": BELL_HOURS,
         "fairEvents": fair_events,
         "houseTypesCatalog": HOUSE_TYPES,
         "shedTypesCatalog": SHED_TYPES,
-        "craftsCatalog": CRAFTS + [WOODCUTTER_CRAFT, MILLER_CRAFT]
+        "craftsCatalog": CRAFTS + [WOODCUTTER_CRAFT, MILLER_CRAFT, QUARRY_CRAFT, CARTER_CRAFT,
+                                   ORE_DIGGER_CRAFT, COLLIER_CRAFT, SMELTER_CRAFT]
     }
 
     # Save to public/city_plan.json and root city_plan.json

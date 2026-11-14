@@ -809,6 +809,13 @@ export class ThreeIsometricRenderer {
 
       const hash = parcelHash(p, i);
       const kind = parcelKind(p, hash);
+      if (kind === 'industry') {
+        // Quarry and ironworks pieces: modelled to size, so unscaled and untinted (their
+        // anchors, ground patches and moving parts line up with the model as built).
+        const t = this.models.get(p.model!);
+        if (t) this.put(t, p.x, 0, p.z, (p.orientation * Math.PI) / 180, 1, 1, 1, undefined, p.id);
+        continue;
+      }
       switch (kind) {
         case 'shed':
           tmpl = shedTmpl;
