@@ -35,7 +35,7 @@ const RIPPLE_LIFE = 4.5;
 /** Seconds per flow phase (the two phases are half a period apart). */
 const FLOW_PERIOD = 7;
 const DEBRIS = 64;
-const DROPS = 48;
+const DROPS = 72;
 const FISH = 4;
 /** Fish jumps and rises per minute per 100 m of river in view (times the debug multiplier). */
 const JUMPS_PER_MIN = 1.6;
@@ -194,7 +194,7 @@ const WATER_MAIN = /* glsl */ `
   float band = 0.22 + outside * 1.0;
   float fEdge = (1.0 - smoothstep(0.0, band, dShore)) * smoothstep(-0.25, 0.05, dShore);
   float foam = fEdge * smoothstep(0.5, 0.9, foamN * 0.5 + 0.5 + outside * 0.25) * 0.85;
-  foam = clamp(foam + ring * 0.35, 0.0, 1.0);
+  foam = clamp(foam + ring * 0.5, 0.0, 1.0);
 
   vec3 body = mix(uShallow, uDeep, depth);
   body = mix(body, uStreak, st * 0.55);
@@ -334,15 +334,16 @@ export class RiverWater {
     }
     scene.add(this.debris);
 
-    // Fish: a silvery body with a tail fin, along +x.
-    const body = new THREE.SphereGeometry(1, 10, 6).scale(0.19, 0.05, 0.035).toNonIndexed();
+    // Fish: a silvery body with a tail fin, along +x; a big chub or asp (~0.55 m), so a leap
+    // reads at the usual zooms. A little emissive: the flank flashes in any light.
+    const body = new THREE.SphereGeometry(1, 10, 6).scale(0.27, 0.07, 0.05).toNonIndexed();
     const tail = new THREE.BufferGeometry();
-    tail.setAttribute('position', new THREE.Float32BufferAttribute([-0.15, 0, 0, -0.29, 0.07, 0, -0.29, -0.07, 0], 3));
+    tail.setAttribute('position', new THREE.Float32BufferAttribute([-0.22, 0, 0, -0.4, 0.1, 0, -0.4, -0.1, 0], 3));
     tail.setAttribute('normal', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1], 3));
     tail.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1], 2));
     const fishGeo = mergeGeometries([body, tail])!;
     this.fish = new THREE.InstancedMesh(fishGeo, new THREE.MeshStandardMaterial({
-      color: 0xc8d2d4, roughness: 0.3, metalness: 0.1, side: THREE.DoubleSide }), FISH);
+      color: 0xd8e0e2, roughness: 0.25, metalness: 0.1, emissive: 0x8a969a, emissiveIntensity: 0.35, side: THREE.DoubleSide }), FISH);
     this.fish.name = 'river_fish';
     this.fish.frustumCulled = false;
     this.fish.count = 0;
@@ -350,7 +351,7 @@ export class RiverWater {
 
     // Splash droplets.
     this.drops = new THREE.InstancedMesh(new THREE.OctahedronGeometry(1, 0),
-      new THREE.MeshStandardMaterial({ color: 0xf2f6f6, roughness: 0.4, emissive: 0x9fb0b4, emissiveIntensity: 0.25 }), DROPS);
+      new THREE.MeshStandardMaterial({ color: 0xf2f6f6, roughness: 0.4, emissive: 0x9fb0b4, emissiveIntensity: 0.45 }), DROPS);
     this.drops.name = 'river_spray';
     this.drops.frustumCulled = false;
     this.drops.count = 0;
@@ -550,11 +551,11 @@ export class RiverWater {
     // Mostly upstream (fish face the current), up to ~45 degrees off.
     const turn = (Math.random() * 2 - 1) * 0.8, c = Math.cos(turn), s = Math.sin(turn);
     const dx = -(at.dx * c - at.dz * s), dz = -(at.dx * s + at.dz * c);
-    const len = 0.6 + Math.random() * 0.6;
+    const len = 0.9 + Math.random() * 0.8;
     this.jumps[k] = { x: at.x - dx * len * 0.5, z: at.z - dz * len * 0.5, dx, dz, len,
-      h: 0.32 + Math.random() * 0.3, t: 0, dur: 0.7 + Math.random() * 0.3, roll: (Math.random() * 2 - 1) * 0.5 };
-    this.addRipple(at.x - dx * len * 0.5, at.z - dz * len * 0.5, 0.7);
-    this.splash(at.x - dx * len * 0.5, at.z - dz * len * 0.5, 4, 1.4);
+      h: 0.5 + Math.random() * 0.4, t: 0, dur: 0.85 + Math.random() * 0.3, roll: (Math.random() * 2 - 1) * 0.5 };
+    this.addRipple(at.x - dx * len * 0.5, at.z - dz * len * 0.5, 1.1);
+    this.splash(at.x - dx * len * 0.5, at.z - dz * len * 0.5, 8, 1.5);
     this.stat.jumps++;
     return true;
   }
@@ -589,7 +590,7 @@ export class RiverWater {
       const a = Math.random() * Math.PI * 2, r = (0.4 + Math.random() * 0.6) * power * 0.6;
       d.x = x; d.y = 0.05; d.z = z;
       d.vx = Math.cos(a) * r; d.vz = Math.sin(a) * r; d.vy = (1.2 + Math.random() * 1.4) * power;
-      d.life = 1; d.size = 0.025 + Math.random() * 0.025;
+      d.life = 1; d.size = 0.04 + Math.random() * 0.04;
       made++;
     }
   }
@@ -684,8 +685,8 @@ export class RiverWater {
       j.t += dt / j.dur;
       if (j.t >= 1) {
         const ex = j.x + j.dx * j.len, ez = j.z + j.dz * j.len;
-        this.addRipple(ex, ez, 1.2);
-        this.splash(ex, ez, 9, 1);
+        this.addRipple(ex, ez, 1.8);
+        this.splash(ex, ez, 16, 1.2);
         this.jumps[k] = null;
         continue;
       }
