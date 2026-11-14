@@ -15,6 +15,8 @@ const WHEEL_R = 2.4;
 /** Turning speed (rad/s): rim ~1 m/s, about the race's current. One turn in ~15 s. */
 const WHEEL_OMEGA = 0.42;
 const RACE_Y = 0.045;          // above the river surface (0.03), so the mouth does not z-fight
+/** Race ribbon columns across: [offset in half-widths, alpha, shade]: soft, shaded edges. */
+const RACE_COLS: [number, number, number][] = [[-1.15, 0, 0.6], [-0.7, 1, 0.8], [0.7, 1, 0.8], [1.15, 0, 0.6]];
 const FOAM = 56;
 const DROPS = 48;
 
@@ -203,12 +205,16 @@ export class MillWheels {
       if (i) along += Math.hypot(r[i].x - r[i - 1].x, r[i].z - r[i - 1].z);
       const half = r[i].width * 0.5;
       const alpha = Math.min(1, i / 2.5, (r.length - 1 - i) / 2.5);
-      for (const s of [-1, 1]) {
+      // Four columns: a soft, darker margin at each bank, clear water between.
+      for (const [s, a, c] of RACE_COLS) {
         pos.push(r[i].x + nx * half * s, RACE_Y, r[i].z + nz * half * s);
         uv.push(s * 0.5 + 0.5, along / 3);
-        col.push(1, 1, 1, alpha);
+        col.push(c, c, c, alpha * a);
       }
-      if (i) { const k = i * 2; idx.push(k - 2, k - 1, k, k - 1, k + 1, k); } // counter-clockwise from above
+      if (i) {
+        const k = i * 4, p = k - 4;
+        for (let j = 0; j < 3; j++) idx.push(p + j, p + j + 1, k + j, p + j + 1, k + j + 1, k + j); // counter-clockwise from above
+      }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -220,7 +226,7 @@ export class MillWheels {
     g.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
     this.raceTex ??= this.streaks();
     const mat = new THREE.MeshStandardMaterial({
-      color: 0x4f6f6a, roughness: 0.18, metalness: 0.0, map: this.raceTex, vertexColors: true,
+      color: 0x3c5862, roughness: 0.18, metalness: 0.0, map: this.raceTex, vertexColors: true,
       transparent: true, depthWrite: false,
     });
     const mesh = new THREE.Mesh(g, mat);
