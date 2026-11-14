@@ -265,7 +265,7 @@ export class Soundscape {
     if (!r) return;
     this.cawTokens--;
     const at = t + 0.02 + Math.random() * 0.1;
-    if (kind === 'rook' || kind === 'jackdaw') R.caw(ctx, this.spot(r.gain * 0.15, r.pan, 0.35), at, this.noise, 0.5, kind === 'jackdaw');
+    if (kind === 'rook' || kind === 'jackdaw') R.caw(ctx, this.spot(r.gain * 0.075, r.pan, 0.35), at, this.noise, 0.5, kind === 'jackdaw');
     else if (kind === 'heron') R.heronCroak(ctx, this.spot(r.gain * 0.3, r.pan, 0.35), at, this.noise, 0.5);
     else R.raptorCall(ctx, this.spot(r.gain * 0.14, r.pan, 0.5), at, 0.5, kind === 'kite');
   }
