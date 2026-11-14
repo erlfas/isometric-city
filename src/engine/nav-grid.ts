@@ -89,7 +89,16 @@ export class NavGrid {
     for (const poly of openings) this.rasterPoly(poly.map((q) => q.x), poly.map((q) => q.z), true);
     this.sealEnclosed(seeds);
     this.distanceField();
-    this.buildGraph();
+    // A narrow opening (a bridge deck) is too thin for the block graph's straight-sight edges:
+    // its two ends become graph nodes of their own, linked to each other (buildGraph).
+    const links: [number, number][] = [];
+    for (const p of openings) {
+      if (p.length !== 4) continue;
+      const a = this.cellOf((p[0].x + p[3].x) / 2, (p[0].z + p[3].z) / 2);
+      const b = this.cellOf((p[1].x + p[2].x) / 2, (p[1].z + p[2].z) / 2);
+      if (a >= 0 && b >= 0 && !this.blocked[a] && !this.blocked[b]) links.push([a, b]);
+    }
+    this.buildGraph(links);
     this.buildMs = performance.now() - t0;
   }
 
@@ -116,7 +125,7 @@ export class NavGrid {
   graphNodes = 0;
   graphEdges = 0;
 
-  private buildGraph(): void {
+  private buildGraph(links: [number, number][] = []): void {
     const B = GRAPH_BLOCK;
     const bw = Math.ceil(this.w / B), bh = Math.ceil(this.h / B);
     const block = new Int32Array(bw * bh).fill(-1);
@@ -132,6 +141,8 @@ export class NavGrid {
       }
       if (best >= 0) { block[bz * bw + bx] = cells.length; cells.push(best); }
     }
+    const firstLink = cells.length;
+    for (const [a, b] of links) cells.push(a, b);
     const n = cells.length;
     const adj: number[][] = Array.from({ length: n }, () => []);
     const wts: number[][] = Array.from({ length: n }, () => []);
@@ -153,6 +164,24 @@ export class NavGrid {
         adj[a].push(b); wts[a].push(len * tight);
         adj[b].push(a); wts[b].push(len * tight);
         edges++;
+      }
+    }
+    // Link nodes: each end to the other (walked along the opening, not in straight sight
+    // of the blocks) and to the block nodes within two blocks that it sees.
+    const join = (a: number, b: number, w: number) => { adj[a].push(b); wts[a].push(w); adj[b].push(a); wts[b].push(w); edges++; };
+    for (let k = firstLink; k < n; k += 2) {
+      join(k, k + 1, Math.hypot(this.cx(cells[k + 1]) - this.cx(cells[k]), this.cz(cells[k + 1]) - this.cz(cells[k])) * 1.4);
+      for (const e of [k, k + 1]) {
+        const x = this.cx(cells[e]), z = this.cz(cells[e]);
+        const ebx = Math.floor((cells[e] % this.w) / B), ebz = Math.floor(cells[e] / this.w / B);
+        for (let oz = -2; oz <= 2; oz++) for (let ox = -2; ox <= 2; ox++) {
+          const nx = ebx + ox, nz = ebz + oz;
+          if (nx < 0 || nz < 0 || nx >= bw || nz >= bh) continue;
+          const t = block[nz * bw + nx];
+          if (t < 0) continue;
+          const px = this.cx(cells[t]), pz = this.cz(cells[t]);
+          if (this.lineFree(x, z, px, pz, 1)) join(e, t, Math.hypot(px - x, pz - z) * 1.2);
+        }
       }
     }
     this.gNodeCell = new Int32Array(cells);
