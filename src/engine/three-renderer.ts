@@ -259,17 +259,26 @@ export class ThreeIsometricRenderer {
     ctx.fillStyle = 'rgb(0,128,0)';
     ctx.fillRect(0, 0, 2048, 2048);
 
-    // Large-scale tone variation: breaks up texture repetition across the meadow.
-    ctx.filter = 'blur(6px)';
+    // Large-scale tone variation: breaks up texture repetition across the meadow. The blobs
+    // are drawn sharp on a scratch canvas and blurred onto the mask in ONE pass. Filling each
+    // of them with ctx.filter set runs a full blur per fill: fine on a GPU-backed 2D canvas,
+    // but where the browser draws 2D canvases in software (seen in Edge) it froze the page
+    // for three minutes at start-up.
+    const blobs = document.createElement('canvas');
+    blobs.width = 2048;
+    blobs.height = 2048;
+    const bctx = blobs.getContext('2d')!;
     for (let i = 0; i < 4000; i++) {
       const rx = Math.random() * 2048;
       const ry = Math.random() * 2048;
       const r = Math.random() * 14 + 6;
-      ctx.fillStyle = Math.random() < 0.5 ? 'rgb(0,104,0)' : 'rgb(0,152,0)';
-      ctx.beginPath();
-      ctx.arc(rx, ry, r, 0, Math.PI * 2);
-      ctx.fill();
+      bctx.fillStyle = Math.random() < 0.5 ? 'rgb(0,104,0)' : 'rgb(0,152,0)';
+      bctx.beginPath();
+      bctx.arc(rx, ry, r, 0, Math.PI * 2);
+      bctx.fill();
     }
+    ctx.filter = 'blur(6px)';
+    ctx.drawImage(blobs, 0, 0);
     ctx.filter = 'none';
 
     this.groundTex = new THREE.CanvasTexture(this.groundCanvas);
