@@ -104,6 +104,7 @@ uniform vec3 uViewDir;
 uniform vec3 uGlintDir;
 uniform vec2 uGround;
 uniform float uSpeedMul;
+uniform float uShallowSky;
 #ifdef RACE
 varying float vFade;
 #endif
@@ -226,7 +227,7 @@ const WATER_POST = /* glsl */ `
     float a = max(diffuseColor.a, 0.2);
     float clear = (1.0 - foam) * aGround;
     // Sky in the surface, more of it where the water is deep and dark.
-    outgoingLight += sky * fres * clear * (0.55 + 0.45 * depth) + sky * st * 0.08 * clear;
+    outgoingLight += sky * fres * clear * mix(uShallowSky, 1.0, depth) + sky * st * 0.08 * clear;
     // Sun glitter: facets tilted toward the glint direction; a broad sheen around them.
     float gd = max(dot(R, uGlintDir), 0.0);
     float glint = pow(gd, 2200.0) * smoothstep(0.25, 0.55, sparkle);
@@ -262,6 +263,8 @@ export class RiverWater {
     uViewDir: { value: new THREE.Vector3(0, -1, 0) },
     uGlintDir: { value: new THREE.Vector3(0, 1, 0) },
     uGround: { value: new THREE.Vector2(GROUND_HALF[0] + SKIRT, GROUND_HALF[1] + SKIRT) },
+    /** How much of the sky the shallows mirror (x the deep water's). */
+    uShallowSky: { value: 0.55 },
   };
   /** Ripple rings: centre x, z, age (s), strength (0 = free). */
   private ripples = this.uniforms.uRipples.value;
@@ -461,10 +464,13 @@ export class RiverWater {
     // Low sun: the warm light would turn a lit body to mauve mud, so the water is mostly a
     // mirror then: a dark slate body under a strong reflection of a pale, cool upper sky that
     // warms toward the horizon. It reads lighter and cooler than the warm banks around it.
-    if (low) { u.uDeep.value.set('#0e2436').multiplyScalar(0.55); u.uShallow.value.set('#33433f').multiplyScalar(0.6); u.uStreak.value.set('#4f7484').multiplyScalar(0.55); }
+    if (low) { u.uDeep.value.set('#0e2436').multiplyScalar(0.55); u.uShallow.value.set('#3a4a2a').multiplyScalar(0.6); u.uStreak.value.set('#4f7484').multiplyScalar(0.55); }
     u.uSkyAmt.value = low ? 2.1 : 1;
+    // Low sun: the shallows show more of the warm bed than the cool sky (else they go lavender).
+    u.uShallowSky.value = low ? 0.3 : 0.55;
     u.uSkyZenith.value.copy(bg).lerp(c.set(night ? 0x2a3c5c : low ? 0x8fb0cc : 0x7f9fbe), night ? 0.3 : low ? 0.92 : 0.6).multiplyScalar(0.42 * k);
-    if (low) u.uSkyHorizon.value.set(0x9fb2c2).lerp(sky, 0.4).multiplyScalar(0.42 * k);
+    // (the low sun's peach sky over grey-blue went lavender in the shallows: lean it to straw gold)
+    if (low) u.uSkyHorizon.value.set(0xa4b6c0).lerp(c.set(0xe2c48e), 0.38).multiplyScalar(0.42 * k);
     else u.uSkyHorizon.value.copy(bg).lerp(sky, 0.45).multiplyScalar(0.4 * k);
     u.uSunCol.value.set(p.sun).multiplyScalar(p.sunI);
   }
