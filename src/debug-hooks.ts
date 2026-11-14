@@ -60,6 +60,8 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
     },
     /** Navigation only: grid build, routes (computed / cached / straight / failed), phases. */
     nav: () => sim.navStats(),
+    /** Wind in the trees (wind.ts): set .strength (0 calm, 1 breeze, 2 strong), .direction, .variation. */
+    wind: renderer.wind,
     /** River water (river.ts): ripples, fish, flotsam; the object itself is renderer.river (jumpFish, addRipple, flowAt). */
     river: () => renderer.river?.stats() ?? null,
     /** One citizen's runtime state (index or id). */

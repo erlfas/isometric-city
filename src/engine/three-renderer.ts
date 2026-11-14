@@ -7,6 +7,7 @@ import { TextureLibrary } from './texture-library';
 import { CitizenCrowd } from './citizen-crowd';
 import { DoorLeaves, nightFactor } from './door-leaves';
 import { ChimneySmoke } from './chimney-smoke';
+import { Wind } from './wind';
 import type { Building, Door } from './building-anchors';
 import { Cutaway, type CutTarget } from './cutaway';
 import { InteriorProps, roomAt, roomCentre } from './interiors';
@@ -141,6 +142,8 @@ export class ThreeIsometricRenderer {
   /** Buildings, walls, stalls, trees: instanced per chunk (static-batches.ts). */
   private statics = new StaticBatches();
   private cutaway: Cutaway;
+  /** Sway of tree crowns, bushes and reeds (wind.ts); __lublin.wind. */
+  public readonly wind = new Wind();
   private cutTargets = new Map<number, CutTarget>();
   private cutRay = new THREE.Ray();
   private cutHit = new THREE.Vector3();
@@ -613,6 +616,7 @@ export class ThreeIsometricRenderer {
           const mesh = child as THREE.Mesh;
           if (mesh.isMesh && !Array.isArray(mesh.material)) mesh.material = share(mesh.material);
         });
+        this.wind.prepare(name, gltf.scene);
       }
       gltf.scene.name = name; // clones keep it: findInstances() looks placed models up by name
       this.models.set(name, gltf.scene);
@@ -1492,6 +1496,7 @@ totalEmissiveRadiance += vec3(${g.r.toFixed(3)}, ${g.g.toFixed(3)}, ${g.b.toFixe
     this.shadowMoving = moving;
     this.shadowDirty = false;
     this.statics.updateCasters();
+    this.wind.update(performance.now() * 0.001);
     this.river?.update(this.camera, this.groundView(this.riverView), this.dirLight);
     this.renderer.render(this.scene, this.camera);
   }

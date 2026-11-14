@@ -237,7 +237,9 @@ export class Cutaway {
     if (c) c.multiply(tint);
     m.side = THREE.DoubleSide;
     m.shadowSide = THREE.FrontSide;
-    m.onBeforeCompile = cutShader(u);
+    const cut = cutShader(u);
+    // Keep the base material's own shader edits (wind sway) under the cutaway's.
+    m.onBeforeCompile = (s, r) => { base.onBeforeCompile(s, r); cut(s); };
     m.customProgramCacheKey = () => `cutaway|${base.customProgramCacheKey()}`;
     return m;
   }
