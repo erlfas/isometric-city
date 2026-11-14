@@ -19,6 +19,7 @@ Checks:
      variants per part and colour slots fit the crowd renderer's limits.
   7. Work loops: every kit.anim name is a file in src/engine/work-anims/ (or "idle"), each file
      is used by exactly one kit (parallel kit authors overwrite a shared name).
+  8. Vegetation triangle budgets (MODEL_TRIS, by model name prefix).
 """
 import glob
 import json
@@ -115,6 +116,16 @@ KIT_LOD1_VARIANT_TRIS = 130
 KIT_MAX_METALLIC = 0.3    # no environment map: more metallic renders near black (KEY_FINDINGS §18.6)
 KIT_MAX_VARIANTS = 48     # distinct variants per part: the crowd's per-instance mask (citizen-crowd.ts)
 KIT_MAX_SLOTS = 31        # colour slots per kit: columns of the crowd's slot texture
+
+
+# Vegetation (build_assets.py "Vegetation"): up to thousands of instances each, so triangle
+# budgets per model, by name prefix (first match wins).
+MODEL_TRIS = [("tree_", 1300), ("bush_", 320), ("fern_", 220), ("reed_", 220), ("rock_", 500), ("log_", 200)]
+
+
+def model_tris(gltf):
+    return sum(gltf["accessors"][p.get("indices", p["attributes"]["POSITION"])]["count"] // 3
+               for m in gltf.get("meshes", []) for p in m["primitives"])
 
 
 anim_users = {}  # work-anim name -> kits using it
@@ -222,6 +233,13 @@ def main():
         mats = gltf.get("materials", [])
         seen_materials.update(m.get("name", "") for m in mats)
         check_kit(name, gltf)
+        budget = next((b for prefix, b in MODEL_TRIS if name.startswith(prefix)), None)
+        if budget is not None:
+            tris = model_tris(gltf)
+            if verbose:
+                print(f"  {name:28s} {tris:6d} tris (budget {budget})")
+            if tris > budget:
+                fail(f"{name}: {tris} tris (vegetation budget {budget}, MODEL_TRIS)")
         roof = {}
         for mesh in gltf.get("meshes", []):
             for prim in mesh["primitives"]:

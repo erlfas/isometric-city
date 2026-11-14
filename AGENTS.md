@@ -30,9 +30,9 @@ Commands:
 
 | Task | Script / Entry Point | Output / Target | Command |
 |---|---|---|---|
-| **Building Models** | [`build_assets.py`](build_assets.py) | `public/models/*.glb` (31 models) | `$BLENDER --background --factory-startup --python build_assets.py [-- <glb names>]` (names = only those models; seconds instead of minutes) |
+| **Building Models** | [`build_assets.py`](build_assets.py) | `public/models/*.glb` (50 models; vegetation: 3 shared materials, colour in COLOR_0) | `$BLENDER --background --factory-startup --python build_assets.py [-- <glb names>]` (names = only those models; seconds instead of minutes) |
 | **Character Models** | [`build_characters.py`](build_characters.py) + `characters/char_<trade>.py` (one kit per trade) | `public/models/char_*.glb` (14 kits; work loops in `src/engine/work-anims/`) | `$BLENDER --background --factory-startup --python build_characters.py [-- <glb names>]`. Kit format (parts, variants, palettes) and its runtime: header of [`src/engine/citizen-crowd.ts`](src/engine/citizen-crowd.ts). Inspect with `#pause&lineup=char_tanner,6[,work\|walk]`. |
-| **Textures** | [`scripts/textures/build_textures.ps1`](scripts/textures/build_textures.ps1) | `public/textures/*.jpg` + `manifest.json` (19 families) | `powershell -ExecutionPolicy Bypass -File scripts\textures\build_textures.ps1` (needs git-ignored `texture_sources/`) |
+| **Textures** | [`scripts/textures/build_textures.ps1`](scripts/textures/build_textures.ps1) | `public/textures/*.jpg` + `manifest.json` (21 families) | `powershell -ExecutionPolicy Bypass -File scripts\textures\build_textures.ps1` (needs git-ignored `texture_sources/`) |
 | **Urban Parcellation** | [`generate_city_plan.py`](generate_city_plan.py) | `city_plan.json` (580 parcels, 0 overlaps) | `$PY generate_city_plan.py` |
 
 ---

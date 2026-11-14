@@ -11,7 +11,7 @@ Procedurally generates high-fidelity low-poly 3D models matching historical medi
 - 7. House Type 2: Authentic Half-Timber Jettied House with carved corbels and shop shutters
 - 8. House Type 3: Patrician Stepped Brick Kamienica with 5-tier pinnacle crow-gable
 - 9. Defensive Curtain Wall and Curtain Defense Tower
-- 10. Medieval Oak Tree
+- 10. Vegetation: oaks, alder, hornbeam, lime, willows, birch, Scots pine, bushes, fern, reeds, boulders, fallen log
 - 11. Timber Outbuilding / Backyard Shed
 - 12. Gothic Collegiate Parish Church (Fara)
 - 13. Romanesque Round Keep (Donżon Zamkowy)
@@ -44,6 +44,10 @@ import bmesh
 from mathutils import Vector, Matrix, Color
 
 OUTPUT_DIR = "public/models"
+# Linear mean albedo of the grey vegetation textures (public/textures leaf_canopy, tree_bark):
+# vertex colours are divided by it so texture x colour lands on the intended shade.
+LEAF_TEX_LIN = 0.41
+BARK_TEX_LIN = 0.575
 
 def clear_scene():
     for obj in list(bpy.data.objects):
@@ -117,6 +121,11 @@ def get_materials():
         "timber_log": create_mat("TimberLog", (0.24, 0.16, 0.10)),
         "timber_log_weathered": create_mat("TimberLogWeathered", (0.36, 0.32, 0.28)),
         "stone_fieldstone": create_mat("StoneFieldstone", (0.72, 0.68, 0.58)),
+        # Vegetation (see "Vegetation" below): grey textures, colour in the vertex colours.
+        # Base colours = the textures' mean (linear), so the flat fallback looks the same.
+        "leaves": create_mat("Leaves", (LEAF_TEX_LIN,) * 3, roughness=0.9),
+        "bark": create_mat("Bark", (BARK_TEX_LIN,) * 3, roughness=0.92),
+        "river_stone": create_mat("RiverStone", (0.30, 0.30, 0.29), roughness=0.92),
     }
 
 
@@ -144,7 +153,7 @@ MODEL_MATERIAL_OVERRIDES = {
 
 # Materials whose texture grain must follow the part's length (beams, braces, posts)
 # rather than the world-up wall projection.
-UV_ALONG_LENGTH = {"TimberDark"}
+UV_ALONG_LENGTH = {"TimberDark", "Bark"}
 
 def add_box(bm, cx, cy, cz, w, d, h, mat_idx=0):
     w2, d2, h2 = w * 0.5, d * 0.5, h * 0.5
@@ -995,12 +1004,16 @@ def export_object(obj, name):
     bpy.ops.object.select_all(action='DESELECT')
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
+    extra = {}
+    if len(obj.data.color_attributes) and bpy.app.version >= (4, 2, 0):
+        extra["export_vertex_color"] = "ACTIVE"   # vegetation: COLOR_0 (3.6 exports it by default)
     bpy.ops.export_scene.gltf(
         filepath=filepath,
         export_format='GLB',
         use_selection=True,
         export_apply=True,
-        export_extras=True
+        export_extras=True,
+        **extra
     )
     print(f"Exported: {filepath} ({os.path.getsize(filepath):,} bytes)")
 
@@ -1965,29 +1978,702 @@ def build_defense_tower(mats):
 # -------------------------------------------------------------
 # 10. Medieval Oak Tree & Timber Shed
 # -------------------------------------------------------------
+# =============================================================
+# Vegetation: forest trees, riverbank trees, bushes and undergrowth.
+# Three materials for all of it, so 2,000+ placed plants are three batches:
+#   Leaves (leaf_canopy) and Bark (tree_bark) are grey textures; each species' colour is in
+#   the vertex colours (COLOR_0, linear, divided by the texture's mean so texture x colour
+#   lands on the sRGB colour written here). RiverStone = plaster_lime tinted grey, moss in COLOR_0.
+# Crowns are lumpy icosphere clumps whose normals bend toward the crown's centre, so a crown
+# shades as one soft volume with lumps (the painted trees in concept_art/), and clumps get
+# darker toward the crown's base and core. Origin = ground centre, Blender Z up.
+# =============================================================
+import random
+
+_Z = Vector((0.0, 0.0, 1.0))
+
+
+def _lin(c):
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def _vc(hexstr, tex=LEAF_TEX_LIN):
+    """sRGB hex -> vertex colour that, times a texture of linear mean `tex`, shows that colour."""
+    h = hexstr.lstrip("#")
+    return tuple(_lin(int(h[i:i + 2], 16) / 255.0) / tex for i in (0, 2, 4))
+
+
+def _mul(c, k):
+    if isinstance(k, (int, float)):
+        k = (k, k, k)
+    return tuple(min(1.0, max(0.0, a * b)) for a, b in zip(c, k))
+
+
+def _mix(a, b, t):
+    return tuple(x + (y - x) * t for x, y in zip(a, b))
+
+
+class _Veg:
+    """One plant: bmesh + per-vertex colours and normals, exported as one GLB."""
+    LEAF, BARK, STONE = 0, 1, 2
+
+    def __init__(self, mats, seed):
+        self.bm = bmesh.new()
+        self.col = self.bm.loops.layers.float_color.new("Col")
+        self.rng = random.Random(seed)
+        self.mats = [mats["leaves"], mats["bark"], mats["river_stone"]]
+        # Per-vertex colour and custom normal, per-face colour override (bark marks, berries).
+        # Kept in bmesh layers: BMVert/BMFace wrappers are not stable dict keys.
+        self.lc = self.bm.verts.layers.float_color.new("vc_tmp")
+        self.ln = self.bm.verts.layers.float_vector.new("n_tmp")
+        self.lf = self.bm.faces.layers.int.new("fc_tmp")
+        self.fcols = [None]
+        self.has_n = False
+
+    def setv(self, v, rgb):
+        v[self.lc] = (rgb[0], rgb[1], rgb[2], 1.0)
+
+    def setn(self, v, n):
+        v[self.ln] = n
+        self.has_n = True
+
+    def setf(self, f, rgb):
+        f[self.lf] = len(self.fcols)
+        self.fcols.append(rgb)
+
+    def r(self, a, b):
+        return self.rng.uniform(a, b)
+
+    # --- primitives ---------------------------------------------------------------
+    def blob(self, c, rad, mat, tone, rough=0.16, sub=1, crown=None, smooth=True, rot=None):
+        """Lumpy ellipsoid (sub 0: 56-tri UV sphere, 1: 80-tri icosphere, 2: 320). tone(co) -> rgb.
+        crown = (centre, radii, w): bend normals toward the crown volume's normal by w.
+        rot: 3x3 Matrix tilting the ellipsoid about its centre."""
+        if sub == 0:
+            got = bmesh.ops.create_uvsphere(self.bm, u_segments=7, v_segments=5, radius=1.0)
+        else:
+            got = bmesh.ops.create_icosphere(self.bm, subdivisions=sub + 1, radius=1.0)
+        verts = got["verts"]
+        cv = Vector(c)
+        for v in verts:
+            d = v.co.normalized()
+            k = 1.0 + rough * (self.rng.random() * 2.0 - 1.0)
+            p = Vector((d.x * rad[0] * k, d.y * rad[1] * k, d.z * rad[2] * k))
+            n = Vector((d.x / rad[0], d.y / rad[1], d.z / rad[2])).normalized()
+            if rot is not None:
+                p, n = rot @ p, rot @ n
+            v.co = cv + p
+            if crown:
+                (kx, ky, kz), (qx, qy, qz), w = crown
+                nc = Vector(((v.co.x - kx) / qx ** 2, (v.co.y - ky) / qy ** 2, (v.co.z - kz) / qz ** 2))
+                if nc.length > 1e-6:
+                    n = (n * (1.0 - w) + nc.normalized() * w).normalized()
+            if smooth:
+                self.setn(v, n)
+            self.setv(v, tone(v.co))
+        faces = {f for v in verts for f in v.link_faces}
+        for f in faces:
+            f.material_index = mat
+            f.smooth = smooth
+        return verts, faces
+
+    def tube(self, pts, radii, sides, mat, tone, twist=None):
+        """Tapered tube along pts; a radius of 0 at the end closes it to a point. Open at the
+        start (sunk into the ground or the parent limb). tone(i, co) -> rgb. Returns faces."""
+        pts = [Vector(p) for p in pts]
+        axis = (pts[-1] - pts[0]).normalized()
+        ref = Vector((1.0, 0.0, 0.0)) if abs(axis.z) > 0.7 else _Z
+        a0 = self.rng.uniform(0, math.tau) if twist is None else twist
+        rings = []
+        for i, p in enumerate(pts):
+            d = (pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized()
+            u = ref.cross(d).normalized()
+            w = d.cross(u)
+            if radii[i] <= 0.0:
+                v = self.bm.verts.new(p)
+                self.setn(v, d)
+                self.setv(v, tone(i, p))
+                rings.append([v])
+                continue
+            ring = []
+            for j in range(sides):
+                a = a0 + math.tau * j / sides
+                o = u * math.cos(a) + w * math.sin(a)
+                v = self.bm.verts.new(p + o * radii[i])
+                self.setn(v, o)
+                self.setv(v, tone(i, v.co))
+                ring.append(v)
+            rings.append(ring)
+        faces = []
+        for r0, r1 in zip(rings, rings[1:]):
+            for j in range(sides):
+                j1 = (j + 1) % sides
+                if len(r1) == 1:
+                    f = self.bm.faces.new([r0[j], r0[j1], r1[0]])
+                else:
+                    f = self.bm.faces.new([r0[j], r0[j1], r1[j1], r1[j]])
+                f.material_index = mat
+                f.smooth = True
+                faces.append(f)
+        return faces
+
+    def blade(self, pts, widths, side, mat, tone, fold=0.0):
+        """Flat strip along pts, width across `side` (unit vector); width 0 = pointed tip.
+        fold lifts the midrib (V-section, two quads across) so the blade catches light."""
+        faces = []
+        prev = None
+        for i, p in enumerate(pts):
+            p = Vector(p)
+            hw = widths[i] * 0.5
+            if hw <= 0.0:
+                row = [self.bm.verts.new(p)]
+            elif fold:
+                mid = p + _Z * fold * widths[i]
+                row = [self.bm.verts.new(p - side * hw), self.bm.verts.new(mid), self.bm.verts.new(p + side * hw)]
+            else:
+                row = [self.bm.verts.new(p - side * hw), self.bm.verts.new(p + side * hw)]
+            for v in row:
+                self.setv(v, tone(i, v.co))
+            if prev is not None:
+                if len(row) == 1:
+                    for a, b in zip(prev, prev[1:]):
+                        faces.append(self.bm.faces.new([a, b, row[0]]))
+                else:
+                    for k in range(len(row) - 1):
+                        faces.append(self.bm.faces.new([prev[k], prev[k + 1], row[k + 1], row[k]]))
+            prev = row
+        for f in faces:
+            f.material_index = mat
+            f.smooth = False
+        return faces
+
+    # --- export --------------------------------------------------------------------
+    def export(self, name):
+        bm = self.bm
+        for f in bm.faces:
+            fc = self.fcols[f[self.lf]]
+            for lp in f.loops:
+                c = fc or lp.vert[self.lc]
+                if not fc and c[3] == 0.0:                     # never set
+                    c = (1.0, 1.0, 1.0)
+                lp[self.col] = (min(1.0, c[0]), min(1.0, c[1]), min(1.0, c[2]), 1.0)
+        bm.verts.index_update()
+        normals = [tuple(v[self.ln]) for v in bm.verts]
+        mesh = bpy.data.meshes.new("Mesh_" + name)
+        bm.to_mesh(mesh)
+        bm.free()
+        for m in self.mats:
+            mesh.materials.append(m)
+        for a in ("vc_tmp", "n_tmp", "fc_tmp"):
+            if a in mesh.attributes:
+                mesh.attributes.remove(mesh.attributes[a])
+        if self.has_n:
+            if hasattr(mesh, "use_auto_smooth"):          # Blender < 4.1
+                mesh.use_auto_smooth = True
+            mesh.normals_split_custom_set_from_vertices(normals)
+        attr = mesh.color_attributes.get("Col")
+        mesh.color_attributes.active_color = attr
+        if hasattr(mesh.color_attributes, "render_color_index"):
+            mesh.color_attributes.render_color_index = mesh.color_attributes.active_color_index
+        obj = bpy.data.objects.new(name, mesh)
+        bpy.context.collection.objects.link(obj)
+        tris = sum(len(p.vertices) - 2 for p in mesh.polygons)
+        zs = [v.co.z for v in mesh.vertices]
+        rad = max(math.hypot(v.co.x, v.co.y) for v in mesh.vertices)
+        print(f"  {name}: {tris} tris, height {max(zs):.1f} m, radius {rad:.1f} m")
+        export_object(obj, name)
+
+
+def _crown_tone(leaf, zlo, zhi, centre, rxy, k=1.0, hue=(1.0, 1.0, 1.0)):
+    """Leaf colour for a point: darker toward the crown's base and its core (self-shading)."""
+    def tone(co):
+        t = min(1.0, max(0.0, (co.z - zlo) / max(zhi - zlo, 1e-3)))
+        q = min(1.0, math.hypot(co.x - centre[0], co.y - centre[1]) / max(rxy, 1e-3))
+        s = (0.60 + 0.46 * t) * (0.84 + 0.16 * q) * k
+        return _mul(leaf, (s * hue[0], s * hue[1], s * hue[2]))
+    return tone
+
+
+def _bark_tone(bark, base_dark=0.7, h_full=2.0):
+    """Bark colour, darker (damp, mossy) near the ground."""
+    def tone(i, co):
+        t = min(1.0, max(0.0, co.z / h_full))
+        return _mul(bark, base_dark + (1.0 - base_dark) * t)
+    return tone
+
+
+def _clumps(v, n, centre, radii, size, shape="ellipsoid", flat=0.8, top=True, spread=0.78):
+    """Clump centres and radii inside a crown envelope. shape: ellipsoid | cone | dome."""
+    cx, cy, cz = centre
+    rx, ry, rz = radii
+    out = []
+    golden = math.pi * (3.0 - math.sqrt(5.0))
+    for i in range(n):
+        # Fibonacci directions (even coverage), jittered, mostly on the upper/outer shell.
+        zf = 1.0 - (i + 0.5) / n * 1.7                  # 1 .. -0.7
+        a = i * golden + v.r(-0.4, 0.4)
+        rr = math.sqrt(max(0.0, 1.0 - zf * zf))
+        f = v.r(0.62, 1.0) * spread
+        x, y, z = math.cos(a) * rr * f, math.sin(a) * rr * f, zf * f
+        if shape == "cone":                              # narrower toward the top
+            w = 1.0 - (z + 1.0) * 0.5 * 0.75
+            x, y = x * w * 1.25, y * w * 1.25
+        elif shape == "dome":                            # flat bottom, round top
+            z = abs(z) * 0.9 - 0.25
+        s = size * v.r(0.82, 1.15)
+        out.append(((cx + x * rx, cy + y * ry, cz + z * rz), (s, s * v.r(0.9, 1.1), s * flat)))
+    if top:
+        s = size * 0.95
+        out.append(((cx + v.r(-0.3, 0.3), cy + v.r(-0.3, 0.3), cz + rz * 0.72), (s, s, s * flat)))
+    return out
+
+
+def _tree(mats, name, seed, height, trunk_top, trunk_r, leaf, bark, n, size, crown_r, crown_z,
+          shape="ellipsoid", flat=0.8, limbs=4, lean=(0.0, 0.0), sides=7, normal_w=0.55,
+          hue_var=0.08, extra=None, flare=1.45, spread=0.78):
+    """Broadleaf tree: tapered trunk with root flare, `limbs` limbs into the crown, n clumps.
+    crown_r = (rx, ry, rz) envelope half-sizes around (0, 0, crown_z), `height` = top target."""
+    v = _Veg(mats, seed)
+    lx, ly = lean
+    # Trunk: root flare, then a slight wander up to trunk_top.
+    zs = [0.0, 0.35, 1.2] + [1.2 + (trunk_top - 1.2) * k / 3.0 for k in (1, 2, 3)]
+    pts, radii = [], []
+    for i, z in enumerate(zs):
+        t = z / trunk_top
+        wob = 0.0 if i < 2 else v.r(-0.12, 0.12)
+        pts.append((lx * t + wob, ly * t + v.r(-0.08, 0.08) * (i > 1), z))
+        radii.append(trunk_r * (flare if i == 0 else 1.12 if i == 1 else 1.0 - 0.45 * t))
+    v.tube(pts, radii, sides, _Veg.BARK, _bark_tone(bark))
+    top = Vector(pts[-1])
+    cc = (lx, ly, crown_z)
+    clumps = _clumps(v, n, cc, crown_r, size, shape, flat, spread=spread)
+    # Limbs: from the upper trunk toward the lowest/outermost clumps (they show beneath).
+    order = sorted(clumps, key=lambda c: c[0][2] - 0.4 * math.hypot(c[0][0] - lx, c[0][1] - ly))
+    for (c, rad) in order[:limbs]:
+        z0 = trunk_top * v.r(0.55, 0.85)
+        p0 = Vector((lx * z0 / trunk_top, ly * z0 / trunk_top, z0))
+        p2 = Vector(c) * 0.88 + p0 * 0.12
+        p1 = p0.lerp(p2, 0.5) + Vector((0, 0, v.r(0.2, 0.6)))
+        r0 = trunk_r * v.r(0.35, 0.5)
+        v.tube([p0, p1, p2], [r0, r0 * 0.6, 0.0], 5, _Veg.BARK, _bark_tone(bark, 1.0))
+    zlo = min(c[2] - r[2] for c, r in clumps)
+    zhi = max(c[2] + r[2] for c, r in clumps)
+    rxy = max(crown_r[0], crown_r[1])
+    crown = (cc, (crown_r[0] + size * 0.6, crown_r[1] + size * 0.6, crown_r[2] + size * 0.5), normal_w)
+    for (c, rad) in clumps:
+        k = 1.0 + v.r(-hue_var, hue_var)
+        warm = v.r(-1.0, 1.0) * hue_var
+        hue = (1.0 + warm, 1.0 + warm * 0.4, 1.0 - warm * 1.2)
+        v.blob(c, rad, _Veg.LEAF, _crown_tone(leaf, zlo, zhi, cc, rxy, k, hue), crown=crown)
+    if extra:
+        extra(v, clumps, zlo, zhi)
+    v.export(name)
+
+
+# --- broadleaves ------------------------------------------------------------------------
+OAK_LEAF, OAK_BARK = _vc("#587A32"), _vc("#5E554C", BARK_TEX_LIN)
+
+
 def build_tree_oak(mats):
+    """Pedunculate oak, ~16 m, broad spreading crown on a short thick bole."""
     clear_scene()
-    bm = bmesh.new()
+    _tree(mats, "tree_oak", 11, 16, 6.0, 0.55, OAK_LEAF, OAK_BARK, n=10, size=2.9,
+          crown_r=(5.8, 5.2, 3.6), crown_z=9.0, flat=0.78, limbs=5)
 
-    mat_list = [mats["timber_dark"], mats["foliage_green"]]
 
-    add_box(bm, 0, 0, 2.0, 0.7, 0.7, 4.0, mat_idx=0)
-    add_box(bm, 0.4, 0.3, 4.2, 0.5, 0.5, 2.0, mat_idx=0)
-    add_box(bm, -0.3, -0.2, 4.5, 0.5, 0.5, 2.2, mat_idx=0)
+def build_tree_oak_b(mats):
+    """Old oak, ~19 m, wider and taller, leaning a little."""
+    clear_scene()
+    _tree(mats, "tree_oak_b", 23, 19, 7.0, 0.68, OAK_LEAF, OAK_BARK, n=10, size=3.2,
+          crown_r=(6.8, 6.0, 4.2), crown_z=10.8, flat=0.78, limbs=5, lean=(0.5, -0.3))
 
-    add_box(bm, 0, 0, 6.8, 4.2, 4.2, 3.2, mat_idx=1)
-    add_box(bm, 0.8, 0.6, 6.0, 3.2, 3.2, 2.8, mat_idx=1)
-    add_box(bm, -0.7, -0.5, 6.2, 3.0, 3.0, 2.6, mat_idx=1)
-    add_box(bm, 0, 0, 8.6, 2.6, 2.6, 2.2, mat_idx=1)
 
-    bm.normal_update()
-    mesh = bpy.data.meshes.new("Mesh_TreeOak")
-    bm.to_mesh(mesh)
-    bm.free()
-    for m in mat_list: mesh.materials.append(m)
-    obj = bpy.data.objects.new("TreeOak", mesh)
-    bpy.context.collection.objects.link(obj)
-    export_object(obj, "tree_oak")
+def build_tree_oak_c(mats):
+    """Younger oak, ~13 m."""
+    clear_scene()
+    _tree(mats, "tree_oak_c", 37, 13, 4.6, 0.36, _mul(OAK_LEAF, (1.04, 1.06, 1.0)), OAK_BARK, n=8,
+          size=2.3, crown_r=(4.0, 3.8, 3.0), crown_z=7.6, flat=0.85, limbs=4)
+
+
+ALDER_LEAF, ALDER_BARK = _vc("#3A5A2A"), _vc("#4E4842", BARK_TEX_LIN)
+
+
+def build_tree_alder(mats):
+    """Black alder, ~14 m: straight stem to the top, dark narrow crown (riverbank)."""
+    clear_scene()
+    _tree(mats, "tree_alder", 41, 14, 11.5, 0.3, ALDER_LEAF, ALDER_BARK, n=9, size=1.9,
+          crown_r=(2.6, 2.6, 4.2), crown_z=8.6, shape="cone", flat=1.0, limbs=3, sides=6)
+
+
+def build_tree_alder_b(mats):
+    """Black alder, ~12 m, leaning toward the water."""
+    clear_scene()
+    _tree(mats, "tree_alder_b", 43, 12, 9.5, 0.26, _mul(ALDER_LEAF, 1.06), ALDER_BARK, n=8, size=1.7,
+          crown_r=(2.3, 2.2, 3.6), crown_z=7.6, shape="cone", flat=1.0, limbs=3, sides=6, lean=(0.9, 0.2))
+
+
+HORNBEAM_LEAF, HORNBEAM_BARK = _vc("#4C7631"), _vc("#8A877E", BARK_TEX_LIN)
+
+
+def build_tree_hornbeam(mats):
+    """Hornbeam, ~14 m: smooth grey stem, dense oval crown."""
+    clear_scene()
+    _tree(mats, "tree_hornbeam", 51, 14, 5.5, 0.32, HORNBEAM_LEAF, HORNBEAM_BARK, n=9, size=2.3,
+          crown_r=(3.8, 3.6, 3.8), crown_z=8.4, flat=0.9, limbs=4)
+
+
+LIME_LEAF, LIME_BARK = _vc("#688C38"), _vc("#5C544C", BARK_TEX_LIN)
+
+
+def build_tree_lime(mats):
+    """Small-leaved lime (linden), ~18 m: tall domed crown, fresh green."""
+    clear_scene()
+    _tree(mats, "tree_lime", 61, 18, 7.0, 0.45, LIME_LEAF, LIME_BARK, n=10, size=2.6,
+          crown_r=(4.6, 4.4, 5.2), crown_z=10.5, flat=0.95, limbs=4)
+
+
+# --- willows --------------------------------------------------------------------------
+WILLOW_LEAF, WILLOW_BARK = _vc("#8A9E78"), _vc("#6A6255", BARK_TEX_LIN)
+
+
+def build_tree_willow(mats):
+    """Pollarded crack willow, ~9 m: squat trunk, knobbly head, upright shoots, silvery crown."""
+    clear_scene()
+    v = _Veg(mats, 71)
+    head = 2.6
+    v.tube([(0, 0, 0), (0, 0, 0.3), (0.1, 0.05, 1.3), (0.05, -0.05, head)], [0.72, 0.56, 0.5, 0.52], 7,
+           _Veg.BARK, _bark_tone(WILLOW_BARK))
+    v.blob((0.05, -0.05, head + 0.15), (0.78, 0.74, 0.5), _Veg.BARK, lambda co: _mul(WILLOW_BARK, 0.85),
+           rough=0.25, sub=1)
+    tips = []
+    for i in range(9):
+        a = math.tau * i / 9 + v.r(-0.25, 0.25)
+        o = v.r(0.2, 0.45)
+        p0 = Vector((math.cos(a) * o, math.sin(a) * o, head + 0.25))
+        out = v.r(0.9, 2.2)
+        p2 = Vector((math.cos(a) * out, math.sin(a) * out, head + v.r(3.0, 4.6)))
+        v.tube([p0, p0.lerp(p2, 0.5), p2], [0.07, 0.05, 0.0], 3, _Veg.BARK, _bark_tone(_mul(WILLOW_BARK, 1.2), 1.0))
+        tips.append(p2)
+    cc, cr = (0, 0, head + 3.6), (2.6, 2.6, 2.4)
+    clumps = []
+    for i in range(7):
+        a = math.tau * i / 7 + v.r(-0.3, 0.3)
+        d = v.r(1.3, 2.1)
+        clumps.append(((math.cos(a) * d, math.sin(a) * d, head + v.r(2.6, 4.0)), (1.45, 1.45, 1.9)))
+    clumps.append(((0.0, 0.0, head + 4.6), (1.6, 1.6, 1.5)))
+    zlo, zhi = min(c[2] - r[2] for c, r in clumps), max(c[2] + r[2] for c, r in clumps)
+    for c, r in clumps:
+        rr = tuple(x * v.r(0.88, 1.12) for x in r)
+        v.blob(c, rr, _Veg.LEAF, _crown_tone(WILLOW_LEAF, zlo, zhi, cc, cr[0], v.r(0.92, 1.06)),
+               crown=(cc, (3.6, 3.6, 3.2), 0.5))
+    v.export("tree_willow")
+
+
+def build_tree_willow_weeping(mats):
+    """White willow, ~11 m, leaning over the water, with hanging curtains of foliage."""
+    clear_scene()
+    v = _Veg(mats, 79)
+    lx, ly = 1.4, 0.4
+    pts = [(0, 0, 0), (0.05, 0, 0.35), (0.4, 0.1, 2.0), (0.9, 0.25, 3.8), (lx, ly, 5.6)]
+    v.tube(pts, [0.62, 0.5, 0.42, 0.36, 0.26], 7, _Veg.BARK, _bark_tone(WILLOW_BARK))
+    cc, R = Vector((lx + 0.3, ly, 7.4)), 4.4
+    clumps = []
+    for i in range(4):                                   # domed top
+        a = math.tau * i / 4 + v.r(-0.3, 0.3)
+        d = v.r(1.4, 2.4)
+        clumps.append(((cc.x + math.cos(a) * d, cc.y + math.sin(a) * d, cc.z + v.r(0.6, 1.8)), (2.2, 2.2, 1.5)))
+    clumps.append(((cc.x, cc.y, cc.z + 2.3), (2.0, 2.0, 1.3)))
+    curtain = []
+    for i in range(14):                                  # hanging strands, flared like a bell
+        a = math.tau * i / 14 + v.r(-0.1, 0.1)
+        d = R * (0.8 if i % 2 else 0.72) * v.r(0.95, 1.05)
+        zc = cc.z - v.r(1.5, 1.9) - (0.0 if i % 2 else 0.35)
+        tilt = Matrix.Rotation(-0.16, 3, Vector((-math.sin(a), math.cos(a), 0.0)))
+        curtain.append(((cc.x + math.cos(a) * d, cc.y + math.sin(a) * d, zc), (1.15, 0.95, v.r(2.3, 2.6)), tilt))
+    for c, r in clumps:
+        p2 = Vector(c) * 0.8 + Vector((lx, ly, 5.4)) * 0.2
+        v.tube([(lx, ly, 5.2), p2], [0.2, 0.0], 4, _Veg.BARK, _bark_tone(WILLOW_BARK, 1.0))
+    allc = clumps + [(c, r) for c, r, _ in curtain]
+    zlo, zhi = min(c[2] - r[2] for c, r in allc), max(c[2] + r[2] for c, r in allc)
+    leaf = _mul(WILLOW_LEAF, (1.0, 1.02, 1.04))
+    for c, r in clumps:
+        v.blob(c, r, _Veg.LEAF, _crown_tone(leaf, zlo, zhi, cc, R, v.r(0.92, 1.08)),
+               crown=(tuple(cc), (R + 1.0, R + 1.0, 4.4), 0.45))
+    for k, (c, r, tilt) in enumerate(curtain):          # strands: alternate shades so each reads
+        v.blob(c, r, _Veg.LEAF, _crown_tone(leaf, zlo + 1.0, zhi, cc, R, 1.06 if k % 2 else 0.86), sub=0,
+               rough=0.1, crown=(tuple(cc), (R + 1.0, R + 1.0, 4.4), 0.25), rot=tilt)
+    v.export("tree_willow_weeping")
+
+
+# --- birch and pine -------------------------------------------------------------------
+BIRCH_LEAF = _vc("#7E9C4A")
+BIRCH_BARK, BIRCH_MARK = _vc("#F0ECE2", BARK_TEX_LIN), _vc("#2E2A26", BARK_TEX_LIN)
+
+
+def _birch_stem(v, base, lean, h, r0):
+    """White stem with dark lenticel marks (per-face colours) and a black-fissured foot."""
+    n = 7
+    pts = [(base[0] + lean[0] * (k / (n - 1)) ** 1.3 + (v.r(-0.08, 0.08) if k else 0),
+            base[1] + lean[1] * (k / (n - 1)) ** 1.3 + (v.r(-0.08, 0.08) if k else 0),
+            h * k / (n - 1)) for k in range(n)]
+    radii = [r0 * (1.25 if k == 0 else 1.0 - 0.7 * k / (n - 1)) for k in range(n)]
+    radii[-1] = 0.0
+    faces = v.tube(pts, radii, 6, _Veg.BARK, lambda i, co: BIRCH_BARK)
+    for f in faces:
+        z = f.calc_center_median().z
+        if z < 1.0 or (z < 1.8 and v.rng.random() < 0.6):
+            v.setf(f, _mul(BIRCH_MARK, 1.4))
+        elif v.rng.random() < 0.22:
+            v.setf(f, BIRCH_MARK)
+    return pts
+
+
+def _birch(mats, name, seed, stems, per_stem=7):
+    clear_scene()
+    v = _Veg(mats, seed)
+    clumps = []
+    for (bx, by), (lx, ly), h, r0 in stems:
+        pts = _birch_stem(v, (bx, by), (lx, ly), h, r0)
+        top = Vector(pts[-1])
+        cc = (top.x * 0.9, top.y * 0.9, h * 0.68)
+        cs = _clumps(v, per_stem - 1, cc, (1.7, 1.7, h * 0.26), 1.25, flat=1.35, spread=0.85)
+        for c, r in cs:                                 # slender twigs out to the clumps
+            z0 = max(h * 0.42, c[2] - 2.2)
+            k = z0 / h
+            p0 = Vector((bx + lx * k, by + ly * k, z0))
+            v.tube([p0, Vector(c) * 0.85 + p0 * 0.15], [0.05, 0.0], 3, _Veg.BARK, lambda i, co: BIRCH_BARK)
+        clumps += [(c, r, cc) for c, r in cs]
+    zlo = min(c[2] - r[2] for c, r, _ in clumps)
+    zhi = max(c[2] + r[2] for c, r, _ in clumps)
+    for c, r, cc in clumps:
+        v.blob(c, r, _Veg.LEAF, _crown_tone(BIRCH_LEAF, zlo, zhi, cc, 2.0, v.r(0.92, 1.05)), rough=0.2,
+               crown=(cc, (2.6, 2.6, 4.0), 0.4))
+    v.export(name)
+
+
+def build_tree_birch(mats):
+    """Silver birch, ~14 m: slender white stem, light airy crown."""
+    _birch(mats, "tree_birch", 81, [((0, 0), (0.5, 0.2), 14.0, 0.19)])
+
+
+def build_tree_birch_b(mats):
+    """Silver birch, two stems from one stool, ~13 m."""
+    _birch(mats, "tree_birch_b", 83, [((0.15, 0.0), (1.5, 0.4), 13.0, 0.16), ((-0.15, 0.05), (-1.2, -0.6), 12.0, 0.14)], per_stem=5)
+
+
+PINE_LEAF = _vc("#2E4C3E")
+PINE_BARK_LO, PINE_BARK_HI = _vc("#5A4A40", BARK_TEX_LIN), _vc("#C27A45", BARK_TEX_LIN)
+
+
+def _pine(mats, name, seed, h, r0, tiers):
+    """Scots pine: tall bare stem, grey-brown below and orange above, flat-topped umbrella of
+    dark blue-green pads. tiers = [(z, n pads, pad radius, spread)]."""
+    clear_scene()
+    v = _Veg(mats, seed)
+
+    def bark(i, co):
+        t = min(1.0, max(0.0, (co.z / h - 0.35) / 0.3))
+        return _mix(_mul(PINE_BARK_LO, 0.8 + 0.2 * min(1.0, co.z / 2.0)), PINE_BARK_HI, t * t * (3 - 2 * t))
+    n = 7
+    pts, radii = [], []
+    lx, ly = v.r(-0.6, 0.6), v.r(-0.6, 0.6)
+    for k in range(n):
+        t = k / (n - 1)
+        pts.append((lx * t * t + (v.r(-0.15, 0.15) if 0 < k < n - 1 else 0),
+                    ly * t * t + (v.r(-0.15, 0.15) if 0 < k < n - 1 else 0), h * 0.92 * t))
+        radii.append(r0 * (1.3 if k == 0 else 1.0 - 0.75 * t))
+    v.tube(pts, radii, 6, _Veg.BARK, bark)
+    for _ in range(3):                                   # dead branch stubs on the bare stem
+        z = h * v.r(0.3, 0.5)
+        a = v.r(0, math.tau)
+        p0 = Vector((lx * (z / h) ** 2, ly * (z / h) ** 2, z))
+        v.tube([p0, p0 + Vector((math.cos(a) * 0.9, math.sin(a) * 0.9, -0.15))], [0.05, 0.0], 3, _Veg.BARK,
+               lambda i, co: _mul(PINE_BARK_LO, 1.1))
+    pads = []
+    for z, cnt, rad, spread in tiers:
+        a0 = v.r(0, math.tau)
+        for i in range(cnt):
+            a = a0 + math.tau * i / cnt + v.r(-0.35, 0.35)
+            d = spread * v.r(0.6, 1.0) if cnt > 1 else v.r(0.0, 0.4)
+            t = (z / h) ** 2
+            c = (lx * t + math.cos(a) * d, ly * t + math.sin(a) * d, z + v.r(-0.5, 0.5))
+            r = rad * v.r(0.8, 1.15)
+            pads.append((c, (r, r * v.r(0.85, 1.0), r * 0.38)))
+            p0 = Vector((lx * t, ly * t, c[2] - 0.9))
+            v.tube([p0, Vector(c) * 0.9 + p0 * 0.1], [0.11, 0.0], 4, _Veg.BARK, bark)
+    zlo = min(c[2] - r[2] for c, r in pads)
+    zhi = max(c[2] + r[2] for c, r in pads)
+    cc = (lx, ly, (zlo + zhi) * 0.5)
+    for c, r in pads:
+        v.blob(c, r, _Veg.LEAF, _crown_tone(PINE_LEAF, zlo - 1.0, zhi, cc, 3.0, v.r(0.9, 1.08),
+                                            (v.r(0.95, 1.05), 1.0, v.r(0.98, 1.08))),
+               rough=0.22, crown=(cc, (3.6, 3.6, (zhi - zlo) * 0.6 + 0.5), 0.35))
+    v.export(name)
+
+
+def build_tree_pine(mats):
+    """Scots pine, ~22 m, umbrella crown in two tiers."""
+    _pine(mats, "tree_pine", 91, 22.0, 0.36, [(20.4, 1, 2.9, 0.0), (19.6, 4, 2.6, 2.9), (17.6, 3, 2.1, 3.0)])
+
+
+def build_tree_pine_b(mats):
+    """Scots pine, ~25 m, high flat crown, leaning."""
+    _pine(mats, "tree_pine_b", 97, 25.0, 0.4, [(23.6, 1, 2.7, 0.0), (22.8, 5, 2.5, 3.1), (20.8, 2, 1.9, 2.8)])
+
+
+# --- bushes and undergrowth -------------------------------------------------------------
+def _bush(mats, name, seed, leaf, stem, stems, height, clumps, berries=None):
+    """Multi-stemmed shrub: `stems` rods fanning out, `clumps` [(c, r, sub)] of leaves."""
+    clear_scene()
+    v = _Veg(mats, seed)
+    for i in range(stems):
+        a = math.tau * i / stems + v.r(-0.3, 0.3)
+        out = v.r(0.4, 1.0)
+        top = Vector((math.cos(a) * out, math.sin(a) * out, height * v.r(0.55, 0.8)))
+        v.tube([(math.cos(a) * 0.12, math.sin(a) * 0.12, 0.0), top], [0.06, 0.0], 3, _Veg.BARK,
+               _bark_tone(stem, 0.8, 1.0))
+    zlo = min(c[2] - r[2] for c, r, _ in clumps)
+    zhi = max(c[2] + r[2] for c, r, _ in clumps)
+    cc = (0.0, 0.0, (zlo + zhi) * 0.5)
+    cr = max(abs(c[0]) + r[0] for c, r, _ in clumps)
+    for c, r, sub in clumps:
+        _, faces = v.blob(c, r, _Veg.LEAF, _crown_tone(leaf, zlo, zhi, cc, cr, v.r(0.92, 1.07)), rough=0.2,
+                          sub=sub, crown=(cc, (cr, cr, (zhi - zlo) * 0.6), 0.5))
+        if berries:
+            for f in faces:
+                if f.calc_center_median().z > zlo + 0.4 and v.rng.random() < 0.06:
+                    v.setf(f, berries)
+    v.export(name)
+
+
+def build_bush_hazel(mats):
+    """Hazel, ~3.5 m: many rods from the stool, rounded vase of fresh green."""
+    _bush(mats, "bush_hazel", 101, _vc("#5E8538"), _vc("#6E5C48", BARK_TEX_LIN), 6, 3.5,
+          [((0.5, 0.3, 2.3), (1.35, 1.25, 1.1), 1), ((-0.6, 0.1, 2.1), (1.2, 1.25, 1.05), 1),
+           ((0.0, -0.6, 2.6), (1.2, 1.1, 0.95), 1), ((0.05, 0.55, 1.2), (0.9, 0.8, 0.75), 0)])
+
+
+def build_bush_hawthorn(mats):
+    """Hawthorn, ~3 m: dense dark rounded bush."""
+    _bush(mats, "bush_hawthorn", 107, _vc("#3F6230"), _vc("#4A4038", BARK_TEX_LIN), 4, 3.0,
+          [((0.55, 0.3, 1.8), (1.1, 1.0, 0.95), 1), ((-0.6, 0.15, 1.5), (1.0, 0.95, 0.85), 1),
+           ((0.05, -0.55, 2.2), (0.95, 0.9, 0.8), 1), ((-0.1, 0.7, 2.5), (0.75, 0.7, 0.6), 0)])
+
+
+def build_fern_clump(mats):
+    """Bracken / male fern, ~0.8 m: ten arching fronds with a raised midrib."""
+    clear_scene()
+    v = _Veg(mats, 113)
+    leaf = _vc("#5E8A30")
+    for i in range(10):
+        a = math.tau * i / 10 + v.r(-0.2, 0.2)
+        d = Vector((math.cos(a), math.sin(a), 0.0))
+        side = Vector((-d.y, d.x, 0.0))
+        L = v.r(0.75, 1.05)
+        up = v.r(0.55, 0.85)
+        pts = [d * 0.05 + _Z * 0.05, d * L * 0.35 + _Z * up, d * L * 0.75 + _Z * up * 0.95, d * L + _Z * up * 0.5]
+        k = v.r(0.85, 1.1)
+        v.blade(pts, [0.06, 0.3, 0.22, 0.0], side, _Veg.LEAF,
+                lambda j, co, k=k: _mul(leaf, (0.6 + 0.5 * min(1.0, co.z / 0.8)) * k), fold=0.25)
+    v.export("fern_clump")
+
+
+def build_reed_clump(mats):
+    """Common reed and bulrush for the shallows, ~2 m: thin blades and brown cattail heads."""
+    clear_scene()
+    v = _Veg(mats, 127)
+    green, tip, head = _vc("#6E8A40"), _vc("#B4A866"), _vc("#5A3A22")
+    for i in range(28):
+        a = v.r(0, math.tau)
+        o = v.r(0.0, 0.55)
+        base = Vector((math.cos(a) * o, math.sin(a) * o, -0.1))
+        out = Vector((math.cos(a), math.sin(a), 0.0)) * v.r(0.15, 0.6)
+        h = v.r(1.1, 2.0)
+        side = Vector((-math.sin(a + 0.6), math.cos(a + 0.6), 0.0))
+        pts = [base, base + out * 0.3 + _Z * h * 0.55, base + out + _Z * h]
+        v.blade(pts, [0.06, 0.045, 0.0], side, _Veg.LEAF,
+                lambda j, co, h=h: _mix(_mul(green, 0.55 + 0.45 * min(1.0, co.z / 1.2)), tip, max(0.0, co.z / h - 0.6)))
+    for i in range(6):
+        a = math.tau * i / 6 + v.r(-0.4, 0.4)
+        o = v.r(0.1, 0.45)
+        h = v.r(1.6, 2.1)
+        b = Vector((math.cos(a) * o, math.sin(a) * o, -0.1))
+        t = b + Vector((v.r(-0.15, 0.15), v.r(-0.15, 0.15), h))
+        side = Vector((1.0, 0.0, 0.0))
+        v.blade([b, t - _Z * 0.25], [0.025, 0.02], side, _Veg.LEAF, lambda j, co: _mul(green, 0.8))
+        v.tube([t - _Z * 0.3, t - _Z * 0.28, t, t + _Z * 0.12], [0.02, 0.05, 0.045, 0.0], 4, _Veg.LEAF,
+               lambda j, co: head)
+    v.export("reed_clump")
+
+
+def _stone(v, c, rad, seed_dirs=4):
+    """Rounded river stone: icosphere warped by a few broad bumps, base sunk, moss on top."""
+    moss, rock = (0.5, 0.66, 0.3), (0.8, 0.81, 0.84)
+    bumps = [(Vector((v.r(-1, 1), v.r(-1, 1), v.r(-0.3, 1))).normalized(), v.r(-0.16, 0.22))
+             for _ in range(seed_dirs + 3)]
+    got = bmesh.ops.create_icosphere(v.bm, subdivisions=3 if rad[0] > 0.7 else 2, radius=1.0)
+    for vert in got["verts"]:
+        d = vert.co.normalized()
+        k = 1.0 + sum(s * max(0.0, d.dot(b)) ** 2 for b, s in bumps) + v.r(-0.03, 0.03)
+        z = d.z * rad[2] * k
+        if z < 0.0:
+            z *= 0.5                                     # flatter underside, sits in the bed
+        vert.co = Vector((c[0] + d.x * rad[0] * k, c[1] + d.y * rad[1] * k, c[2] + z))
+        up = max(0.0, d.z - 0.35) / 0.65
+        v.setv(vert, _mix(rock, moss, min(1.0, up * 1.3) * v.r(0.6, 1.0)))
+    for f in {f for vert in got["verts"] for f in vert.link_faces}:
+        f.material_index = _Veg.STONE
+        f.smooth = False                                 # facets read as worn stone
+
+
+def build_rock_boulder(mats):
+    """River boulder, ~1.9 x 1.5 x 1.1 m, mossy top."""
+    clear_scene()
+    v = _Veg(mats, 131)
+    _stone(v, (0.0, 0.0, 0.25), (1.0, 0.78, 0.85))
+    v.export("rock_boulder")
+
+
+def build_rock_boulder_b(mats):
+    """Three smaller stones in a group (gravel bar, riverbank)."""
+    clear_scene()
+    v = _Veg(mats, 137)
+    _stone(v, (0.0, 0.0, 0.15), (0.75, 0.6, 0.55))
+    _stone(v, (1.0, 0.5, 0.08), (0.45, 0.38, 0.32))
+    _stone(v, (-0.6, 0.75, 0.06), (0.38, 0.34, 0.26))
+    v.export("rock_boulder_b")
+
+
+def build_log_fallen(mats):
+    """Fallen trunk, ~6.5 m, mossy along its top, broken branch stubs, pale sawn/broken ends."""
+    clear_scene()
+    v = _Veg(mats, 139)
+    bark, moss, wood = _vc("#4E463E", BARK_TEX_LIN), _vc("#5E7A34", BARK_TEX_LIN), _vc("#A88E6A", BARK_TEX_LIN)
+
+    def tone(i, co):
+        up = max(0.0, (co.z - 0.42) / 0.3)
+        return _mix(bark, moss, min(1.0, up) * 0.85)
+    pts = [(-3.2, 0.0, 0.3), (-1.6, 0.12, 0.33), (0.0, 0.18, 0.34), (1.6, 0.1, 0.32), (3.2, -0.1, 0.27)]
+    radii = [0.38, 0.36, 0.34, 0.31, 0.28]
+    faces = v.tube(pts, radii, 7, _Veg.BARK, tone, twist=0.2)
+    # End caps: rings at both ends (the first 7 and last 7 verts of the tube).
+    ring_verts = list({vv for f in faces for vv in f.verts})
+    for end, sign in ((Vector(pts[0]), -1), (Vector(pts[-1]), 1)):
+        ring = sorted([vv for vv in ring_verts if (vv.co - end).length < 0.45],
+                      key=lambda vv: math.atan2(vv.co.z - end.z, (vv.co.y - end.y)))
+        ring = [v.bm.verts.new(vv.co) for vv in ring]   # own verts: flat normal, not the bark's
+        f = v.bm.faces.new(ring)
+        f.normal_update()
+        if f.normal.x * sign < 0:
+            f.normal_flip()
+        f.material_index = _Veg.BARK
+        f.smooth = False
+        v.setf(f, wood)
+    for x, a in ((-1.0, 0.6), (1.2, 2.4), (2.4, -0.9)):
+        p0 = Vector((x, 0.14, 0.42))
+        d = Vector((0.3 * math.cos(a), 0.5 * math.sin(a), 0.6)).normalized()
+        v.tube([p0, p0 + d * v.r(0.5, 0.9)], [0.08, 0.0], 4, _Veg.BARK, lambda i, co: _mul(bark, 1.1))
+    v.export("log_fallen")
 
 def build_shed_timber(mats):
     clear_scene()
@@ -4264,8 +4950,28 @@ def main():
         "market_stall_yellow_white": lambda m: build_market_stall(m, "awning_yellow_white", "yellow_white"),
         "market_cart": build_market_cart,
         "town_well": build_town_well,
-        "tree_oak": build_tree_oak,
         "interior_props": build_interior_props,
+        # Vegetation: forest, riverbank, undergrowth
+        "tree_oak": build_tree_oak,
+        "tree_oak_b": build_tree_oak_b,
+        "tree_oak_c": build_tree_oak_c,
+        "tree_alder": build_tree_alder,
+        "tree_alder_b": build_tree_alder_b,
+        "tree_hornbeam": build_tree_hornbeam,
+        "tree_lime": build_tree_lime,
+        "tree_willow": build_tree_willow,
+        "tree_willow_weeping": build_tree_willow_weeping,
+        "tree_birch": build_tree_birch,
+        "tree_birch_b": build_tree_birch_b,
+        "tree_pine": build_tree_pine,
+        "tree_pine_b": build_tree_pine_b,
+        "bush_hazel": build_bush_hazel,
+        "bush_hawthorn": build_bush_hawthorn,
+        "fern_clump": build_fern_clump,
+        "reed_clump": build_reed_clump,
+        "rock_boulder": build_rock_boulder,
+        "rock_boulder_b": build_rock_boulder_b,
+        "log_fallen": build_log_fallen,
     }
 
     # Optional model filter after "--": blender ... --python build_assets.py -- house_half_timber town_hall

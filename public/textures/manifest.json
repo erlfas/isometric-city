@@ -109,6 +109,16 @@
     "roughness": 0.97,
     "source": "procedural"
   },
+  "leaf_canopy": {
+    "albedo": "leaf_canopy_albedo.jpg",
+    "normal": "leaf_canopy_normal.jpg",
+    "tile_m": [
+      4.0,
+      4.0
+    ],
+    "roughness": 0.9,
+    "source": "procedural"
+  },
   "limestone_ashlar": {
     "albedo": "limestone_ashlar_albedo.jpg",
     "normal": "limestone_ashlar_normal.jpg",
@@ -177,6 +187,16 @@
       1.0
     ],
     "roughness": 0.85,
+    "source": "procedural"
+  },
+  "tree_bark": {
+    "albedo": "tree_bark_albedo.jpg",
+    "normal": "tree_bark_normal.jpg",
+    "tile_m": [
+      1.5,
+      1.5
+    ],
+    "roughness": 0.92,
     "source": "procedural"
   },
   "wood_shingle": {

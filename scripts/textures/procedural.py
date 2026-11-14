@@ -21,6 +21,10 @@ RECIPES = {
     "foliage":          dict(tile_m=(2.0, 2.0), roughness=0.9,  seed=17),
     "copper_patina":    dict(tile_m=(2.0, 2.0), roughness=0.55, seed=18),
     "cobblestone":      dict(tile_m=(3.0, 3.0), roughness=0.9,  seed=19),
+    # Neutral (grey) vegetation families: the hue comes from the models' vertex colours, so one
+    # material draws every species' crowns (leaf_canopy) and every trunk (tree_bark).
+    "leaf_canopy":      dict(tile_m=(4.0, 4.0), roughness=0.9,  seed=23),
+    "tree_bark":        dict(tile_m=(1.5, 1.5), roughness=0.92, seed=24),
     "awning_red":       dict(tile_m=(1.0, 1.0), roughness=0.9,  seed=20, stripe="#B8322B"),
     "awning_blue":      dict(tile_m=(1.0, 1.0), roughness=0.9,  seed=21, stripe="#2F5FA8"),
     "awning_yellow":    dict(tile_m=(1.0, 1.0), roughness=0.9,  seed=22, stripe="#C99A25"),
@@ -232,6 +236,50 @@ def gen_foliage(S, rng):
     return col, normal_from_height(blur(hgt, 1.0), 4.0)
 
 
+def gen_leaf_canopy(S, rng):
+    """Grey leaf dabs (8-24 cm), lit from the upper left like gen_foliage, over dark gaps.
+    Neutral so vertex colours tint it per species; dabs are large enough to read at RTS zoom."""
+    lum = np.zeros((S, S), np.float32) + 0.38
+    hgt = np.zeros((S, S), np.float32)
+    clump = noise((S, S), 90, rng, octaves=2)
+    for _ in range(1700):
+        cy, cx = rng.uniform(0, S, 2)
+        r = rng.uniform(12, 28)
+        y0, y1 = int(cy - r - 1), int(cy + r + 2)
+        x0, x1 = int(cx - r - 1), int(cx + r + 2)
+        ys = np.arange(y0, y1) % S
+        xs = np.arange(x0, x1) % S
+        dy = (np.arange(y0, y1) - cy)[:, None]
+        dx = (np.arange(x0, x1) - cx)[None, :]
+        d = np.sqrt(dx * dx + (dy * 1.2) ** 2) / r
+        m = d < 1.0
+        shade = np.clip(0.62 - 0.30 * (dx + dy) / r * 0.5 - d * 0.22, 0, 1)
+        tone = clump[int(cy) % S, int(cx) % S]
+        leaf = 0.48 + 0.42 * np.clip(shade * 0.75 + tone * 0.4, 0, 1)
+        sub = lum[np.ix_(ys, xs)]
+        sub[m] = leaf[m]
+        lum[np.ix_(ys, xs)] = sub
+        hs = hgt[np.ix_(ys, xs)]
+        hs[m] = np.sqrt(1 - d[m] ** 2)
+        hgt[np.ix_(ys, xs)] = hs
+    col = np.repeat(lum[..., None], 3, axis=2)
+    return col, normal_from_height(blur(hgt, 1.2), 4.0)
+
+
+def gen_tree_bark(S, rng):
+    """Grey bark: ridges and dark fissures running along X (the trunk axis, UV_ALONG_LENGTH)."""
+    fib = noise((S, S), 2.0, rng, aniso=18.0, octaves=2)
+    ridges = noise((S, S), 9, rng, aniso=9.0, octaves=3, persistence=0.5)
+    fiss = smoothstep(0.40, 0.30, ridges)                             # deep cracks between plates
+    t = np.clip(0.55 + (fib - 0.5) * 0.5 + (ridges - 0.5) * 0.6, 0, 1)
+    lum = 0.66 + t * 0.32                                             # light: white birch must fit
+    lum = lum * (1 - fiss * 0.6)
+    lum *= mottle((S, S), rng, 60, 0.06)
+    col = np.repeat(lum[..., None], 3, axis=2)
+    h = ridges * 0.7 + fib * 0.2 - fiss * 0.5
+    return col, normal_from_height(h, 5.0)
+
+
 def gen_copper_patina(S, rng):
     base = noise((S, S), 30, rng, octaves=3)
     streaks = noise((S, S), 3, rng, aniso=0.06, octaves=2)            # rain streaks run down
@@ -290,6 +338,8 @@ GENERATORS = {
     "foliage": gen_foliage,
     "copper_patina": gen_copper_patina,
     "cobblestone": gen_cobblestone,
+    "leaf_canopy": gen_leaf_canopy,
+    "tree_bark": gen_tree_bark,
 }
 
 

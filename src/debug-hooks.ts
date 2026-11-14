@@ -20,6 +20,8 @@ import { roomCentre } from './engine/interiors';
  *   &follow=walk[,zoom]             camera follows the first visible walking citizen (polls
  *                                    until one walks); or follow=<index|id>[,zoom]; follow=inside
  *                                    picks someone indoors (the cutaway opens their building)
+ *   &showcase=tree_oak,tree_pine,...   clones of loaded models side by side across the screen at
+ *                                    the cam point (with cam=x,z,zoom[,q]); placed or not
  *   &cutaway=<parcelId | model[,n[,zoom[,quadrant[,storey]]]]>   look into a building (roof
  *                                    faded, furniture and people inside shown; storey 1 = the
  *                                    upper floor), camera on it unless cam/model given
@@ -68,6 +70,7 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
   (window as unknown as { __lublin: typeof api }).__lublin = api;
 
   const num = (s: string | undefined) => (s === undefined || s === '' ? undefined : Number(s));
+  let showcaseGroup: THREE.Group | null = null;
   /** Camera quadrant that looks at a wall with outward normal (nx, nz) most squarely. */
   const facing = (nx: number, nz: number) => {
     let q = 0, best = -2;
@@ -153,6 +156,34 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
         renderer.snapTo(c.currentX ?? 0, c.currentZ ?? 0, num(zoom) ?? 16);
         renderer.followingCitizen = c;
       }, 250);
+    }
+    // Showcase: loaded models (placed or not) side by side across the screen at the cam point.
+    showcaseGroup?.removeFromParent();
+    showcaseGroup = null;
+    const show = params.get('showcase');
+    if (show) {
+      const [sx, sz, , sq] = (cam ?? '0,0').split(',').map(Number);
+      const yaw = ((sq || 0) * Math.PI) / 2 + Math.PI / 4;
+      const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+      const group = new THREE.Group();
+      group.name = 'showcase';
+      const items = show.split(',').map((n) => renderer.models.get(n)).filter((m): m is THREE.Group => !!m);
+      const box = new THREE.Box3();
+      const widths = items.map((m) => {
+        box.setFromObject(m);
+        return Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * 0.85;
+      });
+      let x = -widths.reduce((a, b) => a + b, 0) / 2;
+      items.forEach((m, k) => {
+        x += widths[k] / 2;
+        const c = m.clone();
+        c.position.set(sx + right.x * x, 0, sz + right.z * x);
+        group.add(c);
+        x += widths[k] / 2;
+      });
+      renderer.scene.add(group);
+      showcaseGroup = group;
+      (renderer as unknown as { shadowDirty: boolean }).shadowDirty = true;
     }
     const lineup = params.get('lineup');
     if (lineup) {

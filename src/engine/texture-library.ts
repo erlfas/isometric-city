@@ -50,6 +50,11 @@ const BINDINGS: Record<string, Binding> = {
   AwningRedWhite: { families: ['awning_red'] },
   AwningBlueWhite: { families: ['awning_blue'] },
   AwningYellowWhite: { families: ['awning_yellow'] },
+  // Vegetation (build_assets.py "Vegetation"): grey textures, species colour in the vertex
+  // colours, so every crown is one batch and every trunk another.
+  Leaves: { families: ['leaf_canopy'], jitter: 0.1 },
+  Bark: { families: ['tree_bark'], jitter: 0.06 },
+  RiverStone: { families: ['plaster_lime'], tint: 0x9c9890, jitter: 0.1 }, // smooth mottled stone
 };
 
 const VARIANTS = 8;
@@ -128,13 +133,13 @@ export class TextureLibrary {
     const b = BINDINGS[src.name];
     if (!b) return null;
     const fam = b.families[familyIndex % b.families.length];
-    const key = `${src.name}|${fam}`;
+    const s = src as THREE.MeshStandardMaterial;
+    const key = `${src.name}|${fam}|${s.vertexColors ? 'vc' : ''}`;
     let mat = this.baseMaterials.get(key);
     if (!mat) {
       const e = this.manifest[fam];
       const map = this.albedo.get(fam);
       if (!e || !map) return null;
-      const s = src as THREE.MeshStandardMaterial;
       mat = new THREE.MeshStandardMaterial({
         name: src.name,
         map,
@@ -145,6 +150,8 @@ export class TextureLibrary {
         // Keep the exported face culling: Blender exports doubleSided materials, and
         // dropping that (three.js defaults to FrontSide) hid any inward-wound face.
         side: s.side,
+        // Models with COLOR_0 (vegetation) tint the texture per vertex.
+        vertexColors: s.vertexColors,
       });
       // Our normal maps are OpenGL-style (+Y = image up), but the glTF export flips v
       // (v' = 1 - v), so texture "up" runs against +v here. Invert green to match.
