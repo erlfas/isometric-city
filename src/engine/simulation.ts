@@ -1,4 +1,5 @@
-import type { CityPlan, Citizen, Parcel, BellHourInfo, FairEvent, StreetNode } from '../types';
+import type { CityPlan, Citizen, Parcel, BellHourInfo, FairEvent, RiverCrossing, StreetNode } from '../types';
+import { deckHeight } from './riverside';
 import { Life, type Activity, type LifeWorld, type Service } from './life';
 import { SpatialHashGrid } from './spatial-hash';
 import { NavGrid } from './nav-grid';
@@ -251,8 +252,12 @@ export class SimulationEngine {
   private household = new Map<string, number[]>();
   private force = { x: 0, z: 0 };
 
+  /** Footbridges over the river: walkers on a deck are lifted to it (groundAt). */
+  private crossings: RiverCrossing[] = [];
+
   constructor(plan: CityPlan, spatialGrid: SpatialHashGrid, nav: NavGrid, buildings: BuildingIndex) {
     this.plan = plan;
+    this.crossings = plan.river?.crossings ?? [];
     this.spatialGrid = spatialGrid;
     this.nav = nav;
     this.buildings = buildings;
@@ -1664,8 +1669,12 @@ export class SimulationEngine {
     ag.dest = { ...d, x: tx, z: tz };
   }
 
-  /** Feet height on open ground: the parcel's raised yard, else the street. */
+  /** Feet height on open ground: a bridge deck, the parcel's raised yard, else the street. */
   private groundAt(x: number, z: number): number {
+    if (this.crossings.length) {
+      const deck = deckHeight(this.crossings, x, z);
+      if (deck !== null) return deck;
+    }
     const p = this.spatialGrid.findParcelAt(x, z);
     return p ? p.elevation * 0.3 : 0;
   }

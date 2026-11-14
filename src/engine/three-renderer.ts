@@ -13,6 +13,7 @@ import { Cutaway, type CutTarget } from './cutaway';
 import { InteriorProps, roomAt, roomCentre } from './interiors';
 import { parcelHash, parcelKind } from './parcel-kind';
 import { SHADOW_LAYER, StaticBatches, type PlacedModel, type Placement, type Tint } from './static-batches';
+import { MillWheels, SHADOWLESS, paintPaths, vegetationTint } from './riverside';
 
 const _gvDir = new THREE.Vector3();
 const _gvP = new THREE.Vector3();
@@ -28,6 +29,8 @@ const SHADOW_LOW = -1;
 /** ...and the least height the box reaches up to: people, smoke, door leaves on open ground. */
 const SHADOW_MIN_TOP = 4;
 const SHADOW_BIAS_M = 0.117;
+/** Beyond this zoom a mill wheel's shadow is a few pixels: it stays as drawn last. */
+const MILL_SHADOW_ZOOM = 60;
 /** Round a shadow-box side up to the next of four steps per doubling, so the texel size
  *  changes in steps while zooming instead of every frame. */
 const quantSize = (m: number) => 2 ** (Math.ceil(Math.log2(Math.max(m, 1)) * 4) / 4);
@@ -139,6 +142,8 @@ export class ThreeIsometricRenderer {
   /** The Bystrzyca's flowing water, flotsam, fish and ripples (river.ts); null without a river. */
   public river: RiverWater | null = null;
   private riverView = [0, 0, 0, 0];
+  /** Watermill wheels, races and white water (riverside.ts); null without a mill. */
+  public mills: MillWheels | null = null;
   /** Buildings, walls, stalls, trees: instanced per chunk (static-batches.ts). */
   private statics = new StaticBatches();
   private cutaway: Cutaway;
@@ -414,6 +419,9 @@ export class ThreeIsometricRenderer {
       }
     }
 
+    // 3c. Footpaths to the footbridge and the mill, forest rides, the mill race's banks
+    paintPaths(ctx, plan);
+
     // 4. Street network: dirt verges with a cobbled carriageway
     if (plan.streetNetwork && plan.streetNetwork.nodes && plan.streetNetwork.edges) {
       const nodeMap = new Map<string, { x: number; z: number }>();
@@ -539,6 +547,8 @@ export class ThreeIsometricRenderer {
       'house_weaver',
       'blacksmith_workshop',
       'watermill',
+      'watermill_wheel',
+      'footbridge',
       'windmill',
       'stone_quarry',
       'logging_camp',
@@ -605,7 +615,7 @@ export class ThreeIsometricRenderer {
       const gltf = res.value;
       gltf.scene.traverse((child) => {
         if ((child as THREE.Mesh).isMesh) {
-          child.castShadow = true;
+          child.castShadow = !SHADOWLESS.has(name);
           child.receiveShadow = true;
         }
       });
@@ -769,7 +779,7 @@ export class ThreeIsometricRenderer {
     const quarryTmpl = this.models.get('stone_quarry');
     const loggingTmpl = this.models.get('logging_camp');
     const harborTmpl = this.models.get('river_harbor');
-
+    const millsPlaced: ConstructorParameters<typeof MillWheels>[2] = [];
 
     for (let i = 0; i < plan.parcels.length; i++) {
       const p = plan.parcels[i];
@@ -827,20 +837,33 @@ export class ThreeIsometricRenderer {
           return t ? { material: mat, tint: t } : null;
         };
         this.put(tmpl, p.x, p.elevation * 0.3, p.z, (p.orientation * Math.PI) / 180, scaleX, scaleY, scaleZ, tint, p.id);
+        const mill = kind === 'watermill' ? plan.river?.mills?.find((m) => m.parcelId === p.id) : undefined;
+        if (mill) millsPlaced.push({ matrix: this.statics.placed[this.statics.placed.length - 1].matrix, mill });
       }
     }
 
-    // 9. Place Medieval Oak Trees along roads and outer green verge
+    // 8b. The footbridge(s) over the Bystrzyca (deck axis = the crossing's angle), and the
+    // watermills' turning wheels, race water and white water (riverside.ts).
+    for (const c of plan.river?.crossings ?? []) {
+      this.put(m(c.model), c.x, 0, c.z, (-c.angle * Math.PI) / 180);
+    }
+    if (millsPlaced.length) {
+      this.mills = new MillWheels(this.scene, m('watermill_wheel'), millsPlaced);
+      this.mills.ripple = (x, z, s) => this.river?.addRipple(x, z, s);
+    }
+
+    // 9. Trees, shrubs, reeds, stones and dead wood: the plan's vegetation, each its own
+    // model (riverside woods, verges, orchards) with a per-plant colour variation.
     const treeTemplate = this.models.get('tree_oak');
     if (treeTemplate) {
       if (plan.vegetation && plan.vegetation.length > 0) {
         for (let i = 0; i < plan.vegetation.length; i++) {
           const v = plan.vegetation[i];
           const s = v.scale ?? 1.0;
-          this.put(treeTemplate, v.x, 0, v.z, ((v.rotation ?? 0) * Math.PI) / 180, s, s, s);
-
+          this.put(this.models.get(v.type) ?? treeTemplate, v.x, 0, v.z, ((v.rotation ?? 0) * Math.PI) / 180, s, s, s,
+            vegetationTint(v));
         }
-        console.log(`[ThreeRenderer] Placed ${plan.vegetation.length} clearance-verified historical trees.`);
+        console.log(`[ThreeRenderer] Placed ${plan.vegetation.length} plants (trees, shrubs, reeds, stones).`);
       } else {
         // Fallback: strict spatial clearance check
         const placedTrees: { x: number; z: number }[] = [];
@@ -1491,14 +1514,33 @@ totalEmissiveRadiance += vec3(${g.r.toFixed(3)}, ${g.g.toFixed(3)}, ${g.b.toFixe
     // changes with the shadow box (fitShadow) or while something that casts is moving: near
     // citizens, door leaves, a building fading in the cutaway. One more redraw after the
     // last of those clears their shadows.
+    // A turning mill wheel casts a moving shadow too: redrawn in steps (millCasting).
+    this.mills?.update();
     const moving = this.crowd.castsShadows || this.doorsCasting > 0 || this.cutaway.count > 0;
-    if (moving || this.shadowMoving || this.shadowDirty) this.renderer.shadowMap.needsUpdate = true;
+    if (moving || this.shadowMoving || this.shadowDirty || this.millCasting()) this.renderer.shadowMap.needsUpdate = true;
     this.shadowMoving = moving;
     this.shadowDirty = false;
     this.statics.updateCasters();
     this.wind.update(performance.now() * 0.001);
     this.river?.update(this.camera, this.groundView(this.riverView), this.dirLight);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  /**
+   * A mill wheel's shadow needs redrawing: its axle is in the shadow box, the view is close
+   * enough to see it (zoom < MILL_SHADOW_ZOOM), and it has turned MillWheels.SHADOW_STEP
+   * since the last redraw. Redrawing every frame cost ~30% of the frame rate in a forest
+   * view (the whole map is redrawn); in steps of ~7 per second the turning reads the same.
+   */
+  private millCasting(): boolean {
+    if (!this.mills || this.zoom >= MILL_SHADOW_ZOOM) return false;
+    const b = this.shadowBox;
+    for (const w of this.mills.wheels) {
+      const p = w.at;
+      const x = p.x * b.ax.x + p.y * b.ax.y + p.z * b.ax.z, y = p.x * b.ay.x + p.y * b.ay.y + p.z * b.ay.z;
+      if (x > b.x0 - 3 && x < b.x1 + 3 && y > b.y0 - 3 && y < b.y1 + 3) return this.mills.shadowDue();
+    }
+    return false;
   }
 
   public resize(width: number, height: number): void {

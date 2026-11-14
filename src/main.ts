@@ -4,6 +4,7 @@ import { SpatialHashGrid } from './engine/spatial-hash';
 import { SimulationEngine } from './engine/simulation';
 import { NavGrid } from './engine/nav-grid';
 import { channelQuads, riverFrames } from './engine/river-course';
+import { bridgeOpenings, raceQuads } from './engine/riverside';
 import { BuildingIndex, type Building } from './engine/building-anchors';
 import type * as THREE from 'three';
 import { talkLine, barkLine } from './engine/chatter';
@@ -52,8 +53,10 @@ async function bootstrap() {
   threeRenderer.setBuildings(buildings.all);
   // Ground plane is 700 x 550 m around the origin; seed the market square as open ground too.
   // Nobody wades the Bystrzyca: its channel (plus half a metre of bank) is blocked.
-  const river = plan.river ? channelQuads(riverFrames(plan.river), 0.5) : [];
-  const nav = new NavGrid(-350, -275, 350, 275, placed, [...buildings.seeds(), { x: -15.5, z: -25.5 }], river);
+  // The footbridge's deck is open over it; the mill race is blocked like the river.
+  const river = plan.river ? [...channelQuads(riverFrames(plan.river), 0.5), ...raceQuads(plan.river)] : [];
+  const nav = new NavGrid(-350, -275, 350, 275, placed, [...buildings.seeds(), { x: -15.5, z: -25.5 }], river,
+    bridgeOpenings(plan.river));
   console.log(`[Lublin 1392] Navigation grid ${nav.w}x${nav.h} built in ${nav.buildMs.toFixed(0)} ms (${buildings.all.length} buildings with doors/spots).`);
   const sim = new SimulationEngine(plan, spatialGrid, nav, buildings);
   const audio = new Soundscape();

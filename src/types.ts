@@ -168,14 +168,53 @@ export interface FairEvent {
   description: string;
 }
 
+/** A tree, shrub, reed bed, stone or log; `type` is its model (public/models/<type>.glb). */
 export interface VegetationElement {
   id: string;
-  type: string;
+  type: VegetationType | string;
   x: number;
   z: number;
   scale: number;
+  /** Degrees about +Y. */
   rotation: number;
   zone?: string;
+}
+
+export type VegetationType =
+  | 'tree_oak' | 'tree_oak_b' | 'tree_oak_c' | 'tree_alder' | 'tree_alder_b' | 'tree_hornbeam' | 'tree_lime'
+  | 'tree_willow' | 'tree_willow_weeping' | 'tree_birch' | 'tree_birch_b' | 'tree_pine' | 'tree_pine_b'
+  | 'bush_hazel' | 'bush_hawthorn' | 'fern_clump' | 'reed_clump' | 'rock_boulder' | 'rock_boulder_b' | 'log_fallen';
+
+/** A footbridge over the river (generate_city_plan.py plan_river_crossing; model footbridge). */
+export interface RiverCrossing {
+  id: string;
+  name: string;
+  model: string;
+  x: number;
+  z: number;
+  /** Direction of the deck axis in the x-z plane (deg, atan2(z, x)); the town end is +. */
+  angle: number;
+  length: number;
+  width: number;
+  /** Walking height at the ends and mid-span (m): a parabolic hump between them. */
+  deckEnd: number;
+  deckMid: number;
+}
+
+/** A watermill on the bank: its parcel, the wheel's axle and the race it turns in. */
+export interface RiverMill {
+  parcelId: string;
+  wheel: { x: number; z: number; y: number };
+  /** Centreline of the mill race, upstream first; leaves and rejoins the river. */
+  race: RiverPoint[];
+}
+
+/** A trodden path or forest ride painted on the ground (no effect on routing). */
+export interface GroundPath {
+  id: string;
+  kind: 'footpath' | 'track' | 'ride' | string;
+  width: number;
+  points: { x: number; z: number }[];
 }
 
 export interface RiverPoint {
@@ -192,6 +231,8 @@ export interface River {
   flow: string;
   lengthM: number;
   points: RiverPoint[];
+  crossings?: RiverCrossing[];
+  mills?: RiverMill[];
 }
 
 export interface CityPlan {
@@ -215,6 +256,8 @@ export interface CityPlan {
   vegetation?: VegetationElement[];
   /** The Bystrzyca south-east of the city. */
   river?: River;
+  /** Footpaths and forest rides (ground paint only). */
+  paths?: GroundPath[];
   citizens: Citizen[];
   bellHours: Record<string, BellHourInfo>;
   fairEvents: FairEvent[];

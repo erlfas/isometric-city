@@ -68,9 +68,10 @@ export class NavGrid {
   /** Walkable components left (1 = every street connects). */
   components = 0;
 
-  /** `obstacles`: extra world-space polygons that block (the river channel, river-course.ts). */
+  /** `obstacles`: extra world-space polygons that block (the river channel, river-course.ts);
+   *  `openings`: polygons walkable whatever is under them (a bridge deck over the channel). */
   constructor(minX: number, minZ: number, maxX: number, maxZ: number, placements: NavPlacement[], seeds: { x: number; z: number }[],
-    obstacles: { x: number; z: number }[][] = []) {
+    obstacles: { x: number; z: number }[][] = [], openings: { x: number; z: number }[][] = []) {
     const t0 = performance.now();
     this.minX = minX;
     this.minZ = minZ;
@@ -85,6 +86,7 @@ export class NavGrid {
     this.closed = new Uint32Array(n);
     for (const p of placements) this.stamp(p);
     for (const poly of obstacles) this.rasterPoly(poly.map((q) => q.x), poly.map((q) => q.z));
+    for (const poly of openings) this.rasterPoly(poly.map((q) => q.x), poly.map((q) => q.z), true);
     this.sealEnclosed(seeds);
     this.distanceField();
     this.buildGraph();
@@ -421,9 +423,11 @@ export class NavGrid {
     }
   }
 
-  private rasterPoly(xs: number[], zs: number[]): void {
+  /** Block the polygon (edges and the cells whose centres it covers); `open`: free the
+   *  covered cells instead (edges left alone). */
+  private rasterPoly(xs: number[], zs: number[], open = false): void {
     const n = xs.length;
-    for (let k = 0; k < n; k++) this.rasterLine(xs[k], zs[k], xs[(k + 1) % n], zs[(k + 1) % n]);
+    if (!open) for (let k = 0; k < n; k++) this.rasterLine(xs[k], zs[k], xs[(k + 1) % n], zs[(k + 1) % n]);
     // Area fill by cell centres (only polygons wider than a cell can cover a centre the edges missed).
     let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
     for (let k = 0; k < n; k++) {
@@ -444,7 +448,7 @@ export class NavGrid {
         for (let k = 0, j = n - 1; k < n; j = k++) {
           if ((zs[k] > pz) !== (zs[j] > pz) && px < ((xs[j] - xs[k]) * (pz - zs[k])) / (zs[j] - zs[k]) + xs[k]) inside = !inside;
         }
-        if (inside) this.blocked[cz * this.w + cx] = 1;
+        if (inside) this.blocked[cz * this.w + cx] = open ? 0 : 1;
       }
     }
   }

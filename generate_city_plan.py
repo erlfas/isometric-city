@@ -271,6 +271,617 @@ def generate_river(parcels, landmarks, castle_elements, street_segments, wall_se
     return river, margin, seed
 
 
+# ------------------------------------------------------------------------------------------
+# Riverside woods, footbridge and watermill (stage 4). Everything here draws from its own
+# RNG (FOREST_SEED), so parcels, citizens and the older trees stay as generated; the mill
+# parcel and its millers are appended after the citizens (add_watermill).
+# ------------------------------------------------------------------------------------------
+FOREST_SEED = 1392_13
+MAP_HALF_X, MAP_HALF_Z = 350.0, 275.0   # the ground plane (three-renderer.ts)
+MAP_INSET = 3.0                         # trees keep this far inside its edge
+BRIDGE_LEN, BRIDGE_W = 18.0, 2.2        # build_footbridge: deck along local X, centred
+BRIDGE_DECK_END, BRIDGE_DECK_MID = 0.15, 1.2
+MILL_SETBACK = 7.0                      # house centre, inland from the water's edge
+MILL_WHEEL_X = 4.9                      # build_watermill: wheel axle, house-local +X
+MILL_WHEEL_Y = 1.7                      # axle height (the paddles dip into the race)
+RACE_W = 1.8
+
+# Footprint (crown) radius per model (build_assets.py, measured), for spacing.
+VEG_RADIUS = {
+    "tree_oak": 7.9, "tree_oak_b": 7.9, "tree_oak_c": 5.3, "tree_alder": 3.6, "tree_alder_b": 3.7,
+    "tree_hornbeam": 5.3, "tree_lime": 6.1, "tree_willow": 3.6, "tree_willow_weeping": 6.3,
+    "tree_birch": 2.8, "tree_birch_b": 3.8, "tree_pine": 5.8, "tree_pine_b": 6.3,
+    "bush_hazel": 2.0, "bush_hawthorn": 1.7, "fern_clump": 1.0, "reed_clump": 1.1,
+    "rock_boulder": 1.0, "rock_boulder_b": 1.6, "log_fallen": 3.3,
+}
+LEANS_TO_WATER = {"tree_willow_weeping", "tree_alder_b"}   # modelled leaning toward +X
+GLADE = -100.0                          # generate_forest field(): inside a glade
+
+
+class _ValueNoise:
+    """Smooth 2D value noise in [-1, 1], one lattice point per `cell` m."""
+
+    def __init__(self, rng, cell):
+        self.cell = cell
+        self.perm = list(range(256))
+        rng.shuffle(self.perm)
+        self.vals = [rng.uniform(-1.0, 1.0) for _ in range(256)]
+
+    def _v(self, ix, iz):
+        return self.vals[self.perm[(self.perm[ix & 255] + iz) & 255]]
+
+    def __call__(self, x, z):
+        fx, fz = x / self.cell, z / self.cell
+        ix, iz = math.floor(fx), math.floor(fz)
+        tx, tz = fx - ix, fz - iz
+        sx, sz = tx * tx * (3 - 2 * tx), tz * tz * (3 - 2 * tz)
+        a, b, c, d = self._v(ix, iz), self._v(ix + 1, iz), self._v(ix, iz + 1), self._v(ix + 1, iz + 1)
+        return a + (b - a) * sx + (c - a) * sz + (a - b - c + d) * sx * sz
+
+
+class _Fbm:
+    def __init__(self, rng, cell, octaves=3):
+        self.layers = [(_ValueNoise(rng, cell / 2 ** k), 0.5 ** k) for k in range(octaves)]
+        self.norm = 1.0 / sum(w for _, w in self.layers) * 1.6   # roughly back to [-1, 1]
+
+    def __call__(self, x, z):
+        return max(-1.0, min(1.0, sum(n(x, z) * w for n, w in self.layers) * self.norm))
+
+
+def _river_frames(river):
+    """Per point: x, z, width, unit normal left of the flow (nx, nz), tangent, smoothed
+    curvature (> 0 = turning toward +n). Same as river-course.ts riverFrames."""
+    p = river["points"]
+    n = len(p)
+    out, raw = [], [0.0] * n
+    for i in range(n):
+        a, b = p[max(0, i - 1)], p[min(n - 1, i + 1)]
+        dx, dz = b["x"] - a["x"], b["z"] - a["z"]
+        ln = math.hypot(dx, dz) or 1.0
+        out.append({"x": p[i]["x"], "z": p[i]["z"], "w": p[i]["width"], "tx": dx / ln, "tz": dz / ln,
+                    "nx": -dz / ln, "nz": dx / ln, "curv": 0.0})
+        if 0 < i < n - 1:
+            h1 = math.atan2(p[i]["z"] - p[i - 1]["z"], p[i]["x"] - p[i - 1]["x"])
+            h2 = math.atan2(p[i + 1]["z"] - p[i]["z"], p[i + 1]["x"] - p[i]["x"])
+            dh = (h2 - h1 + math.pi) % (2 * math.pi) - math.pi
+            raw[i] = dh / (math.hypot(p[i + 1]["x"] - p[i]["x"], p[i + 1]["z"] - p[i]["z"]) or 1.0)
+    for i in range(n):
+        win = raw[max(0, i - 6):i + 7]
+        out[i]["curv"] = sum(win) / len(win)
+    return out
+
+
+class _RiverIndex:
+    """Distance to the water's edge (negative in the water), the side (+1 = left of the flow,
+    the town side; -1 = the far bank), the nearest point index and its curvature."""
+    REACH = 60.0
+    CELL = 16.0
+
+    def __init__(self, frames):
+        self.f = frames
+        self.cells = {}
+        c, r = self.CELL, self.REACH
+        for i in range(len(frames) - 1):
+            a, b = frames[i], frames[i + 1]
+            for cx in range(math.floor((min(a["x"], b["x"]) - r) / c), math.floor((max(a["x"], b["x"]) + r) / c) + 1):
+                for cz in range(math.floor((min(a["z"], b["z"]) - r) / c), math.floor((max(a["z"], b["z"]) + r) / c) + 1):
+                    self.cells.setdefault((cx, cz), []).append(i)
+        # Far bank: right of the flow, closed off past the map's south and east edges.
+        self.far_poly = [(f["x"], f["z"]) for f in frames] + [(frames[-1]["x"] + 60, frames[-1]["z"]),
+                                                              (frames[-1]["x"] + 60, -400.0), (frames[0]["x"], -400.0)]
+
+    def query(self, x, z):
+        best = (self.REACH, 0, -1, 0.0)
+        for i in self.cells.get((math.floor(x / self.CELL), math.floor(z / self.CELL)), ()):
+            a, b = self.f[i], self.f[i + 1]
+            dx, dz = b["x"] - a["x"], b["z"] - a["z"]
+            L2 = dx * dx + dz * dz or 1e-9
+            t = max(0.0, min(1.0, ((x - a["x"]) * dx + (z - a["z"]) * dz) / L2))
+            px, pz = a["x"] + dx * t, a["z"] + dz * t
+            d = math.hypot(x - px, z - pz) - 0.5 * (a["w"] + (b["w"] - a["w"]) * t)
+            if d < best[0]:
+                side = 1 if (x - px) * a["nx"] + (z - pz) * a["nz"] >= 0 else -1
+                best = (d, side, i if t < 0.5 else i + 1, a["curv"])
+        if best[2] < 0:
+            best = (self.REACH, -1 if self.far(x, z) else 1, -1, 0.0)
+        return best
+
+    def far(self, x, z):
+        inside, poly = False, self.far_poly
+        for k in range(len(poly)):
+            (ax, az), (bx, bz) = poly[k], poly[k - 1]
+            if (az > z) != (bz > z) and x < ax + (z - az) * (bx - ax) / (bz - az):
+                inside = not inside
+        return inside
+
+
+class _Clearance:
+    """Distance (capped at REACH) from a point to anything built: parcels, landmarks and
+    castle buildings (circles of their half-diagonal), streets, walls and castle walls."""
+    REACH = 45.0
+    CELL = 20.0
+
+    def __init__(self, circles, segments, seg_dist):
+        self.seg_dist = seg_dist
+        self.cells = {}
+        c, r = self.CELL, self.REACH
+        for item in [("c",) + tuple(o) for o in circles] + [("s",) + tuple(s) for s in segments]:
+            if item[0] == "c":
+                x0, z0, x1, z1 = item[1] - item[3], item[2] - item[3], item[1] + item[3], item[2] + item[3]
+            else:
+                x0, x1 = min(item[1], item[3]), max(item[1], item[3])
+                z0, z1 = min(item[2], item[4]), max(item[2], item[4])
+            for cx in range(math.floor((x0 - r) / c), math.floor((x1 + r) / c) + 1):
+                for cz in range(math.floor((z0 - r) / c), math.floor((z1 + r) / c) + 1):
+                    self.cells.setdefault((cx, cz), []).append(item)
+
+    def __call__(self, x, z):
+        best = self.REACH
+        for it in self.cells.get((math.floor(x / self.CELL), math.floor(z / self.CELL)), ()):
+            d = (math.hypot(x - it[1], z - it[2]) - it[3]) if it[0] == "c" else self.seg_dist(x, z, *it[1:])
+            if d < best:
+                best = d
+        return best
+
+
+def _smooth_path(ctrl, rng, wobble, step=2.0):
+    """Chaikin-rounded polyline through `ctrl`, resampled every `step` m, with a gentle
+    sideways wander (a trodden path never runs ruler-straight)."""
+    pts = _resample(_chaikin(ctrl, 3), step)
+    if wobble <= 0 or len(pts) < 3:
+        return pts
+    lam, ph, lam2, ph2 = rng.uniform(25, 45), rng.uniform(0, 6.3), rng.uniform(9, 15), rng.uniform(0, 6.3)
+    out, s = [pts[0]], 0.0
+    for k in range(1, len(pts) - 1):
+        (ax, az), (bx, bz) = pts[k - 1], pts[k + 1]
+        ln = math.hypot(bx - ax, bz - az) or 1.0
+        s += step
+        fade = min(1.0, k / 4.0, (len(pts) - 1 - k) / 4.0)    # ends stay put
+        o = wobble * fade * (0.75 * math.sin(s / lam * 6.283 + ph) + 0.25 * math.sin(s / lam2 * 6.283 + ph2))
+        out.append((pts[k][0] - (bz - az) / ln * o, pts[k][1] + (bx - ax) / ln * o))
+    out.append(pts[-1])
+    return out
+
+
+def _seg_dist(px, pz, x1, z1, x2, z2):
+    dx, dz = x2 - x1, z2 - z1
+    L2 = dx * dx + dz * dz
+    t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((px - x1) * dx + (pz - z1) * dz) / L2))
+    return math.hypot(px - x1 - dx * t, pz - z1 - dz * t)
+
+
+def _polyline_dist(x, z, pts):
+    return min(_seg_dist(x, z, a[0], a[1], b[0], b[1]) for a, b in zip(pts, pts[1:]))
+
+
+def plan_river_crossing(river, frames, clearance, rng):
+    """Footbridge, watermill site and the paths to them (geometry only; the mill parcel is
+    added after the citizens by add_watermill). Writes river['crossings'] and
+    river['mills']; returns (paths, mill_site)."""
+    n = len(frames)
+    # Bridge: a narrow, straight reach with ground on both sides, in the middle third of
+    # the course (the town is close there and the far bank has room for the woods).
+    best = None
+    for i in range(n // 3, 2 * n // 3):
+        f = frames[i]
+        if not (40 < f["x"] < 160):
+            continue
+        straight = max(abs(frames[k]["curv"]) for k in range(i - 3, i + 4))
+        score = f["w"] + 220 * straight
+        if best is None or score < best[0]:
+            best = (score, i)
+    bi = best[1]
+    b = frames[bi]
+    half = BRIDGE_LEN * 0.5
+    north = (b["x"] + b["nx"] * half, b["z"] + b["nz"] * half)
+    south = (b["x"] - b["nx"] * half, b["z"] - b["nz"] * half)
+    angle = math.degrees(math.atan2(b["nz"], b["nx"]))
+    river["crossings"] = [{
+        "id": "most_bystrzycki", "name": "Most Bystrzycki (footbridge)", "model": "footbridge",
+        "x": round(b["x"], 2), "z": round(b["z"], 2),
+        "angle": round(angle, 2),            # deck axis direction in x-z (deg), town end = +
+        "length": BRIDGE_LEN, "width": BRIDGE_W,
+        "deckEnd": BRIDGE_DECK_END, "deckMid": BRIDGE_DECK_MID,
+        "riverIndex": bi,
+    }]
+
+    # Mill: on the outside of the next bend downstream that turns toward the town (its
+    # outside is the far bank, where the current runs fastest and deepest).
+    mi = max(range(bi + 7, min(n - 8, bi + 22)), key=lambda k: frames[k]["curv"])
+    m = frames[mi]
+    off = m["w"] * 0.5 + MILL_SETBACK
+    hx, hz = m["x"] - m["nx"] * off, m["z"] - m["nz"] * off
+    rot = math.degrees(math.atan2(-m["nz"], m["nx"]))   # house-local +X (wheel side) -> the river
+    wheel = (hx + m["nx"] * MILL_WHEEL_X, hz + m["nz"] * MILL_WHEEL_X)
+    # Mill race: leaves the river upstream, runs along the bank behind a strip of earth,
+    # past the wheel, and falls back in just below it.
+    race = []
+    for k in range(mi - 9, mi + 6):
+        f = frames[k]
+        if k <= mi:
+            t = min(1.0, (k - (mi - 9)) / 4.0)
+        else:
+            t = 1.0 - max(0.0, (k - (mi + 2)) / 3.0)
+        t = t * t * (3 - 2 * t)
+        lat = (f["w"] * 0.5 - 0.8) + t * (off - MILL_WHEEL_X - (f["w"] * 0.5 - 0.8) + (f["w"] - m["w"]) * 0.5)
+        race.append({"x": round(f["x"] - f["nx"] * lat, 2), "z": round(f["z"] - f["nz"] * lat, 2), "width": RACE_W})
+    mill_site = {"x": round(hx, 2), "z": round(hz, 2), "orientation": round(rot, 1), "riverIndex": mi}
+    river["mills"] = [{"parcelId": "p_watermill_bystrzyca", "riverIndex": mi,
+                       "wheel": {"x": round(wheel[0], 2), "z": round(wheel[1], 2), "y": MILL_WHEEL_Y},
+                       "race": race}]
+
+    # Paths. 1: from the Kraków gate along the meadow under the south wall, over the bridge.
+    def out(p, d):
+        return (p[0] + b["nx"] * d, p[1] + b["nz"] * d)
+    town = [(-163.0, -88.0), (-150.0, -106.0), (-139.0, -133.0), (-118.0, -154.0), (-75.0, -164.0), (-30.0, -168.0),
+            (20.0, -166.0), (out(north, 14)[0] - 14, out(north, 14)[1] + 2), out(north, 7), out(north, 2), north]
+    p_town = _smooth_path(town, rng, 1.6)
+    # 2: off the far end, into the woods to the south edge of the map.
+    s0 = out(south, -3)
+    deep = [south, s0, out(south, -9), (s0[0] - 8, s0[1] - 30), (s0[0] + 6, s0[1] - 52), (s0[0] - 4, -MAP_HALF_Z - 6)]
+    p_deep = _smooth_path(deep, rng, 2.2)
+    # 3: from the bridge's far end along the bank to the mill's loading dock, which faces
+    #    upstream (build_watermill: dock at Blender -Y = house-local +Z = upstream here).
+    dock = (hx - m["tx"] * 13.0, hz - m["tz"] * 13.0)
+    j = p_deep[min(len(p_deep) - 1, 5)]
+    mid = ((j[0] + dock[0]) / 2 - m["nx"] * 3, (j[1] + dock[1]) / 2 - m["nz"] * 3)
+    p_mill = _smooth_path([j, mid, dock], rng, 0.8)
+    # 4: a ride from the mill yard east through the far-bank woods, ~45 m in from the water
+    #    (offset points that double back on the inside of a bend are dropped).
+    yard = (hx - m["nx"] * 9.0, hz - m["nz"] * 9.0)
+    ride = [dock, (dock[0] - m["nx"] * 8, dock[1] - m["nz"] * 8), yard]
+    for k in range(mi + 10, n, 12):
+        f = frames[k]
+        o = f["w"] * 0.5 + 42 + 10 * math.sin(k * 0.21)
+        x, z = f["x"] - f["nx"] * o, f["z"] - f["nz"] * o
+        if x < ride[-1][0] + 10:
+            continue
+        if x > MAP_HALF_X + 6:
+            ride.append((x, z))
+            break
+        ride.append((x, max(-MAP_HALF_Z + 8, z)))
+    p_ride = _smooth_path(ride, rng, 2.5)
+    rnd = lambda pts: [{"x": round(x, 2), "z": round(z, 2)} for x, z in pts]
+    paths = [
+        {"id": "path_bridge", "kind": "footpath", "width": 1.8, "points": rnd(p_town)},
+        {"id": "path_woods", "kind": "footpath", "width": 1.6, "points": rnd(p_deep)},
+        {"id": "path_mill", "kind": "track", "width": 2.4, "points": rnd(p_mill)},
+        {"id": "ride_east", "kind": "ride", "width": 3.0, "points": rnd(p_ride)},
+    ]
+    return paths, mill_site
+
+
+def generate_forest(river, frames, paths, mill_site, clearance, old_trees):
+    """Riverside woods: a dart-throwing Poisson-disc sample of trees inside a noise-shaped
+    mask around the Bystrzyca, species by distance to the water, then undergrowth, reeds,
+    stones and dead wood. Returns the new vegetation entries (ids veg_NNNN)."""
+    rng = random.Random(FOREST_SEED)
+    rivx = _RiverIndex(frames)
+    band_n = _Fbm(rng, 90.0, 3)      # how far the woods reach toward the town
+    meadow_n = _Fbm(rng, 60.0, 2)    # the meadow strip's width
+    glade_n = _Fbm(rng, 85.0, 3)     # clearings and glades
+    stand_a = _Fbm(rng, 110.0, 2)    # stands: oak vs hornbeam
+    stand_b = _Fbm(rng, 70.0, 2)     # lime / pine patches
+    fern_n = _Fbm(rng, 18.0, 2)      # fern and reed beds
+    dense_n = _Fbm(rng, 30.0, 2)     # thicket vs open wood
+    cross = river["crossings"][0]
+    ca = math.radians(cross["angle"])
+    bx0, bz0 = cross["x"] + math.cos(ca) * (cross["length"] * 0.5 + 3), cross["z"] + math.sin(ca) * (cross["length"] * 0.5 + 3)
+    bx1, bz1 = cross["x"] - math.cos(ca) * (cross["length"] * 0.5 + 3), cross["z"] - math.sin(ca) * (cross["length"] * 0.5 + 3)
+    path_pts = [([(p["x"], p["z"]) for p in path["points"]], path["width"]) for path in paths]
+    race = [(p["x"], p["z"]) for p in river["mills"][0]["race"]]
+    mx, mz = mill_site["x"], mill_site["z"]
+
+    def kept_clear(x, z, r_crown, under):
+        """Bridge, mill yard, race and paths: trees may overhang a path with a crown, not a trunk."""
+        if _seg_dist(x, z, bx0, bz0, bx1, bz1) < (2.0 if under else 3.5 + r_crown * 0.4):
+            return False
+        if math.hypot(x - mx, z - mz) < (12.0 if under else 14.0 + r_crown * 0.5):
+            return False
+        if _polyline_dist(x, z, race) < (1.6 if under else 2.5 + r_crown * 0.4):
+            return False
+        for pts, w in path_pts:
+            if abs(x - pts[0][0]) > 400:
+                continue
+            if _polyline_dist(x, z, pts) < w * 0.5 + (0.6 if under else 1.0 + r_crown * 0.35):
+                return False
+        return True
+
+    def field(x, z):
+        """Woodland strength: > 0 inside the woods, ~0..0.4 = the ragged edge."""
+        d, side, i, curv = rivx.query(x, z)
+        built = clearance(x, z)
+        f_meadow = (built - (24.0 + 9.0 * meadow_n(x, z))) / 10.0
+        if side > 0:
+            f_band = ((34.0 + 20.0 * band_n(x, z)) - d) / 12.0
+        else:
+            f_band = 1.5
+        f_glade = (glade_n(x, z) + 0.55) / 0.22
+        if d < 14.0:   # alders and willows line the water even through a glade
+            f_glade = max(f_glade, (14.0 - d) / 5.0)
+        f_edge = min(MAP_HALF_X - abs(x), MAP_HALF_Z - abs(z)) / 4.0
+        rest = min(f_meadow, f_band, f_edge, 2.0)
+        if f_glade <= 0 < rest - 0.3:
+            return GLADE, d, side, i, curv              # inside a glade: lone trees only
+        return max(GLADE + 1.0, min(rest, f_glade)), d, side, i, curv
+
+    def pick_species(x, z, d, side, F, r):
+        w = {}
+        if d < 3.0:
+            w = {"tree_willow_weeping": 3.0, "tree_willow": 3.0, "tree_alder": 3.0, "tree_alder_b": 3.0}
+        elif d < 13.0:
+            k = (d - 3.0) / 10.0
+            w = {"tree_willow": 3.0 * (1 - k) + 0.4, "tree_willow_weeping": 2.0 * (1 - k) + 0.2,
+                 "tree_alder": 4.0, "tree_alder_b": 2.0 * (1 - k) + 0.3, "tree_birch": 0.6,
+                 "tree_hornbeam": 1.2 * k, "tree_oak_c": 0.8 * k}
+        else:
+            sa, sb = stand_a(x, z), stand_b(x, z)
+            far = 1.0 if side < 0 else 0.15
+            pine = far * max(0.0, min(1.0, (d - 22.0) / 30.0)) * max(0.0, 0.5 + sb * 1.4) * 9.0
+            w = {"tree_oak": 2.2 * (1 + sa), "tree_oak_b": 1.6 * (1 + sa), "tree_oak_c": 1.6 * (1 + sa * 0.5),
+                 "tree_hornbeam": 3.4 * (1 - sa), "tree_lime": 2.0 * max(0.1, 1 + sb * 1.6) * (1 - 0.5 * sa),
+                 "tree_birch": 0.7, "tree_birch_b": 0.5, "tree_alder": 1.2 * max(0.0, 1 - (d - 13) / 10),
+                 "tree_pine": pine * 0.55, "tree_pine_b": pine * 0.45}
+        if F < 0.45:   # the edge and glade rims: light-loving birch
+            w["tree_birch"] = w.get("tree_birch", 0) + 3.0
+            w["tree_birch_b"] = w.get("tree_birch_b", 0) + 2.2
+            w["tree_oak_c"] = w.get("tree_oak_c", 0) + 1.0
+        names = sorted(k for k, v in w.items() if v > 0)
+        tot = sum(w[k] for k in names)
+        u = r.random() * tot
+        for k in names:
+            u -= w[k]
+            if u <= 0:
+                return k
+        return names[-1]
+
+    # Spatial hash of everything placed (old trees too): (x, z, radius, kind).
+    G = 6.0
+    grid = {}
+
+    def add(x, z, r, kind):
+        grid.setdefault((math.floor(x / G), math.floor(z / G)), []).append((x, z, r, kind))
+
+    def near(x, z, reach):
+        k = math.ceil(reach / G)
+        gx, gz = math.floor(x / G), math.floor(z / G)
+        for cx in range(gx - k, gx + k + 1):
+            for cz in range(gz - k, gz + k + 1):
+                yield from grid.get((cx, cz), ())
+
+    for t in old_trees:
+        add(t["x"], t["z"], 4.0 * t.get("scale", 1.0), "tree")
+
+    out = []
+
+    def emit(kind, x, z, scale, rot, zone):
+        out.append({"id": f"veg_{len(out) + 1:04d}", "type": kind, "x": round(x, 2), "z": round(z, 2),
+                    "scale": round(scale, 2), "rotation": round(rot % 360.0, 1), "zone": zone})
+
+    def toward_water(x, z, i, jitter):
+        """Rotation (deg) that turns a model's +X lean toward the river."""
+        f = frames[i]
+        px, pz = f["x"] - x, f["z"] - z
+        return math.degrees(math.atan2(-pz, px)) + jitter
+
+    xmin = min(f["x"] for f in frames) - 70
+    xmax = min(MAP_HALF_X, max(f["x"] for f in frames) + 70)
+    zmin, zmax = -MAP_HALF_Z, max(f["z"] for f in frames) + 70
+
+    # 1. Trees: darts in random order; each takes its species' crown and keeps
+    #    0.58 x (r_i + r_j) from the others, so crowns touch and overlap a little.
+    K_TREE = 0.58
+    trees = []
+    for _ in range(90000):
+        x, z = rng.uniform(xmin, xmax), rng.uniform(zmin, zmax)
+        if abs(x) > MAP_HALF_X - MAP_INSET or abs(z) > MAP_HALF_Z - MAP_INSET:
+            continue
+        F, d, side, i, curv = field(x, z)
+        lone = F == GLADE
+        if lone:
+            # Glades: now and then a lone veteran oak, lime or birch standing in the grass.
+            if rng.random() > 0.035:
+                continue
+            kind = rng.choice(("tree_oak", "tree_oak_b", "tree_oak", "tree_lime", "tree_birch_b", "tree_pine_b" if side < 0 else "tree_oak_b"))
+        elif F <= 0 or d < 0.4:
+            continue
+        # Thinner toward the edge, and open wood vs thicket in patches.
+        elif rng.random() > min(1.0, 0.25 + F * 0.9) * (0.72 + 0.28 * dense_n(x, z)):
+            continue
+        else:
+            kind = pick_species(x, z, d, side, F, rng)
+        if d < 1.6 and kind not in ("tree_willow", "tree_willow_weeping", "tree_alder", "tree_alder_b"):
+            continue
+        s = rng.uniform(1.0, 1.15) if lone else rng.uniform(0.85, 1.15)
+        r = VEG_RADIUS[kind] * s
+        if not kept_clear(x, z, r, False):
+            continue
+        ok = True
+        for (ox, oz, orad, ok_kind) in near(x, z, r + 9.5):
+            if ok_kind == "tree" and math.hypot(x - ox, z - oz) < K_TREE * (r + orad):
+                ok = False
+                break
+        if not ok:
+            continue
+        add(x, z, r, "tree")
+        if kind in LEANS_TO_WATER and i >= 0 and d < 14:
+            rot = toward_water(x, z, i, rng.uniform(-30, 30))
+        else:
+            rot = rng.uniform(0, 360)
+        zone = "glade" if lone else "riverbank" if d < 13 else ("far_woods" if side < 0 else "near_woods")
+        trees.append((x, z, r, kind))
+        emit(kind, x, z, s, rot, zone)
+
+    def canopy(x, z):
+        """How covered (x, z) is: 1 under a crown's middle, 0 in the open."""
+        c = 0.0
+        for (ox, oz, orad, k) in near(x, z, 9.5):
+            if k == "tree":
+                c = max(c, 1.0 - math.hypot(x - ox, z - oz) / (orad * 0.9))
+        return c
+
+    def free(x, z, r, gap_tree):
+        for (ox, oz, orad, k) in near(x, z, r + 9.5):
+            dd = math.hypot(x - ox, z - oz)
+            if k == "tree":
+                if dd < gap_tree:
+                    return False
+            elif dd < 0.8 * (r + orad):
+                return False
+        return True
+
+    # 2. Shrubs: hazel and hawthorn where light reaches: the woods' edge, glade rims, gaps.
+    for _ in range(26000):
+        x, z = rng.uniform(xmin, xmax), rng.uniform(zmin, zmax)
+        if abs(x) > MAP_HALF_X - 2 or abs(z) > MAP_HALF_Z - 2:
+            continue
+        F, d, side, i, curv = field(x, z)
+        if (F < -0.25 and not (F == GLADE and rng.random() < 0.07)) or d < 2.0:   # glades: a stray thorn bush
+            continue
+        cov = canopy(x, z)
+        light = (1.0 - cov) * (1.0 if F < 0.6 else 0.45)
+        if rng.random() > light * 0.55:
+            continue
+        kind = "bush_hawthorn" if (F < 0.3 and rng.random() < 0.55) or rng.random() < 0.2 else "bush_hazel"
+        s = rng.uniform(0.8, 1.2)
+        r = VEG_RADIUS[kind] * s
+        if not kept_clear(x, z, r, True) or not free(x, z, r, 2.2):
+            continue
+        add(x, z, r, "shrub")
+        emit(kind, x, z, s, rng.uniform(0, 360), "woods_edge" if F < 0.6 else "understory")
+
+    # 3. Ferns: beds under the canopy (shade, moist ground), clumped by noise.
+    for _ in range(40000):
+        x, z = rng.uniform(xmin, xmax), rng.uniform(zmin, zmax)
+        if abs(x) > MAP_HALF_X - 2 or abs(z) > MAP_HALF_Z - 2:
+            continue
+        fn = fern_n(x, z)
+        if fn < 0.0 or rng.random() > fn * 1.6:
+            continue
+        F, d, side, i, curv = field(x, z)
+        if F < 0.3 or d < 1.0:
+            continue
+        if canopy(x, z) < 0.25:
+            continue
+        s = rng.uniform(0.75, 1.3)
+        r = VEG_RADIUS["fern_clump"] * s
+        if not kept_clear(x, z, r, True) or not free(x, z, r, 0.9):
+            continue
+        add(x, z, r, "fern")
+        emit("fern_clump", x, z, s, rng.uniform(0, 360), "understory")
+
+    # 4. Reeds in the shallows: beds along both banks, thickest on the inside of bends
+    #    (slack water and gravel), none on the cut bank of a sharp outside bend.
+    for i in range(len(frames)):
+        f = frames[i]
+        for sgn in (1, -1):
+            inside = sgn * f["curv"] > 0
+            bend = min(1.0, abs(f["curv"]) / 0.04)
+            for k in range(3):
+                along = (k / 3.0) * 3.0 - 1.5 + rng.uniform(-0.5, 0.5)
+                lat = f["w"] * 0.5 + rng.uniform(-1.9, 0.5) + (rng.uniform(-1.6, 0) * bend if inside else 0)
+                x = f["x"] + f["tx"] * along + f["nx"] * sgn * lat
+                z = f["z"] + f["tz"] * along + f["nz"] * sgn * lat
+                if abs(x) > MAP_HALF_X - 1 or abs(z) > MAP_HALF_Z - 1:
+                    continue
+                bed = fern_n(x * 1.7 + 40, z * 1.7)
+                p = 0.25 + 0.45 * bed + (0.45 * bend if inside else -0.3 * bend)
+                if rng.random() > p:
+                    continue
+                if clearance(x, z) < 12:
+                    continue
+                s = rng.uniform(0.75, 1.25)
+                r = VEG_RADIUS["reed_clump"] * s
+                if not kept_clear(x, z, r, True) or not free(x, z, r, 0.0):
+                    continue
+                add(x, z, r * 0.8, "reed")
+                emit("reed_clump", x, z, s, rng.uniform(0, 360), "shallows")
+
+    # 5. Stones and dead wood: a few boulders in and at the water, more in the woods; logs
+    #    under the canopy.
+    for _ in range(2600):
+        x, z = rng.uniform(xmin, xmax), rng.uniform(zmin, zmax)
+        if abs(x) > MAP_HALF_X - 3 or abs(z) > MAP_HALF_Z - 3:
+            continue
+        F, d, side, i, curv = field(x, z)
+        in_water = -3.0 < d < 0.8
+        if not in_water and (F < 0.2 or rng.random() > 0.25):
+            continue
+        if in_water and rng.random() > 0.12:
+            continue
+        cov = canopy(x, z)
+        if not in_water and cov > 0.35 and rng.random() < 0.5:
+            kind = "log_fallen"
+        else:
+            kind = "rock_boulder" if rng.random() < 0.55 else "rock_boulder_b"
+        s = rng.uniform(0.7, 1.3)
+        r = VEG_RADIUS[kind] * s
+        if not kept_clear(x, z, r, True) or not free(x, z, r, 1.2 if kind == "log_fallen" else 0.9):
+            continue
+        add(x, z, r, "stone")
+        emit(kind, x, z, s, rng.uniform(0, 360), "in_water" if in_water else "forest_floor")
+    return out
+
+
+def retype_old_trees(vegetation):
+    """The older trees outside the woods were all one oak. Orchards stay oak (fruit trees
+    read as oaks at this scale); verges, meadows and gardens get a mix, by a hash of the id
+    so the choice is stable."""
+    mix = {
+        "outer_verge": ["tree_oak", "tree_oak_b", "tree_lime", "tree_hornbeam", "tree_birch", "tree_oak_c"],
+        "blonia_czechowki": ["tree_willow", "tree_alder", "tree_oak_b", "tree_willow", "tree_birch_b", "tree_oak"],
+        "bystrzyca_pastwiska": ["tree_oak_b", "tree_oak", "tree_lime", "tree_birch"],
+        "suburban_gardens": ["tree_oak_c", "tree_lime", "tree_oak", "tree_birch"],
+    }
+    for v in vegetation:
+        choices = [c for c in mix.get(v.get("zone", ""), []) if c in VEG_RADIUS]
+        if choices:
+            h = sum((k + 1) * ord(ch) for k, ch in enumerate(v["id"]))
+            v["type"] = choices[h % len(choices)]
+
+
+MILLER_CRAFT = {"id": "miller", "name": "Miller", "sign": "Millstone & Wheat Sheaf", "guild": "Millers & Bakers",
+                "wealth": "plebeian"}
+MILLERS = 3
+
+
+def add_watermill(parcels, citizens, site):
+    """Append the watermill parcel and move a few labouring men to it (own RNG, after the
+    citizens, so every existing parcel and citizen keeps its id and content)."""
+    rng = random.Random(FOREST_SEED + 1)
+    mill = {
+        "id": "p_watermill_bystrzyca", "district": "krakow_suburb", "streetName": "Brzeg Bystrzycy",
+        "x": site["x"], "z": site["z"], "width": 8.5, "depth": 12.0, "orientation": site["orientation"],
+        "elevation": 0.0, "buildingType": "riverside_watermill", "isShed": False, "craft": MILLER_CRAFT,
+        "aging": {"ageYears": 46, "ridgeSag": 0.12, "wallLeanAngle": 0.6, "woodGraying": 0.55,
+                  "mossFoundation": 0.82, "maintenanceState": "weathered"},
+        "clutter": ["oak_barrel", "handcart"], "scaffolding": False, "wealthClass": "artisan",
+        "residents": [], "workplaceFor": [],
+        "commodities": {"rye_sacks": 24, "salted_herring_kilderkins": 0, "tallow_candles": 8, "grosze": 140},
+        "name": "Młyn nad Bystrzycą (Bystrzyca Watermill)",
+    }
+    by_id = {p["id"]: p for p in parcels}
+    pool = [c for c in citizens if c["gender"] == "male" and c["wealthClass"] == "plebeian"
+            and c["guildRank"] in ("journeyman", "laborer") and c["trade"] not in ("Woodcutter",)
+            and c["workParcelId"] in by_id]
+    # Men living nearest the mill walk there; pick among the closest few.
+    pool.sort(key=lambda c: math.hypot(by_id[c["homeParcelId"]]["x"] - mill["x"], by_id[c["homeParcelId"]]["z"] - mill["z"]))
+    for c in rng.sample(pool[:30], MILLERS):
+        old = by_id.get(c["workParcelId"])
+        if old and c["id"] in old["workplaceFor"]:
+            old["workplaceFor"].remove(c["id"])
+        mill["workplaceFor"].append(c["id"])
+        for s in c["schedule"]:
+            if s["location"] == c["workParcelId"]:
+                s["location"] = mill["id"]
+            s["task"] = s["task"].replace(f"({c['trade']})", "(Miller)")
+        c["trade"] = "Miller"
+        c["workParcelId"] = mill["id"]
+        c["carriedItem"] = "Flour Sack & Mill Pick"
+    parcels.append(mill)
+    return mill
+
+
 def generate_lublin_city_plan():
     print("[CityPlanGenerator] Synthesizing Lublin 1392 morphology & agent schedules...")
 
@@ -935,6 +1546,29 @@ def generate_lublin_city_plan():
           f"(seed {river_seed}), nearest parcel/street/wall {river_margin:.1f} m from the bank; "
           f"dropped {before - len(vegetation)} trees in or by the channel.")
 
+    # 3c. Riverside woods, the footbridge and the watermill site (own RNG: FOREST_SEED).
+    clear_circles = [(p["x"], p["z"], math.hypot(p["width"], p["depth"]) * 0.5) for p in parcels]
+    clear_circles += [(l["x"], l["z"], math.hypot(l["width"], l["depth"]) * 0.5) for l in civic_landmarks]
+    clear_circles += [(e["x"], e["z"], math.hypot(e.get("width", 14), e.get("depth", 14)) * 0.5)
+                      for e in castle_elements if "x" in e and "z" in e]
+    clear_segments = street_segments + wall_segments + [(e["startX"], e["startZ"], e["endX"], e["endZ"])
+                                                        for e in castle_elements if "startX" in e]
+    clearance = _Clearance(clear_circles, clear_segments, dist_point_to_segment)
+    frames = _river_frames(river)
+    paths, mill_site = plan_river_crossing(river, frames, clearance, random.Random(FOREST_SEED + 2))
+    # Older trees off the paths and out of the mill yard.
+    path_lines = [[(q["x"], q["z"]) for q in pth["points"]] for pth in paths]
+    vegetation[:] = [v for v in vegetation if all(_polyline_dist(v["x"], v["z"], pl) > 4.5 for pl in path_lines)]
+    retype_old_trees(vegetation)
+    forest = generate_forest(river, frames, paths, mill_site, clearance, vegetation)
+    vegetation.extend(forest)
+    counts = {}
+    for v in vegetation:
+        counts[v["type"]] = counts.get(v["type"], 0) + 1
+    print(f"[CityPlanGenerator] Riverside woods: {len(forest)} plants; bridge at "
+          f"({river['crossings'][0]['x']}, {river['crossings'][0]['z']}), mill at ({mill_site['x']}, {mill_site['z']}); "
+          + ", ".join(f"{k} {counts[k]}" for k in sorted(counts)))
+
     # 4. Living Autonomous Citizens (~1,500 citizens across households)
     TARGET_CITIZEN_COUNT = 1500
     citizens = []
@@ -1072,6 +1706,7 @@ def generate_lublin_city_plan():
         })
 
     assign_woodcutters(parcels, citizens)
+    add_watermill(parcels, citizens, mill_site)
     print(f"[CityPlanGenerator] Simulated {len(citizens)} persistent citizens across {len(home_parcels)} households.")
 
     # 4. Royal Fair Systemic Events Specification
@@ -1129,12 +1764,13 @@ def generate_lublin_city_plan():
         "parcels": parcels,
         "vegetation": vegetation,
         "river": river,
+        "paths": paths,
         "citizens": citizens,
         "bellHours": BELL_HOURS,
         "fairEvents": fair_events,
         "houseTypesCatalog": HOUSE_TYPES,
         "shedTypesCatalog": SHED_TYPES,
-        "craftsCatalog": CRAFTS + [WOODCUTTER_CRAFT]
+        "craftsCatalog": CRAFTS + [WOODCUTTER_CRAFT, MILLER_CRAFT]
     }
 
     # Save to public/city_plan.json and root city_plan.json
