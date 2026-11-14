@@ -68,7 +68,9 @@ export class NavGrid {
   /** Walkable components left (1 = every street connects). */
   components = 0;
 
-  constructor(minX: number, minZ: number, maxX: number, maxZ: number, placements: NavPlacement[], seeds: { x: number; z: number }[]) {
+  /** `obstacles`: extra world-space polygons that block (the river channel, river-course.ts). */
+  constructor(minX: number, minZ: number, maxX: number, maxZ: number, placements: NavPlacement[], seeds: { x: number; z: number }[],
+    obstacles: { x: number; z: number }[][] = []) {
     const t0 = performance.now();
     this.minX = minX;
     this.minZ = minZ;
@@ -82,6 +84,7 @@ export class NavGrid {
     this.seen = new Uint32Array(n);
     this.closed = new Uint32Array(n);
     for (const p of placements) this.stamp(p);
+    for (const poly of obstacles) this.rasterPoly(poly.map((q) => q.x), poly.map((q) => q.z));
     this.sealEnclosed(seeds);
     this.distanceField();
     this.buildGraph();

@@ -178,6 +178,22 @@ export interface VegetationElement {
   zone?: string;
 }
 
+export interface RiverPoint {
+  x: number;
+  z: number;
+  /** Water surface width (m) at this point, 9-14. */
+  width: number;
+}
+
+/** A river centreline sampled every ~3 m (generate_city_plan.py generate_river). */
+export interface River {
+  name: string;
+  /** "downstream = increasing index" */
+  flow: string;
+  lengthM: number;
+  points: RiverPoint[];
+}
+
 export interface CityPlan {
   metadata: {
     city: string;
@@ -197,6 +213,8 @@ export interface CityPlan {
   streetNetwork: StreetNetwork;
   parcels: Parcel[];
   vegetation?: VegetationElement[];
+  /** The Bystrzyca south-east of the city. */
+  river?: River;
   citizens: Citizen[];
   bellHours: Record<string, BellHourInfo>;
   fairEvents: FairEvent[];

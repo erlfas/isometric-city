@@ -142,6 +142,135 @@ def assign_woodcutters(parcels, citizens):
         c["carriedItem"] = "Felling Axe & Iron Wedges"
 
 
+# The Bystrzyca (south-east of the city). Mouth and source lie just off the ground plane
+# (x -350..350, z -275..275) so the river runs off both map edges.
+RIVER_START = (-140.0, -292.0)
+RIVER_END = (366.0, -100.0)
+RIVER_STEP = 3.0          # m between centreline samples
+RIVER_CLEARANCE = 15.0    # m from the bank to any parcel, landmark, street or wall
+RIVER_SEED = 1392_11
+
+
+def _river_course(rng):
+    """Centreline [(x, z)] in a local frame: start at the origin heading +x. The heading swings
+    in half-bends of random length and amplitude (so S-bends differ), plus a slow drift."""
+    pts = [(0.0, 0.0)]
+    heading, phase = 0.0, 0.0
+    half_len = rng.uniform(40, 80)    # m of arc per half-bend
+    amp = rng.uniform(0.55, 1.2)     # rad of heading swing at the bend apex
+    sign = rng.choice((-1, 1))
+    drift = [(rng.uniform(0.06, 0.16), rng.uniform(380, 620), rng.uniform(0, 2 * math.pi)) for _ in range(2)]
+    s = 0.0
+    chord = math.hypot(RIVER_END[0] - RIVER_START[0], RIVER_END[1] - RIVER_START[1])
+    while pts[-1][0] < chord:
+        s += RIVER_STEP
+        phase += math.pi * RIVER_STEP / half_len
+        if phase >= math.pi:          # apex-to-apex done: next half-bend swings the other way
+            phase -= math.pi
+            sign = -sign
+            half_len = rng.uniform(40, 80)
+            amp = rng.uniform(0.55, 1.2)
+        heading = sign * amp * math.sin(phase) + sum(a * math.sin(s / lam * 2 * math.pi + ph) for a, lam, ph in drift)
+        x, z = pts[-1]
+        pts.append((x + RIVER_STEP * math.cos(heading), z + RIVER_STEP * math.sin(heading)))
+    return pts
+
+
+def _chaikin(pts, iterations=2):
+    for _ in range(iterations):
+        out = [pts[0]]
+        for (ax, az), (bx, bz) in zip(pts, pts[1:]):
+            out.append((0.75 * ax + 0.25 * bx, 0.75 * az + 0.25 * bz))
+            out.append((0.25 * ax + 0.75 * bx, 0.25 * az + 0.75 * bz))
+        out.append(pts[-1])
+        pts = out
+    return pts
+
+
+def _resample(pts, step):
+    out = [pts[0]]
+    need = step  # arc length still to go to the next sample
+    for (ax, az), (bx, bz) in zip(pts, pts[1:]):
+        seg = math.hypot(bx - ax, bz - az)
+        pos = 0.0
+        while seg - pos >= need:
+            pos += need
+            t = pos / seg
+            out.append((ax + (bx - ax) * t, az + (bz - az) * t))
+            need = step
+        need -= seg - pos
+    if math.hypot(out[-1][0] - pts[-1][0], out[-1][1] - pts[-1][1]) > step * 0.3:
+        out.append(pts[-1])
+    return out
+
+
+def _river_widths(pts, rng):
+    """9-14 m: a slow wobble along the course, wider where it bends (curvature, smoothed)."""
+    n = len(pts)
+    curv = [0.0] * n
+    for i in range(1, n - 1):
+        h1 = math.atan2(pts[i][1] - pts[i - 1][1], pts[i][0] - pts[i - 1][0])
+        h2 = math.atan2(pts[i + 1][1] - pts[i][1], pts[i + 1][0] - pts[i][0])
+        dh = (h2 - h1 + math.pi) % (2 * math.pi) - math.pi
+        curv[i] = abs(dh) / RIVER_STEP
+    k = 6
+    smooth = [sum(curv[max(0, i - k):i + k + 1]) / len(curv[max(0, i - k):i + k + 1]) for i in range(n)]
+    lam, ph = rng.uniform(180, 260), rng.uniform(0, 2 * math.pi)
+    widths = []
+    for i in range(n):
+        w = 9.6 + 1.0 * math.sin(i * RIVER_STEP / lam * 2 * math.pi + ph) + 4.0 * max(0.0, min(1.0, (smooth[i] - 0.010) / 0.030))
+        widths.append(round(max(9.0, min(14.0, w)), 2))
+    return widths
+
+
+def generate_river(parcels, landmarks, castle_elements, street_segments, wall_segments, seg_dist):
+    """Seeded meander placed in the world by a similarity transform (start and end fixed).
+    Tries successive seeds until the bank keeps RIVER_CLEARANCE from everything built."""
+    obstacles = [(p["x"], p["z"], math.hypot(p["width"], p["depth"]) * 0.5) for p in parcels]
+    obstacles += [(l["x"], l["z"], math.hypot(l["width"], l["depth"]) * 0.5) for l in landmarks]
+    obstacles += [(e["x"], e["z"], math.hypot(e.get("width", 14), e.get("depth", 14)) * 0.5)
+                  for e in castle_elements if "x" in e and "z" in e]
+    segments = list(street_segments) + list(wall_segments)
+    segments += [(e["startX"], e["startZ"], e["endX"], e["endZ"]) for e in castle_elements if "startX" in e]
+    best = None
+    for attempt in range(400):
+        seed = RIVER_SEED + attempt
+        rng = random.Random(seed)
+        local = _river_course(rng)
+        # Similarity transform: local start -> RIVER_START, local end -> RIVER_END.
+        lx, lz = local[-1]
+        wx, wz = RIVER_END[0] - RIVER_START[0], RIVER_END[1] - RIVER_START[1]
+        scale = math.hypot(wx, wz) / math.hypot(lx, lz)
+        rot = math.atan2(wz, wx) - math.atan2(lz, lx)
+        c, s_ = math.cos(rot) * scale, math.sin(rot) * scale
+        world = [(RIVER_START[0] + c * x - s_ * z, RIVER_START[1] + s_ * x + c * z) for x, z in local]
+        pts = _resample(_chaikin(world), RIVER_STEP)
+        widths = _river_widths(pts, rng)
+        margin = float("inf")
+        for (x, z), w in zip(pts, widths):
+            for ox, oz, r in obstacles:
+                if abs(ox - x) < 80 and abs(oz - z) < 80:
+                    margin = min(margin, math.hypot(ox - x, oz - z) - r - w * 0.5)
+            for x1, z1, x2, z2 in segments:
+                margin = min(margin, seg_dist(x, z, x1, z1, x2, z2) - w * 0.5)
+            if margin < RIVER_CLEARANCE:
+                break
+        if margin >= RIVER_CLEARANCE:
+            best = (pts, widths, margin, seed)
+            break
+    if best is None:
+        raise RuntimeError("no river seed keeps the clearance; move RIVER_START/RIVER_END")
+    pts, widths, margin, seed = best
+    length = sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(pts, pts[1:]))
+    river = {
+        "name": "Bystrzyca",
+        "flow": "downstream = increasing index",
+        "lengthM": round(length, 1),
+        "points": [{"x": round(x, 2), "z": round(z, 2), "width": w} for (x, z), w in zip(pts, widths)],
+    }
+    return river, margin, seed
+
+
 def generate_lublin_city_plan():
     print("[CityPlanGenerator] Synthesizing Lublin 1392 morphology & agent schedules...")
 
@@ -788,6 +917,24 @@ def generate_lublin_city_plan():
 
     print(f"[CityPlanGenerator] Placed {len(vegetation)} verified trees with 0 building/street collisions.")
 
+    # 3b. The Bystrzyca: a meandering river through the empty south-east, from past the south
+    # edge of the map to past the east edge. Its own RNG, so parcels and citizens are unchanged.
+    river, river_margin, river_seed = generate_river(parcels, civic_landmarks, castle_elements,
+                                                     street_segments, wall_segments, dist_point_to_segment)
+    def river_dist(tx, tz):
+        """Distance from (tx, tz) to the channel edge (negative inside the water)."""
+        pts = river["points"]
+        best = float("inf")
+        for a, b in zip(pts, pts[1:]):
+            d = dist_point_to_segment(tx, tz, a["x"], a["z"], b["x"], b["z"]) - 0.5 * (a["width"] + b["width"]) * 0.5
+            best = min(best, d)
+        return best
+    before = len(vegetation)
+    vegetation[:] = [v for v in vegetation if river_dist(v["x"], v["z"]) >= 4.0]
+    print(f"[CityPlanGenerator] River Bystrzyca: {len(river['points'])} points, {river['lengthM']} m "
+          f"(seed {river_seed}), nearest parcel/street/wall {river_margin:.1f} m from the bank; "
+          f"dropped {before - len(vegetation)} trees in or by the channel.")
+
     # 4. Living Autonomous Citizens (~1,500 citizens across households)
     TARGET_CITIZEN_COUNT = 1500
     citizens = []
@@ -981,6 +1128,7 @@ def generate_lublin_city_plan():
         },
         "parcels": parcels,
         "vegetation": vegetation,
+        "river": river,
         "citizens": citizens,
         "bellHours": BELL_HOURS,
         "fairEvents": fair_events,

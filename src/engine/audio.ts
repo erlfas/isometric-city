@@ -8,7 +8,7 @@
  * - Workshops: forges, coopers, carpenters' saws and looms in working hours, from the
  *   parcels of the city plan (soundOf).
  * - Beds and nature: crowd murmur scaled by awake citizens near the view, wind (louder
- *   zoomed out), running water by the riverfront tanneries, birds by day, crickets and
+ *   zoomed out), running water by the riverfront tanneries and along the Bystrzyca, birds by day, crickets and
  *   owls at night, the odd dog.
  *
  * Positioning: the listener is the camera's look-at point. Effective distance is
@@ -19,6 +19,7 @@
 import musicUrl from '../../music/Copper_and_Rye.mp3?url';
 import type { Citizen, CityPlan, Parcel } from '../types';
 import { parcelHash, parcelKind } from './parcel-kind';
+import { resampleRiver } from './river-course';
 import * as R from './sound-recipes';
 
 export interface Listener {
@@ -130,6 +131,8 @@ export class Soundscape {
       else if (kind) this.emitters.push({ kind, x: p.x, z: p.z, next: 0, pitch: Math.random() });
       else if (!p.isShed) this.homes.push({ x: p.x, z: p.z });
     });
+    // the Bystrzyca: a point every 25 m along its course
+    if (plan.river) this.water.push(...resampleRiver(plan.river, 25));
     this.trees = (plan.vegetation ?? []).map((v) => ({ x: v.x, z: v.z }));
   }
 

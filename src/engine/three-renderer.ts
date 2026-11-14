@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import type { CityPlan, Citizen } from '../types';
+import type { CityPlan, Citizen, River } from '../types';
+import { riverBand, riverFrames, type RiverFrame, type XZ } from './river-course';
 import { TextureLibrary } from './texture-library';
 import { CitizenCrowd } from './citizen-crowd';
 import { DoorLeaves, nightFactor } from './door-leaves';
@@ -385,7 +386,7 @@ export class ThreeIsometricRenderer {
     ctx.fill();
     ctx.restore();
 
-    // 3. Czechówka & Bystrzyca river valley slopes: lusher, darker meadow (tone down)
+    // 3. Czechówka valley north of the walls: lusher, darker meadow (tone down)
     ctx.save();
     ctx.globalCompositeOperation = 'source-over';
     ctx.filter = 'blur(12px)';
@@ -396,6 +397,9 @@ export class ThreeIsometricRenderer {
     ctx.quadraticCurveTo(toCanvasX(-100), toCanvasY(55), toCanvasX(210), toCanvasY(35));
     ctx.stroke();
     ctx.restore();
+
+    // 3b. The Bystrzyca's banks
+    if (plan.river && plan.river.points.length > 1) this.paintRiverBanks(ctx, plan.river);
 
     // 4. Street network: dirt verges with a cobbled carriageway
     if (plan.streetNetwork && plan.streetNetwork.nodes && plan.streetNetwork.edges) {
@@ -442,6 +446,54 @@ export class ThreeIsometricRenderer {
 
     ctx.globalCompositeOperation = 'source-over';
     this.groundTex.needsUpdate = true;
+  }
+
+  /**
+   * River banks in the splat mask, drawn over the meadow (source-over, so the tone can go
+   * down): lush dark meadow ~20 m either side, wet dark earth at the water's edge, plain
+   * dirt under the water (no green through the shallows) and pale gravel bars on the inside
+   * of the bends. Polygons are in world metres (the transform maps them onto the canvas).
+   */
+  private paintRiverBanks(ctx: CanvasRenderingContext2D, river: River): void {
+    const frames = riverFrames(river);
+    const half = (f: RiverFrame) => f.w * 0.5;
+    const fill = (ring: XZ[], style: string, blurPx: number) => {
+      ctx.filter = blurPx > 0 ? `blur(${blurPx}px)` : 'none';
+      ctx.fillStyle = style;
+      ctx.beginPath();
+      ring.forEach((p, k) => (k ? ctx.lineTo(p.x, p.z) : ctx.moveTo(p.x, p.z)));
+      ctx.closePath();
+      ctx.fill('nonzero');
+    };
+    const both = (extra: (f: RiverFrame) => number) => riverBand(frames, (f) => -half(f) - extra(f), (f) => half(f) + extra(f));
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    // world (x -350..350, z -275..275) -> canvas 2048 x 2048
+    ctx.setTransform(2048 / 700, 0, 0, 2048 / 550, (350 * 2048) / 700, (275 * 2048) / 550);
+    // Lush meadow: wider and darker toward the water.
+    fill(both(() => 22), 'rgba(0,78,0,0.6)', 22);
+    fill(both(() => 10), 'rgba(0,56,0,0.6)', 12);
+    // Wet trodden earth along the edge (more of it on the outside of bends, where the bank is cut).
+    fill(riverBand(frames, (f) => -half(f) - 2.2 - Math.max(0, f.curv) * 60, (f) => half(f) + 2.2 + Math.max(0, -f.curv) * 60),
+      'rgba(0,40,190,0.95)', 5);
+    // Under the water: dirt only, dark.
+    fill(both(() => -0.3), 'rgb(0,70,255)', 2);
+    // Gravel / sand bars on the inside of bends: runs of points where the course turns.
+    const strength = (f: RiverFrame) => Math.min(1, Math.max(0, (Math.abs(f.curv) - 0.012) / 0.02));
+    for (let i = 0; i < frames.length; i++) {
+      if (strength(frames[i]) <= 0) continue;
+      const s = Math.sign(frames[i].curv);
+      let j = i;
+      while (j + 1 < frames.length && strength(frames[j + 1]) > 0 && Math.sign(frames[j + 1].curv) === s) j++;
+      if (j - i >= 3) {
+        // The course turns toward s * n, so the inside bank is the one at +s * half.
+        const inner = (f: RiverFrame) => s * (half(f) - 2.5 * strength(f));
+        const outer = (f: RiverFrame) => s * (half(f) + 8 * strength(f));
+        fill(s > 0 ? riverBand(frames, inner, outer, i, j) : riverBand(frames, outer, inner, i, j), 'rgba(0,230,235,0.9)', 4);
+      }
+      i = j;
+    }
+    ctx.restore();
   }
 
   public async loadAllModels(): Promise<void> {
