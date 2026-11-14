@@ -22,7 +22,7 @@ const views = args.length ? args : ['pause&hour=11', 'cam=0,0,40&pause&hour=11',
 
 let failed = false;
 for (const hash of views) {
-  const run = await openPage(url, hash);
+  const run = await openPage(url, hash, { uncapped: true });
   const out = await run.page.evaluate((ms) => new Promise((done) => {
     let frames = 0;
     const t0 = performance.now();

@@ -3,11 +3,14 @@
 // error (a WebGL shader compile error is one) other than a missing favicon.
 import { chromium } from 'playwright-core';
 
-export async function openPage(url, hash, { width = 1600, height = 900, settleMs = 1000 } = {}) {
+// `uncapped`: no vsync / frame-rate limit (perf.mjs), else light views all read the display's
+// refresh rate (144) and a change can't be seen.
+export async function openPage(url, hash, { width = 1600, height = 900, settleMs = 1000, uncapped = false } = {}) {
   const browser = await chromium.launch({
     channel: process.env.PLAYWRIGHT_CHANNEL || 'msedge', // installed Edge on Windows
     headless: true,
-    args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist'],
+    args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist',
+      ...(uncapped ? ['--disable-gpu-vsync', '--disable-frame-rate-limit'] : [])],
   });
   const page = await browser.newPage({ viewport: { width, height } });
   const problems = [];
