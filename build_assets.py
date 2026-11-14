@@ -147,6 +147,7 @@ MODEL_MATERIAL_OVERRIDES = {
     "house_potter": FIELDSTONE,
     "house_weaver": FIELDSTONE,
     "watermill": FIELDSTONE,
+    "footbridge": FIELDSTONE,
     "windmill": FIELDSTONE,
     "market_cart": FIELDSTONE,
 }
@@ -4081,6 +4082,120 @@ def build_weaver_workshop(mats):
 
     _ws_finish(bm, mat_list, "Mesh_Weaver", "HouseWeaver", "house_weaver")
 
+# Undershot wheel: axle along X at (MILL_WHEEL_X, 0, MILL_WHEEL_Z) in the mill's model space,
+# the paddles dipping ~0.7 m into the race. Keep in sync with generate_city_plan.py
+# (MILL_WHEEL_X, MILL_WHEEL_Y) and the runtime (mill-wheel.ts).
+MILL_WHEEL_X, MILL_WHEEL_Z, MILL_WHEEL_R = 4.9, 1.7, 2.4
+
+
+def build_watermill_wheel(mats):
+    """Undershot paddle wheel, centred on its axle (along X), so the runtime can turn it."""
+    clear_scene()
+    bm = bmesh.new()
+    mat_list = [mats["timber_dark"], mats["iron_wrought"], mats["timber_weathered"]]
+    R, half, n = MILL_WHEEL_R, 0.55, 16
+    add_timber_beam(bm, Vector((-1.15, 0, 0)), Vector((1.15, 0, 0)), width=0.32, depth=0.32, mat_idx=0)  # oak axle
+    for sx in (-1.1, 1.1):
+        add_timber_beam(bm, Vector((sx - 0.06, 0, 0)), Vector((sx + 0.06, 0, 0)), width=0.36, depth=0.36, mat_idx=1)  # iron bands
+    for sx in (-half, half):
+        ring = [Vector((sx, math.cos(math.tau * k / n) * R * 0.86, math.sin(math.tau * k / n) * R * 0.86)) for k in range(n)]
+        for k in range(n):
+            add_timber_beam(bm, ring[k], ring[(k + 1) % n], width=0.14, depth=0.2, mat_idx=0)   # rim
+        for k in range(0, n, 2):
+            add_timber_beam(bm, Vector((sx, 0, 0)), ring[k], width=0.12, depth=0.12, mat_idx=0)  # spokes
+        add_timber_beam(bm, Vector((sx - 0.11, 0, 0)), Vector((sx + 0.11, 0, 0)), width=0.6, depth=0.6, mat_idx=0)  # hub
+    for k in range(n):
+        a = math.tau * (k + 0.5) / n
+        c, s = math.cos(a), math.sin(a)
+        # Paddle board: radial, from inside the rim to past it, across the wheel's width.
+        # (a radial beam: add_timber_beam puts its width along X here, its depth tangential)
+        add_timber_beam(bm, Vector((0, c * R * 0.62, s * R * 0.62)), Vector((0, c * R, s * R)),
+                        width=2 * half + 0.24, depth=0.07, mat_idx=2)
+    bm.normal_update()
+    mesh = bpy.data.meshes.new("Mesh_WatermillWheel")
+    bm.to_mesh(mesh)
+    bm.free()
+    for m in mat_list: mesh.materials.append(m)
+    obj = bpy.data.objects.new("WatermillWheel", mesh)
+    bpy.context.collection.objects.link(obj)
+    export_object(obj, "watermill_wheel")
+
+
+# Timber trestle footbridge: deck along X, centred. Keep in sync with generate_city_plan.py
+# (BRIDGE_LEN, BRIDGE_W, BRIDGE_DECK_END, BRIDGE_DECK_MID) and simulation.ts (deck height).
+BRIDGE_LEN, BRIDGE_W, BRIDGE_DECK_END, BRIDGE_DECK_MID = 18.0, 2.2, 0.15, 1.2
+
+
+def _bridge_deck(s):
+    """Walking surface height (m) at s along the deck (-L/2..L/2): a shallow parabolic hump."""
+    u = 2.0 * s / BRIDGE_LEN
+    return BRIDGE_DECK_END + (BRIDGE_DECK_MID - BRIDGE_DECK_END) * (1.0 - u * u)
+
+
+def build_footbridge(mats):
+    """Footbridge over the Bystrzyca: plank deck on two stringers, three trestle bents
+    standing in the water, post-and-rail handrails, fieldstone abutments."""
+    clear_scene()
+    bm = bmesh.new()
+    mat_list = [mats["timber_dark"], mats["timber_plank"], mats["timber_weathered"], mats["stone_limestone"]]
+    L, W, half = BRIDGE_LEN, BRIDGE_W, BRIDGE_LEN * 0.5
+    rng = random.Random(1392)
+    # Deck planks across the span, each at the walking height of its middle.
+    s = -half + 0.15
+    while s < half - 0.1:
+        pw = 0.28
+        z = _bridge_deck(s)
+        jag = rng.uniform(-0.06, 0.06)
+        add_box(bm, s, jag, z - 0.045, pw - 0.03, W + rng.uniform(-0.04, 0.12), 0.09, mat_idx=1)
+        s += pw
+    # Stringers and the handrails follow the hump in short straight pieces.
+    pts = [-half + 0.1 + k * (L - 0.2) / 10 for k in range(11)]
+    for y in (-0.75, 0.75):
+        for a, b in zip(pts, pts[1:]):
+            add_timber_beam(bm, Vector((a, y, _bridge_deck(a) - 0.22)), Vector((b, y, _bridge_deck(b) - 0.22)),
+                            width=0.2, depth=0.26, mat_idx=0)
+    rail_s = [-half + 0.35 + k * (L - 0.7) / 9 for k in range(10)]
+    for y in (-(W * 0.5 - 0.05), W * 0.5 - 0.05):
+        for a in rail_s:
+            z = _bridge_deck(a)
+            add_timber_beam(bm, Vector((a, y, z - 0.35)), Vector((a, y, z + 1.02)), width=0.12, depth=0.12, mat_idx=0)
+        for a, b in zip(rail_s, rail_s[1:]):
+            for h, wd in ((1.0, 0.11), (0.5, 0.07)):
+                add_timber_beam(bm, Vector((a, y, _bridge_deck(a) + h)), Vector((b, y, _bridge_deck(b) + h)),
+                                width=wd, depth=wd, mat_idx=2)
+        # Raking braces from the outer posts down to the abutments.
+        for sgn in (-1, 1):
+            a = sgn * rail_s[-1]
+            add_timber_beam(bm, Vector((a, y, _bridge_deck(a) + 0.95)), Vector((a + sgn * 0.6, y, 0.05)),
+                            width=0.1, depth=0.1, mat_idx=0)
+    # Trestle bents in the water: two raked posts, cap beam, cross brace.
+    for b in (-3.4, 0.0, 3.4):
+        top = _bridge_deck(b) - 0.36
+        for y in (-1.0, 1.0):
+            add_timber_beam(bm, Vector((b, y * 1.15, -1.4)), Vector((b, y * 0.85, top)), width=0.22, depth=0.22, mat_idx=0)
+        add_timber_beam(bm, Vector((b, -1.25, top + 0.05)), Vector((b, 1.25, top + 0.05)), width=0.24, depth=0.22, mat_idx=0)
+        add_timber_beam(bm, Vector((b, -1.1, -0.4)), Vector((b, 0.9, top - 0.15)), width=0.12, depth=0.12, mat_idx=2)
+        add_timber_beam(bm, Vector((b, 1.1, -0.4)), Vector((b, -0.9, top - 0.15)), width=0.12, depth=0.12, mat_idx=2)
+    # Abutments: a log sill on a fieldstone pad at each end, the bank built up to it.
+    for sgn in (-1, 1):
+        x = sgn * (half - 0.6)
+        add_box(bm, x, 0.0, -0.05, 1.6, W + 1.0, 0.3, mat_idx=3)
+        add_box(bm, x - sgn * 1.1, 0.0, -0.1, 1.0, W + 0.6, 0.24, mat_idx=3)
+        add_timber_beam(bm, Vector((x, -W * 0.5 - 0.2, 0.08)), Vector((x, W * 0.5 + 0.2, 0.08)), width=0.3, depth=0.3, mat_idx=0)
+        for y in (-1, 1):
+            for k in range(3):
+                add_box(bm, x + rng.uniform(-0.6, 0.6), y * (W * 0.5 + 0.55 + rng.uniform(0, 0.3)), 0.05,
+                        rng.uniform(0.4, 0.7), rng.uniform(0.4, 0.6), rng.uniform(0.25, 0.45), mat_idx=3)
+    bm.normal_update()
+    mesh = bpy.data.meshes.new("Mesh_Footbridge")
+    bm.to_mesh(mesh)
+    bm.free()
+    for m in mat_list: mesh.materials.append(m)
+    obj = bpy.data.objects.new("Footbridge", mesh)
+    bpy.context.collection.objects.link(obj)
+    export_object(obj, "footbridge")
+
+
 def build_watermill(mats):
     clear_scene()
     bm = bmesh.new()
@@ -4113,38 +4228,33 @@ def build_watermill(mats):
     add_ashlar_chimney(bm, 1.8, 2.2, 7.8, w=1.0, d=1.0, h=5.5, mat_stone=0, mat_soot=8)
 
     # -------------------------------------------------------------
-    # GIANT PADDLE WATERWHEEL & ELEVATED TIMBER FLUME RACE (-X flank)
+    # MILL RACE ALONG THE +X FLANK. The undershot wheel is its own model
+    # (watermill_wheel, turned at runtime about its axle at (MILL_WHEEL_X, 0, MILL_WHEEL_Z));
+    # here: the plank-lined race it turns in, the axle bearings and the sluice upstream (-Y).
+    # The race water itself is drawn by the runtime (plan river.mills[].race).
     # -------------------------------------------------------------
-    wheel_x = w2 + 1.4
-    wheel_y = 0.0
-    wheel_z = 2.4
-    wheel_radius = 2.4
-    wheel_width = 1.2
-
-    # Axle
-    add_cylinder(bm, wheel_x, wheel_y, wheel_z, radius=0.35, height=wheel_width + 0.6, segs=10, mat_idx=6)
-    # 16 Radial Wooden Paddles
-    for i in range(16):
-        ang = (i / 16) * math.pi * 2.0
-        py = wheel_y + math.cos(ang) * (wheel_radius * 0.8)
-        pz = wheel_z + math.sin(ang) * (wheel_radius * 0.8)
-        # Paddle board
-        p1 = Vector((wheel_x - wheel_width * 0.5, py, pz))
-        p2 = Vector((wheel_x + wheel_width * 0.5, py, pz))
-        add_timber_beam(bm, p1, p2, width=0.35, depth=0.08, mat_idx=1)
-        # Internal spokes
-        p_hub = Vector((wheel_x, wheel_y, wheel_z))
-        add_timber_beam(bm, p_hub, Vector((wheel_x, py, pz)), width=0.10, depth=0.10, mat_idx=1)
-
-    # Elevated Timber Flume Race (delivering water over wheel)
-    flume_z = wheel_z + wheel_radius + 0.2
-    flume_len = 8.5
-    # Trough
-    add_water_trough(bm, wheel_x, wheel_y + 1.2, flume_z - 0.4, w=1.4, d=flume_len, h=0.6, mat_wood=5, mat_water=3)
-    # Flume support trestle bents
-    for ty in [-1.5, 1.5, 4.0]:
-        add_timber_beam(bm, Vector((wheel_x - 0.6, ty, 0)), Vector((wheel_x - 0.6, ty, flume_z)), width=0.18, depth=0.18, mat_idx=1)
-        add_timber_beam(bm, Vector((wheel_x + 0.6, ty, 0)), Vector((wheel_x + 0.6, ty, flume_z)), width=0.18, depth=0.18, mat_idx=1)
+    rx, rw = MILL_WHEEL_X, 1.8
+    for sx in (-1, 1):
+        x = rx + sx * (rw * 0.5 + 0.06)
+        add_box(bm, x, 0.0, 0.05, 0.12, 13.0, 0.5, mat_idx=5)                 # lining boards
+        for y in range(-6, 7, 2):
+            add_timber_beam(bm, Vector((x + sx * 0.1, y, -0.4)), Vector((x + sx * 0.1, y, 0.45)),
+                            width=0.16, depth=0.16, mat_idx=1)                    # stakes
+        # bearing post and cheek under each end of the axle
+        bx = rx + sx * (rw * 0.5 + 0.28)
+        add_box(bm, bx, 0.0, MILL_WHEEL_Z * 0.5 - 0.1, 0.34, 0.5, MILL_WHEEL_Z - 0.2, mat_idx=1)
+        add_box(bm, bx, 0.0, MILL_WHEEL_Z - 0.18, 0.4, 0.7, 0.16, mat_idx=6)
+        add_timber_beam(bm, Vector((bx, -1.2, 0.0)), Vector((bx, -0.2, MILL_WHEEL_Z - 0.3)), width=0.14, depth=0.14, mat_idx=1)
+        add_timber_beam(bm, Vector((bx, 1.2, 0.0)), Vector((bx, 0.2, MILL_WHEEL_Z - 0.3)), width=0.14, depth=0.14, mat_idx=1)
+    # Sluice gate upstream: two posts, a head beam, the half-raised gate board on its rack.
+    sy = -5.6
+    for sx in (-1, 1):
+        add_timber_beam(bm, Vector((rx + sx * 1.0, sy, -0.3)), Vector((rx + sx * 1.0, sy, 2.0)), width=0.2, depth=0.2, mat_idx=1)
+    add_timber_beam(bm, Vector((rx - 1.15, sy, 2.0)), Vector((rx + 1.15, sy, 2.0)), width=0.22, depth=0.22, mat_idx=1)
+    add_box(bm, rx, sy, 0.75, rw - 0.05, 0.08, 0.7, mat_idx=5)
+    add_timber_beam(bm, Vector((rx, sy, 1.1)), Vector((rx, sy, 2.6)), width=0.1, depth=0.1, mat_idx=1)
+    # A plank walk over the race to the house, by the sluice.
+    add_box(bm, rx, sy + 0.9, 0.42, rw + 0.9, 0.9, 0.08, mat_idx=5)
 
     # -------------------------------------------------------------
     # TIMBER LOADING DOCK / PIER WITH FLOUR SACKS (+X flank)
@@ -4167,7 +4277,7 @@ def build_watermill(mats):
     # No ground door (the mill room sits on a 4.2 m race foundation): millers work outside
     anchor_spot((3.2, -6.4), (-1, 0))                           # loading dock
     anchor_spot((-3.2, -6.4), (1, 0))
-    anchor_spot((7.0, -3.2), (-1, 1))                           # watching the wheel
+    anchor_spot((3.4, -5.3), (1, 0.4))                          # at the sluice, watching the wheel
 
     bm.normal_update()
     mesh = bpy.data.meshes.new("Mesh_Watermill")
@@ -4928,6 +5038,8 @@ def main():
         "curtain_tower": build_defense_tower,
         # Industrial & Resource Production
         "watermill": build_watermill,
+        "watermill_wheel": build_watermill_wheel,
+        "footbridge": build_footbridge,
         "windmill": build_windmill,
         "stone_quarry": build_stone_quarry,
         "logging_camp": build_logging_camp,
