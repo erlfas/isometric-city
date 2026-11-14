@@ -1,7 +1,10 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import type { River } from '../types';
+import type { River, RiverPoint as PlanRiverPoint } from '../types';
 import { riverFrames, type RiverFrame } from './river-course';
+// Fish only jump on the ground plane; the water (its course run on past the map by
+// extendRiver) fades out at the outer edge of the forest skirt.
+import { GROUND_HALF, SKIRT } from './world-edge';
 
 /**
  * The Bystrzyca's water (CityPlan.river): one ribbon mesh with a flowing water shader, leaves
@@ -37,8 +40,6 @@ const FISH = 4;
 /** Fish jumps and rises per minute per 100 m of river in view (times the debug multiplier). */
 const JUMPS_PER_MIN = 1.6;
 const RISES_PER_MIN = 2.6;
-/** Ground plane half-extents (m): the water fades out at its edge (the course runs past it). */
-const GROUND_HALF = [350, 275];
 
 /** Current profile, shared by flowSpeed() and the shader's riverSpeed() (injected below):
  *  speed at the banks (x mid-stream), bend gain per unit curvature, its cap, and how much of
@@ -102,6 +103,10 @@ uniform float uSkyAmt;
 uniform vec3 uViewDir;
 uniform vec3 uGlintDir;
 uniform vec2 uGround;
+uniform float uSpeedMul;
+#ifdef RACE
+varying float vFade;
+#endif
 
 float rHash(vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
@@ -136,9 +141,9 @@ const WATER_MAIN = /* glsl */ `
   float uc = clamp(rU, -1.0, 1.0);
   // Noisy shoreline: metres from the water's edge, wobbling with a still pattern.
   float shoreN = gnoised(vWPos.xz * 0.42).x + 0.5 * gnoised(vWPos.xz * 1.3 + 7.1).x;
-  float dShore = (1.0 - abs(rU)) * rHalf + shoreN * 0.7;
+  float dShore = (1.0 - abs(rU)) * rHalf + shoreN * min(0.7, rHalf * 0.22);
   float depth = smoothstep(0.0, rHalf * 0.55, dShore);
-  float speed = riverSpeed(uc, rCurv);
+  float speed = riverSpeed(uc, rCurv) * uSpeedMul;
   float outside = clamp(-sign(rCurv) * uc, 0.0, 1.0) * clamp(abs(rCurv) * 30.0, 0.0, 1.0);
   // Slow sideways wobble so the surface does not slide like a conveyor belt.
   float wob = 0.45 * sin(rV * 0.13 + uTime * 0.31) + 0.25 * sin(rV * 0.37 - uTime * 0.53 + uM * 0.4);
@@ -199,6 +204,9 @@ const WATER_MAIN = /* glsl */ `
   vec2 gEdge = uGround - abs(vWPos.xz);
   float aGround = smoothstep(0.0, 5.0, min(gEdge.x, gEdge.y));
   alpha *= aGround;
+#ifdef RACE
+  alpha *= vFade;
+#endif
   diffuseColor = vec4(body, alpha);
 `;
 
@@ -253,7 +261,7 @@ export class RiverWater {
     uSkyAmt: { value: 1 },
     uViewDir: { value: new THREE.Vector3(0, -1, 0) },
     uGlintDir: { value: new THREE.Vector3(0, 1, 0) },
-    uGround: { value: new THREE.Vector2(GROUND_HALF[0], GROUND_HALF[1]) },
+    uGround: { value: new THREE.Vector2(GROUND_HALF[0] + SKIRT, GROUND_HALF[1] + SKIRT) },
   };
   /** Ripple rings: centre x, z, age (s), strength (0 = free). */
   private ripples = this.uniforms.uRipples.value;
@@ -350,18 +358,21 @@ export class RiverWater {
     scene.add(this.drops);
   }
 
-  private buildRibbon(): THREE.BufferGeometry {
-    const f = this.frames, n = f.length, C = 10; // columns across
-    const pos: number[] = [], nor: number[] = [], river: number[] = [], rn: number[] = [], idx: number[] = [];
+  /** The water ribbon along `f` (arc lengths `cum`); `fade` (race): alpha 0..1 per point. */
+  private buildRibbon(f = this.frames, cum: ArrayLike<number> = this.cum, overhang = OVERHANG, y = 0.03,
+    fade?: number[]): THREE.BufferGeometry {
+    const n = f.length, C = 10; // columns across
+    const pos: number[] = [], nor: number[] = [], river: number[] = [], rn: number[] = [], idx: number[] = [], fd: number[] = [];
     for (let i = 0; i < n; i++) {
-      const p = f[i], half = p.w * 0.5, R = half + OVERHANG;
+      const p = f[i], half = p.w * 0.5, R = half + overhang;
       for (let j = 0; j <= C; j++) {
         // denser near the edges, where the shore detail is
         const a = (j / C) * 2 - 1, o = Math.sign(a) * Math.pow(Math.abs(a), 0.8) * R;
-        pos.push(p.x + p.nx * o, 0.03, p.z + p.nz * o);
+        pos.push(p.x + p.nx * o, y, p.z + p.nz * o);
         nor.push(0, 1, 0);
-        river.push(o / half, this.cum[i], p.curv, half);
+        river.push(o / half, cum[i], p.curv, half);
         rn.push(p.nx, p.nz);
+        if (fade) fd.push(fade[i]);
       }
     }
     for (let i = 0; i + 1 < n; i++) {
@@ -375,27 +386,59 @@ export class RiverWater {
     g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
     g.setAttribute('aRiver', new THREE.Float32BufferAttribute(river, 4));
     g.setAttribute('aRN', new THREE.Float32BufferAttribute(rn, 2));
+    if (fade) g.setAttribute('aFade', new THREE.Float32BufferAttribute(fd, 1));
     g.setIndex(idx);
     g.computeBoundingSphere();
     g.computeBoundingBox();
     return g;
   }
 
-  private buildMaterial(): THREE.Material {
+  /** The water material; a race's (speedMul > 1) runs faster and fades in and out along aFade. */
+  private buildMaterial(speedMul = 1): THREE.Material {
+    const race = speedMul !== 1;
     const mat = new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0, transparent: true, depthWrite: false });
-    mat.name = 'RiverWater';
-    mat.customProgramCacheKey = () => 'river-water-v1';
+    mat.name = race ? 'RaceWater' : 'RiverWater';
+    if (race) mat.defines = { RACE: '' };
+    mat.customProgramCacheKey = () => (race ? 'race-water-v1' : 'river-water-v1');
+    const speed = { value: speedMul };
     mat.onBeforeCompile = (shader) => {
-      Object.assign(shader.uniforms, this.uniforms);
+      Object.assign(shader.uniforms, this.uniforms, { uSpeedMul: speed });
       shader.vertexShader = 'attribute vec4 aRiver;\nattribute vec2 aRN;\nvarying vec4 vRiver;\nvarying vec2 vRN;\nvarying vec3 vWPos;\n'
+        + (race ? 'attribute float aFade;\nvarying float vFade;\n' : '')
         + shader.vertexShader.replace('#include <begin_vertex>',
-          '#include <begin_vertex>\n  vRiver = aRiver; vRN = aRN; vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+          '#include <begin_vertex>\n  vRiver = aRiver; vRN = aRN; vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;'
+          + (race ? ' vFade = aFade;' : ''));
       shader.fragmentShader = WATER_PARS + shader.fragmentShader
         .replace('#include <color_fragment>', WATER_MAIN)
         .replace('#include <normal_fragment_maps>', 'normal = normalize((viewMatrix * vec4(wN, 0.0)).xyz);')
         .replace('#include <opaque_fragment>', WATER_POST + '#include <opaque_fragment>');
     };
     return mat;
+  }
+
+  /**
+   * A mill race (upstream first) as the same water, running ~2.4x the river's current toward
+   * the wheel and fading in and out where it leaves and rejoins the river.
+   */
+  raceWater(race: PlanRiverPoint[]): THREE.Mesh | null {
+    if (race.length < 2) return null;
+    // Resample to ~1 m, so the frames (and the flow's curvature) are smooth.
+    const pts: PlanRiverPoint[] = [];
+    for (let i = 0; i + 1 < race.length; i++) {
+      const a = race[i], b = race[i + 1], k = Math.max(1, Math.round(Math.hypot(b.x - a.x, b.z - a.z)));
+      for (let j = 0; j < k; j++) pts.push({ x: a.x + (b.x - a.x) * j / k, z: a.z + (b.z - a.z) * j / k, width: a.width + (b.width - a.width) * j / k });
+    }
+    pts.push(race[race.length - 1]);
+    const f = riverFrames({ name: 'race', flow: '', lengthM: 0, points: pts });
+    const cum: number[] = [0];
+    for (let i = 1; i < f.length; i++) cum.push(cum[i - 1] + Math.hypot(f[i].x - f[i - 1].x, f[i].z - f[i - 1].z));
+    const L = cum[cum.length - 1];
+    const fade = cum.map((s) => Math.min(1, s / 3, (L - s) / 3));
+    const mesh = new THREE.Mesh(this.buildRibbon(f, cum, 0.35, 0.045, fade), this.buildMaterial(2.4));
+    mesh.name = 'mill_race';
+    mesh.receiveShadow = true;
+    mesh.renderOrder = 1;
+    return mesh;
   }
 
   /** Colours for the light preset now in use (called when the preset changes). */

@@ -14,6 +14,7 @@ import { InteriorProps, roomAt, roomCentre } from './interiors';
 import { parcelHash, parcelKind } from './parcel-kind';
 import { SHADOW_LAYER, StaticBatches, type PlacedModel, type Placement, type Tint } from './static-batches';
 import { MillWheels, SHADOWLESS, paintPaths, vegetationTint } from './riverside';
+import { EDGE_MASK_PX, GROUND_HALF, SKIRT, WorldEdge, extendRiver } from './world-edge';
 
 const _gvDir = new THREE.Vector3();
 const _gvP = new THREE.Vector3();
@@ -142,6 +143,8 @@ export class ThreeIsometricRenderer {
   /** The Bystrzyca's flowing water, flotsam, fish and ripples (river.ts); null without a river. */
   public river: RiverWater | null = null;
   private riverView = [0, 0, 0, 0];
+  /** Meadow, forest canopy and the river past the ground plane (world-edge.ts). */
+  private edge: WorldEdge | null = null;
   /** Watermill wheels, races and white water (riverside.ts); null without a mill. */
   public mills: MillWheels | null = null;
   /** Buildings, walls, stalls, trees: instanced per chunk (static-batches.ts). */
@@ -317,14 +320,19 @@ export class ThreeIsometricRenderer {
    * Turn the ground into a texture splat: tiled grass / dirt / cobblestone in world
    * metres, blended by the canvas mask (R cobble, B dirt, G large-scale tone).
    */
-  private applyGroundTextures(): void {
+  private applyGroundTextures(mat = this.groundPlane.material as THREE.MeshStandardMaterial): void {
     const grass = this.textures.getAlbedo('grass');
     const dirt = this.textures.getAlbedo('dirt_road');
     const cobble = this.textures.getAlbedo('cobblestone');
-    if (!grass || !dirt || !cobble) return;
+    if (!grass || !dirt || !cobble) {
+      // Flat colours: the canvas is a splat mask (pure R/G/B), so show a plain meadow instead.
+      mat.map = null;
+      mat.color.set(0x475d2e);
+      mat.needsUpdate = true;
+      return;
+    }
     const tile = (id: string) => (this.textures.getTile(id) ?? [4, 4])[0];
 
-    const mat = this.groundPlane.material as THREE.MeshStandardMaterial;
     mat.customProgramCacheKey = () => 'ground-splat-v1';
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.groundGrass = { value: grass };
@@ -411,12 +419,21 @@ export class ThreeIsometricRenderer {
     ctx.restore();
 
     // 3b. The Bystrzyca's banks
-    if (plan.river && plan.river.points.length > 1) {
+    const course = plan.river && plan.river.points.length > 1 ? extendRiver(plan.river) : null;
+    if (plan.river && course) {
       this.paintRiverBanks(ctx, plan.river);
       if (!this.river) {
-        this.river = new RiverWater(this.scene, plan.river);
+        this.river = new RiverWater(this.scene, course);
         if (this.activePreset) this.river.setLight(this.activePreset);
       }
+    }
+    // The world past the ground plane: meadow, the forest's canopy, the river running on.
+    if (!this.edge) {
+      this.edge = new WorldEdge(this.scene, course, this.textures.getAlbedo('leaf_canopy'));
+      const ectx = this.edge.mask.getContext('2d')!;
+      if (course) this.paintRiverBanks(ectx, course, [GROUND_HALF[0] + SKIRT, GROUND_HALF[1] + SKIRT], EDGE_MASK_PX);
+      this.edge.maskTex.needsUpdate = true;
+      this.applyGroundTextures(this.edge.ground.material as THREE.MeshStandardMaterial);
     }
 
     // 3c. Footpaths to the footbridge and the mill, forest rides, the mill race's banks
@@ -475,10 +492,13 @@ export class ThreeIsometricRenderer {
    * dirt under the water (no green through the shallows) and pale gravel bars on the inside
    * of the bends. Polygons are in world metres (the transform maps them onto the canvas).
    */
-  private paintRiverBanks(ctx: CanvasRenderingContext2D, river: River): void {
+  private paintRiverBanks(ctx: CanvasRenderingContext2D, river: River, ext: readonly [number, number] = GROUND_HALF, size = 2048): void {
     const frames = riverFrames(river);
     const half = (f: RiverFrame) => f.w * 0.5;
+    // Blur radii below are in px of the ground plane's mask; scale them to this canvas.
+    const blurK = (size / (2 * ext[0])) / (2048 / (2 * GROUND_HALF[0]));
     const fill = (ring: XZ[], style: string, blurPx: number) => {
+      blurPx = Math.max(1, Math.round(blurPx * blurK));
       ctx.filter = blurPx > 0 ? `blur(${blurPx}px)` : 'none';
       ctx.fillStyle = style;
       ctx.beginPath();
@@ -489,8 +509,8 @@ export class ThreeIsometricRenderer {
     const both = (extra: (f: RiverFrame) => number) => riverBand(frames, (f) => -half(f) - extra(f), (f) => half(f) + extra(f));
     ctx.save();
     ctx.globalCompositeOperation = 'source-over';
-    // world (x -350..350, z -275..275) -> canvas 2048 x 2048
-    ctx.setTransform(2048 / 700, 0, 0, 2048 / 550, (350 * 2048) / 700, (275 * 2048) / 550);
+    // world (x -ext..ext, z -ext..ext) -> canvas size x size
+    ctx.setTransform(size / (2 * ext[0]), 0, 0, size / (2 * ext[1]), size / 2, size / 2);
     // Lush meadow: wider and darker toward the water.
     fill(both(() => 22), 'rgba(0,78,0,0.6)', 22);
     fill(both(() => 10), 'rgba(0,56,0,0.6)', 12);
@@ -848,7 +868,7 @@ export class ThreeIsometricRenderer {
       this.put(m(c.model), c.x, 0, c.z, (-c.angle * Math.PI) / 180);
     }
     if (millsPlaced.length) {
-      this.mills = new MillWheels(this.scene, m('watermill_wheel'), millsPlaced);
+      this.mills = new MillWheels(this.scene, m('watermill_wheel'), millsPlaced, (race) => this.river?.raceWater(race) ?? null);
       this.mills.ripple = (x, z, s) => this.river?.addRipple(x, z, s);
     }
 
@@ -864,6 +884,11 @@ export class ThreeIsometricRenderer {
             vegetationTint(v));
         }
         console.log(`[ThreeRenderer] Placed ${plan.vegetation.length} plants (trees, shrubs, reeds, stones).`);
+        // The front row of the forest past the map's edge, before its canopy (world-edge.ts).
+        for (const v of this.edge?.trees ?? []) {
+          this.put(this.models.get(v.type) ?? treeTemplate, v.x, 0, v.z, (v.rotation * Math.PI) / 180, v.scale, v.scale, v.scale,
+            vegetationTint(v));
+        }
       } else {
         // Fallback: strict spatial clearance check
         const placedTrees: { x: number; z: number }[] = [];
@@ -1153,6 +1178,7 @@ totalEmissiveRadiance += vec3(${g.r.toFixed(3)}, ${g.g.toFixed(3)}, ${g.b.toFixe
     }
 
     // Smooth camera center lerping
+    this.clampTarget();
     this.currentPos.lerp(this.targetPos, Math.min(1.0, dt * 8.0));
     this.zoom += (this.targetZoom - this.zoom) * Math.min(1.0, dt * 10.0);
 
@@ -1392,6 +1418,14 @@ totalEmissiveRadiance += vec3(${g.r.toFixed(3)}, ${g.g.toFixed(3)}, ${g.b.toFixe
     this.targetPos.z += wz;
   }
 
+  /** Keep the view's centre on the ground plane: past it the forest skirt (SKIRT m) fills the
+   *  view to its corners even at the widest zoom. */
+  private clampTarget(): void {
+    const t = this.targetPos;
+    t.x = Math.max(-GROUND_HALF[0], Math.min(GROUND_HALF[0], t.x));
+    t.z = Math.max(-GROUND_HALF[1], Math.min(GROUND_HALF[1], t.z));
+  }
+
   public zoomBy(factor: number): void {
     this.targetZoom = Math.max(8.0, Math.min(90.0, this.targetZoom * factor));
   }
@@ -1406,6 +1440,7 @@ totalEmissiveRadiance += vec3(${g.r.toFixed(3)}, ${g.g.toFixed(3)}, ${g.b.toFixe
   public snapTo(x: number, z: number, zoomLevel?: number, quadrant?: number): void {
     this.jumpTo(x, z, zoomLevel);
     if (quadrant !== undefined) this.setRotationQuadrant(quadrant);
+    this.clampTarget();
     this.currentPos.copy(this.targetPos);
     this.zoom = this.targetZoom;
     this.currentRotationAngle = this.targetRotationAngle;

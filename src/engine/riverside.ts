@@ -158,7 +158,9 @@ export class MillWheels {
   ripple: ((x: number, z: number, strength: number) => void) | null = null;
 
   /** `mills`: each mill's placed matrix (as the parcel was put) and its plan entry. */
-  constructor(scene: THREE.Scene, template: THREE.Object3D | undefined, mills: { matrix: THREE.Matrix4; mill: RiverMill }[]) {
+  /** `raceWater`: the river's own water for a race (RiverWater.raceWater); else a plain ribbon. */
+  constructor(scene: THREE.Scene, template: THREE.Object3D | undefined, mills: { matrix: THREE.Matrix4; mill: RiverMill }[],
+    raceWater?: (race: RiverMill['race']) => THREE.Mesh | null) {
     const foamGeo = new THREE.CircleGeometry(1, 10).rotateX(-Math.PI / 2);
     this.foam = new THREE.InstancedMesh(foamGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false }), FOAM);
     this.drops = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshBasicMaterial({ color: 0xeef4f2 }), DROPS);
@@ -171,7 +173,7 @@ export class MillWheels {
     this.foam.setColorAt(0, this.white); // allocates instanceColor
     this.foam.renderOrder = 2;
     for (const { matrix, mill } of mills) {
-      if (mill.race.length > 1) scene.add(this.raceMesh(mill));
+      if (mill.race.length > 1) scene.add(raceWater?.(mill.race) ?? this.raceMesh(mill));
       if (!template) continue;
       const obj = template.clone(true);
       obj.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = true; o.receiveShadow = true; } });
