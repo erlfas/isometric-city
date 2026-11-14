@@ -22,6 +22,7 @@ import { roomCentre } from './engine/interiors';
  *                                    picks someone indoors (the cutaway opens their building)
  *   &showcase=tree_oak,tree_pine,...   clones of loaded models side by side across the screen at
  *                                    the cam point (with cam=x,z,zoom[,q]); placed or not
+ *   &fish=N                         N times as many fish jumps / rises on the river in view
  *   &cutaway=<parcelId | model[,n[,zoom[,quadrant[,storey]]]]>   look into a building (roof
  *                                    faded, furniture and people inside shown; storey 1 = the
  *                                    upper floor), camera on it unless cam/model given
@@ -59,6 +60,8 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
     },
     /** Navigation only: grid build, routes (computed / cached / straight / failed), phases. */
     nav: () => sim.navStats(),
+    /** River water (river.ts): ripples, fish, flotsam; the object itself is renderer.river (jumpFish, addRipple, flowAt). */
+    river: () => renderer.river?.stats() ?? null,
     /** One citizen's runtime state (index or id). */
     citizen: (k: number | string) => {
       const c = typeof k === 'number' ? sim.citizens[k] : sim.citizens.find((x) => x.id === k);
@@ -99,6 +102,8 @@ export function installDebugHooks(renderer: ThreeIsometricRenderer, sim: Simulat
     if (params.has('pause') && !sim.isPaused) sim.togglePause();
     const hour = num(params.get('hour') ?? undefined);
     if (hour !== undefined) sim.setTime(hour);
+    // &fish=N: N times as many fish jumps and rises on the river (screenshots of them).
+    if (renderer.river) renderer.river.fishRate = num(params.get('fish') ?? undefined) ?? 1;
     const door = params.get('door');
     if (door) {
       // n-th building of a model, k-th door: camera on the side the door faces, held open.

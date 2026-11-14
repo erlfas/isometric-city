@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { CityPlan, Citizen, River } from '../types';
 import { riverBand, riverFrames, type RiverFrame, type XZ } from './river-course';
+import { RiverWater } from './river';
 import { TextureLibrary } from './texture-library';
 import { CitizenCrowd } from './citizen-crowd';
 import { DoorLeaves, nightFactor } from './door-leaves';
@@ -134,6 +135,9 @@ export class ThreeIsometricRenderer {
   private crowd: CitizenCrowd;
   private doorLeaves: DoorLeaves;
   private smoke: ChimneySmoke;
+  /** The Bystrzyca's flowing water, flotsam, fish and ripples (river.ts); null without a river. */
+  public river: RiverWater | null = null;
+  private riverView = [0, 0, 0, 0];
   /** Buildings, walls, stalls, trees: instanced per chunk (static-batches.ts). */
   private statics = new StaticBatches();
   private cutaway: Cutaway;
@@ -399,7 +403,13 @@ export class ThreeIsometricRenderer {
     ctx.restore();
 
     // 3b. The Bystrzyca's banks
-    if (plan.river && plan.river.points.length > 1) this.paintRiverBanks(ctx, plan.river);
+    if (plan.river && plan.river.points.length > 1) {
+      this.paintRiverBanks(ctx, plan.river);
+      if (!this.river) {
+        this.river = new RiverWater(this.scene, plan.river);
+        if (this.activePreset) this.river.setLight(this.activePreset);
+      }
+    }
 
     // 4. Street network: dirt verges with a cobbled carriageway
     if (plan.streetNetwork && plan.streetNetwork.nodes && plan.streetNetwork.edges) {
@@ -1424,6 +1434,7 @@ totalEmissiveRadiance += vec3(${g.r.toFixed(3)}, ${g.g.toFixed(3)}, ${g.b.toFixe
     this.ambientLight.color.setHex(p.amb);
     this.ambientLight.intensity = p.ambI;
     this.scene.background = new THREE.Color(p.bg);
+    this.river?.setLight(p);
   }
 
   public triggerSpeechBubble(citizenId: string, text: string, x: number, z: number): void {
@@ -1481,6 +1492,7 @@ totalEmissiveRadiance += vec3(${g.r.toFixed(3)}, ${g.g.toFixed(3)}, ${g.b.toFixe
     this.shadowMoving = moving;
     this.shadowDirty = false;
     this.statics.updateCasters();
+    this.river?.update(this.camera, this.groundView(this.riverView), this.dirLight);
     this.renderer.render(this.scene, this.camera);
   }
 
