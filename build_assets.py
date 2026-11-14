@@ -2379,30 +2379,38 @@ def build_tree_willow_weeping(mats):
     v.tube(pts, [0.62, 0.5, 0.42, 0.36, 0.26], 7, _Veg.BARK, _bark_tone(WILLOW_BARK))
     cc, R = Vector((lx + 0.3, ly, 7.4)), 4.4
     clumps = []
-    for i in range(4):                                   # domed top
+    for i in range(4):                                   # low domed top
         a = math.tau * i / 4 + v.r(-0.3, 0.3)
-        d = v.r(1.4, 2.4)
-        clumps.append(((cc.x + math.cos(a) * d, cc.y + math.sin(a) * d, cc.z + v.r(0.6, 1.8)), (2.2, 2.2, 1.5)))
-    clumps.append(((cc.x, cc.y, cc.z + 2.3), (2.0, 2.0, 1.3)))
-    curtain = []
-    for i in range(14):                                  # hanging strands, flared like a bell
-        a = math.tau * i / 14 + v.r(-0.1, 0.1)
-        d = R * (0.8 if i % 2 else 0.72) * v.r(0.95, 1.05)
-        zc = cc.z - v.r(1.5, 1.9) - (0.0 if i % 2 else 0.35)
-        tilt = Matrix.Rotation(-0.16, 3, Vector((-math.sin(a), math.cos(a), 0.0)))
-        curtain.append(((cc.x + math.cos(a) * d, cc.y + math.sin(a) * d, zc), (1.15, 0.95, v.r(2.3, 2.6)), tilt))
+        d = v.r(1.3, 2.2)
+        clumps.append(((cc.x + math.cos(a) * d, cc.y + math.sin(a) * d, cc.z + v.r(0.7, 1.5)), (2.3, 2.3, 1.2)))
+    clumps.append(((cc.x, cc.y, cc.z + 2.0), (2.0, 2.0, 1.1)))
     for c, r in clumps:
         p2 = Vector(c) * 0.8 + Vector((lx, ly, 5.4)) * 0.2
         v.tube([(lx, ly, 5.2), p2], [0.2, 0.0], 4, _Veg.BARK, _bark_tone(WILLOW_BARK, 1.0))
-    allc = clumps + [(c, r) for c, r, _ in curtain]
-    zlo, zhi = min(c[2] - r[2] for c, r in allc), max(c[2] + r[2] for c, r in allc)
+    zlo, zhi = 1.2, cc.z + 3.2
     leaf = _mul(WILLOW_LEAF, (1.0, 1.02, 1.04))
     for c, r in clumps:
-        v.blob(c, r, _Veg.LEAF, _crown_tone(leaf, zlo, zhi, cc, R, v.r(0.92, 1.08)),
+        v.blob(c, r, _Veg.LEAF, _crown_tone(leaf, zlo, zhi, cc, R, v.r(0.92, 1.08)), sub=0,
                crown=(tuple(cc), (R + 1.0, R + 1.0, 4.4), 0.45))
-    for k, (c, r, tilt) in enumerate(curtain):          # strands: alternate shades so each reads
-        v.blob(c, r, _Veg.LEAF, _crown_tone(leaf, zlo + 1.0, zhi, cc, R, 1.06 if k % 2 else 0.86), sub=0,
-               rough=0.1, crown=(tuple(cc), (R + 1.0, R + 1.0, 4.4), 0.25), rot=tilt)
+    # Weeping: many slim strands arching out of the dome and falling straight, almost to the
+    # ground, in two rings (inner ones shorter and darker), with gaps between them, so the
+    # crown reads as hanging curtains instead of one bell-shaped blob.
+    for ring, (n, rad0, rad1, drop, shade) in enumerate(((15, 0.62, 1.0, (0.8, 2.6), 1.0),
+                                                        (9, 0.42, 0.74, (2.2, 3.6), 0.8))):
+        for i in range(n):
+            a = math.tau * (i + 0.5 * ring) / n + v.r(-0.08, 0.08)
+            ca, sa = math.cos(a), math.sin(a)
+            r0, r1 = R * rad0 * v.r(0.92, 1.05), R * rad1 * v.r(0.94, 1.06)
+            z0 = cc.z + v.r(1.0, 1.6) - ring * 0.4
+            zb = v.r(*drop)                                  # strand tip height above ground
+            pts = [(cc.x + ca * r0, cc.y + sa * r0, z0),
+                   (cc.x + ca * (r0 + r1) * 0.52, cc.y + sa * (r0 + r1) * 0.52, z0 + 0.15),
+                   (cc.x + ca * r1, cc.y + sa * r1, cc.z - 0.6),
+                   (cc.x + ca * r1 * 1.03, cc.y + sa * r1 * 1.03, zb + 1.0),
+                   (cc.x + ca * r1 * 1.04, cc.y + sa * r1 * 1.04, zb)]   # tapering to a ragged hem
+            k = shade * v.r(0.9, 1.08) * (1.06 if i % 2 else 0.9)
+            tone = _crown_tone(leaf, zlo, zhi, cc, R, k)
+            v.tube(pts, [0.58, 0.68, 0.6, 0.42, 0.0], 5, _Veg.LEAF, lambda i, co, tone=tone: tone(co))
     v.export("tree_willow_weeping")
 
 
