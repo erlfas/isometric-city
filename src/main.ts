@@ -144,23 +144,9 @@ async function bootstrap() {
 
   function handleSelection(screenX: number, screenY: number) {
     audio.init();
-    const rect = webglCanvas.getBoundingClientRect();
-    const mouseX = screenX - rect.left;
-    const mouseY = screenY - rect.top;
 
     // 1. Check if tapped on a citizen (touch tolerance radius 36px)
-    let closestCit: any = null;
-    let closestDist = 36; // pixels
-
-    for (let i = 0; i < sim.citizens.length; i++) {
-      const c = sim.citizens[i];
-      const sp = threeRenderer.worldToScreen(c.currentX ?? 0, 1.2, c.currentZ ?? 0);
-      const dist = Math.hypot(sp.x - mouseX, sp.y - mouseY);
-      if (dist < closestDist) {
-        closestDist = dist;
-        closestCit = c;
-      }
-    }
+    const closestCit = threeRenderer.citizenAt(sim.citizens, screenX, screenY, 36);
 
     if (closestCit) {
       threeRenderer.hoveredCitizen = closestCit;
@@ -239,24 +225,9 @@ async function bootstrap() {
   window.addEventListener('pointermove', (e) => {
     if (e.pointerType !== 'mouse') return;
     mouse.x = e.clientX; mouse.y = e.clientY;
-    const rect = webglCanvas.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    let closestCit: any = null;
-    let closestDist = 28; // pixels
-
-    for (let i = 0; i < sim.citizens.length; i++) {
-      const c = sim.citizens[i];
-      const sp = threeRenderer.worldToScreen(c.currentX ?? 0, 1.2, c.currentZ ?? 0);
-      const dist = Math.hypot(sp.x - mouseX, sp.y - mouseY);
-      if (dist < closestDist) {
-        closestDist = dist;
-        closestCit = c;
-      }
-    }
-    threeRenderer.hoveredCitizen = closestCit;
+    hoverMoved = true; // picked once per frame in animate(), not once per pointer event
   });
+  let hoverMoved = false;
 
   // Wheel zoom for mouse
   window.addEventListener('wheel', (e) => {
@@ -338,7 +309,19 @@ async function bootstrap() {
   let windowsT = 0;
   const view = [0, 0, 0, 0];
 
+  // A frame that throws must not end the loop silently (a black screen with the HUD
+  // placeholders): report the first error in the chronicle bar and keep going.
+  let frameFailed = false;
   function animate(now: number) {
+    try {
+      frame(now);
+    } catch (e) {
+      if (!frameFailed) { frameFailed = true; showFatal(e); }
+    }
+    requestAnimationFrame(animate);
+  }
+
+  function frame(now: number) {
     const dt = Math.min((now - lastTime) / 1000.0, 0.1);
     lastTime = now;
 
@@ -347,6 +330,10 @@ async function bootstrap() {
 
     // 2. Update Three.js camera & lighting
     threeRenderer.updateCamera(dt);
+    if (hoverMoved) {
+      hoverMoved = false;
+      threeRenderer.hoveredCitizen = threeRenderer.citizenAt(sim.citizens, mouse.x, mouse.y, 28);
+    }
     // Full steering only in view (plus a margin); everyone else glides (M8). Used next frame.
     threeRenderer.groundView(view);
     sim.setView(view[0], view[1], view[2], view[3]);
@@ -390,11 +377,15 @@ async function bootstrap() {
 
     // 5. Update HUD
     ui.updateHUD();
-
-    requestAnimationFrame(animate);
   }
 
+  let overlayDrawn = false;
   function renderOverlayUI(ctx: CanvasRenderingContext2D, renderer: ThreeIsometricRenderer) {
+    // Nothing to show and nothing to wipe: leave the canvas alone, so the browser does not
+    // re-composite a full-screen layer on every frame.
+    const busy = renderer.activeBubbles.length > 0 || !!renderer.hoveredCitizen;
+    if (!busy && !overlayDrawn) return;
+    overlayDrawn = busy;
     ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
     // Render Speech Bubbles (exact styling from images 3 & 4)
@@ -474,12 +465,24 @@ async function bootstrap() {
     }
   }
 
-  requestAnimationFrame(animate);
+  // Debug hooks first, so a hash view is in place before the first frame (the crowd's
+  // detail level has hysteresis: it must not depend on whether a frame ran at the start view).
   if (import.meta.env.DEV) {
     const { installDebugHooks } = await import('./debug-hooks');
     installDebugHooks(threeRenderer, sim, audio);
   }
+  requestAnimationFrame(animate);
   console.log('[Lublin 1392] High-fidelity simulation running with Blender 3D assets & soft shadows!');
 }
 
-window.addEventListener('DOMContentLoaded', bootstrap);
+/** Show an error where the player can see it (and in the console with its stack). */
+function showFatal(e: unknown): void {
+  console.error('[Lublin 1392]', e);
+  const el = document.getElementById('event-ticker-text');
+  if (!el) return;
+  const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+  el.textContent = `Error: ${msg} (details in the browser console, F12)`;
+  el.style.color = '#ff8a7a';
+}
+
+window.addEventListener('DOMContentLoaded', () => { bootstrap().catch(showFatal); });

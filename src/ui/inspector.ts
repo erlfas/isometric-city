@@ -176,6 +176,9 @@ export class UIController {
     }
   }
 
+  private shownClock = '';
+  private shownBell = '';
+
   public updateHUD(): void {
     // Format hour and minute
     const hours = Math.floor(this.sim.simTimeHours);
@@ -183,8 +186,10 @@ export class UIController {
     const hh = String(hours).padStart(2, '0');
     const mm = String(mins).padStart(2, '0');
 
-    this.clockEl.textContent = `${hh}:${mm}`;
-    this.bellNameEl.textContent = this.sim.currentBellInfo.name;
+    // Write only on change: assigning textContent replaces the text node and dirties layout.
+    const clock = `${hh}:${mm}`, bell = this.sim.currentBellInfo.name;
+    if (clock !== this.shownClock) this.clockEl.textContent = this.shownClock = clock;
+    if (bell !== this.shownBell) this.bellNameEl.textContent = this.shownBell = bell;
 
     // Follow camera if an entity is tracked
     if (this.camera.followingEntityId && this.sim.selectedCitizen) {

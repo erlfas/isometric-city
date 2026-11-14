@@ -13,11 +13,14 @@ import { WORK_ANIMS, type WorkAnim, type WorkPose } from './work-anims';
  * mesh of a (part, variant), all materials merged, is baked with per-vertex base colour,
  * roughness, metalness and slot column; slot colours come from `slotTex` (row = citizen).
  *
- * Near (LOD0, figure >= LOD_OUT_PX tall): one BatchedMesh per kit. A citizen owns one
- * instance per piece it WEARS (its part's base piece plus the variants it chose), so unworn
- * clothing never reaches the GPU; instances of a part share that part's posed matrix and
- * the instance colour carries the citizen's slotTex row. Few citizens fit in a near view,
+ * Near (LOD0, figure >= LOD_OUT_PX tall): one BatchedMesh per kit. A citizen in view holds
+ * one instance per piece it WEARS (its part's base piece plus the variants it chose), so
+ * unworn clothing never reaches the GPU; instances of a part share that part's posed matrix
+ * and the instance colour carries the citizen's slotTex row. Few citizens fit in a near view,
  * which matters: in WebGL a multi-draw is one GPU draw per instance (ANGLE loops it).
+ * Instances come from a small pool per kit and go back when the citizen leaves the view:
+ * three uploads a batch's whole matrix texture whenever one matrix changes, and a batch with
+ * an instance for every citizen in town (18,000 pieces) made that a third of the frame.
  *
  * Far (LOD1, figure < LOD_IN_PX tall): one InstancedMesh per (kit, part) holding every LOD1
  * variant of the part; the vertex shader collapses variants a citizen does not wear
@@ -81,12 +84,21 @@ interface Motion {
   run: number;
   px: number;
   pz: number;
+  /** Was out of view last frame. */
+  away: boolean;
 }
 
 interface KitBatch {
   mesh: THREE.BatchedMesh;
   tris: number[]; // per piece index
+  /** Instances no citizen in view is using (hidden; any piece can be bound to them). */
+  free: number[];
+  /** Pieces worn by all the kit's citizens together: the most the pool can ever need. */
+  cap: number;
 }
+
+/** Near path: instances a kit's pool starts with (it doubles when a crowd needs more). */
+const POOL_START = 256;
 
 interface FarBatch {
   mesh: THREE.InstancedMesh;
@@ -163,6 +175,7 @@ const _sphere = new THREE.Sphere(new THREE.Vector3(), CULL_RADIUS);
 const _pose: WorkPose = { armL: 0, armR: 0, headPitch: 0, headYaw: 0, lean: 0 };
 const _row = new THREE.Color();
 const _blob = new THREE.Matrix4();
+const _pitch = new Float64Array(PARTS.length);
 
 /** out = T(0,py,pz) * R(pitch about X, yaw about Y) * T(0,-py,-pz) */
 function pivotRotation(out: THREE.Matrix4, py: number, pz: number, pitch: number, yaw: number): void {
@@ -281,6 +294,11 @@ export class CitizenCrowd {
    *  collapsed ones of variants a citizen does not wear. */
   drawnTriangles(): number {
     return this.lastTris;
+  }
+
+  /** Citizens were drawn on the near path last frame: the only ones in the shadow map. */
+  get castsShadows(): boolean {
+    return this.lod === 0 && this.lastShown > 0;
   }
 
   /** Debug: detail level, citizens drawn last frame, triangles per pass. */
@@ -433,7 +451,7 @@ export class CitizenCrowd {
         verts += pc.geometry.attributes.position.count;
         idx += pc.geometry.index!.count;
       }
-      const mesh = new THREE.BatchedMesh(instances, verts, idx, this.nearMaterial);
+      const mesh = new THREE.BatchedMesh(Math.min(instances, POOL_START), verts, idx, this.nearMaterial);
       mesh.perObjectFrustumCulled = false; // culled per citizen in update()
       mesh.sortObjects = false;
       mesh.castShadow = true;
@@ -442,7 +460,12 @@ export class CitizenCrowd {
       mesh.name = arch.name;
       for (const pc of arch.pieces) mesh.addGeometry(pc.geometry);
       this.scene.add(mesh);
-      this.kits.set(arch, { mesh, tris: arch.pieces.map((pc) => pc.geometry.index!.count / 3) });
+      // One pooled instance from the start: three creates a batch's colour texture on the
+      // first setColorAt, and the near shader (row from the instance colour) needs it to compile.
+      const first = mesh.addInstance(0);
+      mesh.setColorAt(first, _row.setRGB(0, 0, 0));
+      mesh.setVisibleAt(first, false);
+      this.kits.set(arch, { mesh, tris: arch.pieces.map((pc) => pc.geometry.index!.count / 3), free: [first], cap: instances });
     }
 
     // Far: one InstancedMesh per (kit, part), sized for every citizen of the kit.
@@ -485,12 +508,8 @@ export class CitizenCrowd {
       const ks = worn[i];
       const w: Wear = { kit, inst: new Int32Array(ks.length), part: new Uint8Array(ks.length), piece: new Int32Array(ks.length),
         shown: false, far, mask };
-      _row.setRGB(i, 0, 0);
       ks.forEach((k, j) => {
-        const id = kit.mesh.addInstance(k);
-        kit.mesh.setColorAt(id, _row);
-        kit.mesh.setVisibleAt(id, false);
-        w.inst[j] = id;
+        w.inst[j] = -1; // taken from the kit's pool while in view (showNear)
         w.part[j] = arch.pieces[k].part;
         w.piece[j] = k;
       });
@@ -536,9 +555,37 @@ export class CitizenCrowd {
       run: 0,
       px: c.currentX ?? 0,
       pz: c.currentZ ?? 0,
+      away: true,
     });
     this.lod = 0;
     this.builtFor = citizens;
+  }
+
+  /** Near path: give citizen i an instance per worn piece from its kit's pool, or return them. */
+  private showNear(i: number, w: Wear, kit: KitBatch, show: boolean): void {
+    const mesh = kit.mesh;
+    w.shown = show;
+    if (!show) {
+      for (let j = 0; j < w.inst.length; j++) {
+        mesh.setVisibleAt(w.inst[j], false);
+        kit.free.push(w.inst[j]);
+        w.inst[j] = -1;
+      }
+      return;
+    }
+    _row.setRGB(i, 0, 0);
+    for (let j = 0; j < w.inst.length; j++) {
+      let id = kit.free.pop();
+      if (id === undefined) {
+        if (mesh.instanceCount >= mesh.maxInstanceCount) mesh.setInstanceCount(Math.min(kit.cap, mesh.maxInstanceCount * 2));
+        id = mesh.addInstance(w.piece[j]);
+      } else {
+        mesh.setGeometryIdAt(id, w.piece[j]);
+        mesh.setVisibleAt(id, true);
+      }
+      mesh.setColorAt(id, _row);
+      w.inst[j] = id;
+    }
   }
 
   private setLod(lod: number): void {
@@ -556,7 +603,7 @@ export class CitizenCrowd {
     if (!this.archetypes.size) return;
     if (this.builtFor !== citizens) this.build(citizens, archetypeOf);
     const looks = this.looks;
-    const k = Math.min(1, dt * 12);
+    const ease = Math.min(1, dt * 12);
     _frustum.setFromProjectionMatrix(_viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
 
     const figurePx = FIGURE_M * viewportPx * camera.zoom / Math.max(1e-6, camera.top - camera.bottom);
@@ -577,12 +624,24 @@ export class CitizenCrowd {
       const x = c.currentX ?? 0;
       const z = c.currentZ ?? 0;
       const y = c.y ?? 0;
-      const moved = Math.hypot(x - m.px, z - m.pz);
+      // Out of view (two thirds of the town is indoors or off screen at any time): nothing to
+      // pose. On coming back the heading and gait snap to the current ones instead of easing.
+      _sphere.center.set(x, y + 0.9, z);
+      const visible = !c.hidden && _frustum.intersectsSphere(_sphere);
+      if (!visible) {
+        if (w.shown && w.kit) this.showNear(i, w, w.kit, false);
+        m.px = x;
+        m.pz = z;
+        m.away = true;
+        continue;
+      }
+      const k = m.away ? 1 : ease;
+      const moved = m.away ? 0 : Math.hypot(x - m.px, z - m.pz);
       m.px = x;
       m.pz = z;
 
       // Face the way the citizen actually moves (velocity), else toward its target.
-      let moving = !!c.isMoving && !c.hidden;
+      let moving = !!c.isMoving;
       if (moving) {
         let dx = c.vx ?? 0, dz = c.vz ?? 0;
         if (Math.abs(dx) + Math.abs(dz) < 1e-3) {
@@ -609,16 +668,10 @@ export class CitizenCrowd {
         moving = this.posed.walk;
         if (moving) m.phase += dt * 1.3 / STRIDE * Math.PI * 2; // 1.3 m/s in place
       }
-      m.amp += ((moving ? 1 : 0) - m.amp) * Math.min(1, dt * 6);
+      m.amp += ((moving ? 1 : 0) - m.amp) * (m.away ? 1 : Math.min(1, dt * 6));
+      m.away = false;
 
-      _sphere.center.set(x, y + 0.9, z);
-      const visible = !c.hidden && _frustum.intersectsSphere(_sphere);
-      const nearShown = visible && !far;
-      if (nearShown !== w.shown && w.kit) {
-        w.shown = nearShown;
-        for (let j = 0; j < w.inst.length; j++) w.kit.mesh.setVisibleAt(w.inst[j], nearShown);
-      }
-      if (!visible) continue;
+      if (!far !== w.shown && w.kit) this.showNear(i, w, w.kit, !far);
       shown++;
 
       // Pose: angles in radians, negative pitch = swing forward.
@@ -681,11 +734,9 @@ export class CitizenCrowd {
       const pv = arch.pivots;
       pivotRotation(_local, pv[0][0], pv[0][1], lean, 0);
       _parts[0].multiplyMatrices(_root, _local);
-      const angles: [number, number][] = [
-        [0, 0], [headPitch, headYaw], [armL, 0], [armR, 0], [legL, 0], [legR, 0],
-      ];
+      _pitch[1] = headPitch; _pitch[2] = armL; _pitch[3] = armR; _pitch[4] = legL; _pitch[5] = legR;
       for (let p = 1; p < PARTS.length; p++) {
-        pivotRotation(_local, pv[p][0], pv[p][1], angles[p][0], angles[p][1]);
+        pivotRotation(_local, pv[p][0], pv[p][1], _pitch[p], p === 1 ? headYaw : 0);
         _parts[p].multiplyMatrices(p >= 4 ? _root : _parts[0], _local);
       }
 

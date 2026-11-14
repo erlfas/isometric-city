@@ -150,6 +150,11 @@ export class Cutaway {
     return renderer.compileAsync(tmp, camera, this.scene).then(() => undefined);
   }
 
+  /** How many placements are cut away now (including ones fading back). */
+  get count(): number {
+    return this.views.size;
+  }
+
   /** Placements cut away now (including ones fading back). */
   get active(): number[] {
     return [...this.views.keys()];

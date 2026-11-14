@@ -9,10 +9,25 @@ import type { Building, Door } from './building-anchors';
 import { Cutaway, type CutTarget } from './cutaway';
 import { InteriorProps, roomAt, roomCentre } from './interiors';
 import { parcelHash, parcelKind } from './parcel-kind';
-import { StaticBatches, type PlacedModel, type Placement, type Tint } from './static-batches';
+import { SHADOW_LAYER, StaticBatches, type PlacedModel, type Placement, type Tint } from './static-batches';
 
 const _gvDir = new THREE.Vector3();
 const _gvP = new THREE.Vector3();
+const _sx = new THREE.Vector3();
+const _sy = new THREE.Vector3();
+const _sz = new THREE.Vector3();
+const _basis = new THREE.Matrix4();
+const _viewProj = new THREE.Matrix4();
+const _viewFrustum = new THREE.Frustum();
+const SCREEN_CORNERS = [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const;
+/** Shadow fit: the lowest ground a shadow falls on (m), and the acne bias in metres. */
+const SHADOW_LOW = -1;
+/** ...and the least height the box reaches up to: people, smoke, door leaves on open ground. */
+const SHADOW_MIN_TOP = 4;
+const SHADOW_BIAS_M = 0.117;
+/** Round a shadow-box side up to the next of four steps per doubling, so the texel size
+ *  changes in steps while zooming instead of every frame. */
+const quantSize = (m: number) => 2 ** (Math.ceil(Math.log2(Math.max(m, 1)) * 4) / 4);
 
 const UP = new THREE.Vector3(0, 1, 0);
 const hsl = { h: 0, s: 0, l: 0 };
@@ -197,6 +212,7 @@ export class ThreeIsometricRenderer {
     });
     this.canvas.addEventListener('webglcontextrestored', () => {
       console.info('[WebGL] Context restored.');
+      this.shadowDirty = true;
       this.render();
     });
 
@@ -208,20 +224,15 @@ export class ThreeIsometricRenderer {
     this.scene.add(this.ambientLight);
 
     // Directional sunlight casting crisp isometric diagonal shadows
-    const shadowRes = isMobile ? 1024 : 4096;
+    this.shadowResMax = isMobile ? 1024 : 4096;
     this.dirLight = new THREE.DirectionalLight();
     this.dirLight.position.set(-80, 130, -70);
     this.dirLight.castShadow = true;
-    this.dirLight.shadow.mapSize.width = shadowRes;
-    this.dirLight.shadow.mapSize.height = shadowRes;
-    this.dirLight.shadow.camera.near = 10;
-    this.dirLight.shadow.camera.far = 400;
-    const d = 140;
-    this.dirLight.shadow.camera.left = -d;
-    this.dirLight.shadow.camera.right = d;
-    this.dirLight.shadow.camera.top = d;
-    this.dirLight.shadow.camera.bottom = -d;
-    this.dirLight.shadow.bias = -0.0003;
+    this.dirLight.shadow.mapSize.set(this.shadowResMax, this.shadowResMax);
+    // The shadow camera's box is fitted to the view every frame (fitShadow), and the map is
+    // redrawn only when that box or a shadow caster changed (render).
+    this.renderer.shadowMap.autoUpdate = false;
+    this.dirLight.shadow.camera.layers.enable(SHADOW_LAYER); // the scenery's shadow casters
     this.scene.add(this.dirLight);
     this.scene.add(this.dirLight.target);
     this.applyLightPreset(LIGHT_PRESETS.noon);
@@ -490,23 +501,47 @@ export class ThreeIsometricRenderer {
 
     console.log('[ThreeRenderer] Loading 45 Blender-authored GLB assets (buildings and characters)...');
 
-    for (const name of modelNames) {
-      try {
-        const gltf = await loader.loadAsync(`/models/${name}.glb`);
-        gltf.scene.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh) {
-            child.castShadow = true;
-            child.receiveShadow = true;
-          }
-        });
-        if (name.startsWith('char_')) this.crowd.addArchetype(name, gltf.scene);
-        else this.textures.applyToTemplate(gltf.scene);
-        gltf.scene.name = name; // clones keep it: findInstances() looks placed models up by name
-        this.models.set(name, gltf.scene);
-      } catch (err) {
-        console.warn(`[ThreeRenderer] Failed loading /models/${name}.glb:`, err);
+    // Fetch and parse all of them at once (one after another took the sum of their round
+    // trips); they are then set up in list order, so nothing depends on arrival order.
+    const loaded = await Promise.allSettled(modelNames.map((name) => loader.loadAsync(`/models/${name}.glb`)));
+    // Flat (untextured) materials: every GLB brings its own copy of GlassDark, IronWrought...
+    // and the static batches are per material, so identical ones are shared across models.
+    const shared = new Map<string, THREE.Material>();
+    const share = (m: THREE.Material): THREE.Material => {
+      const s = m as THREE.MeshStandardMaterial;
+      if (!s.isMeshStandardMaterial || s.map || s.normalMap || s.emissiveMap || s.roughnessMap || s.metalnessMap
+        || s.alphaMap || s.aoMap) return m;
+      const key = [s.name, s.color.getHex(), s.emissive.getHex(), s.emissiveIntensity, s.roughness, s.metalness,
+        s.side, s.transparent, s.opacity, s.alphaTest, s.vertexColors, s.flatShading].join('|');
+      const got = shared.get(key);
+      if (got) return got;
+      shared.set(key, m);
+      return m;
+    };
+    modelNames.forEach((name, k) => {
+      const res = loaded[k];
+      if (res.status === 'rejected') {
+        console.warn(`[ThreeRenderer] Failed loading /models/${name}.glb:`, res.reason);
+        return;
       }
-    }
+      const gltf = res.value;
+      gltf.scene.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+      if (name.startsWith('char_')) this.crowd.addArchetype(name, gltf.scene);
+      else {
+        this.textures.applyToTemplate(gltf.scene);
+        gltf.scene.traverse((child) => {
+          const mesh = child as THREE.Mesh;
+          if (mesh.isMesh && !Array.isArray(mesh.material)) mesh.material = share(mesh.material);
+        });
+      }
+      gltf.scene.name = name; // clones keep it: findInstances() looks placed models up by name
+      this.models.set(name, gltf.scene);
+    });
 
     this.isLoaded = true;
     console.log(`[ThreeRenderer] Successfully loaded ${this.models.size} 3D assets!`);
@@ -766,6 +801,8 @@ export class ThreeIsometricRenderer {
     }
 
     const batches = this.statics.build(this.scene);
+    this.sceneTop = this.statics.bounds.reduce((top, b) => Math.max(top, b.max.y), 0) + 1;
+    this.shadowDirty = true;
     this.interiorProps = new InteriorProps(this.models.get('interior_props'));
     this.cutaway.furniture = (i) => {
       const b = this.byIndex.get(i);
@@ -847,6 +884,35 @@ export class ThreeIsometricRenderer {
   /** Leaves and openings of the doors the simulation has open (sim.activeDoors). */
   public updateDoors(doors: readonly Door[], hour: number): void {
     this.doorLeaves.update(doors, hour);
+    // Doors open all over town all day; only a leaf inside the shadow box changes the map.
+    const b = this.shadowBox;
+    let n = 0;
+    for (const d of doors) {
+      if (d.open <= 0) continue;
+      const x = d.x * b.ax.x + d.y * b.ax.y + d.z * b.ax.z, y = d.x * b.ay.x + d.y * b.ay.y + d.z * b.ay.z;
+      if (x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1) n++;
+    }
+    this.doorsCasting = n;
+  }
+
+  /** The citizen whose chest is nearest a screen point, within `radius` px; null if none.
+   *  (One matrix for all of them: this runs for every citizen on every pointer move.) */
+  public citizenAt(citizens: readonly Citizen[], clientX: number, clientY: number, radius: number): Citizen | null {
+    const rect = this.canvas.getBoundingClientRect();
+    const mx = clientX - rect.left, my = clientY - rect.top;
+    const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
+    const e = _viewProj.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse).elements;
+    let best: Citizen | null = null, bestD = radius;
+    for (let i = 0; i < citizens.length; i++) {
+      const c = citizens[i];
+      const x = c.currentX ?? 0, y = 1.2, z = c.currentZ ?? 0;
+      const cw = e[3] * x + e[7] * y + e[11] * z + e[15];
+      const sx = ((e[0] * x + e[4] * y + e[8] * z + e[12]) / cw * 0.5 + 0.5) * w;
+      const sy = (0.5 - (e[1] * x + e[5] * y + e[9] * z + e[13]) / cw * 0.5) * h;
+      const dist = Math.hypot(sx - mx, sy - my);
+      if (dist < bestD) { bestD = dist; best = c; }
+    }
+    return best;
   }
 
   /**
@@ -1055,6 +1121,133 @@ totalEmissiveRadiance += vec3(${g.r.toFixed(3)}, ${g.g.toFixed(3)}, ${g.b.toFixe
       this.currentPos.z + hz * horiz
     );
     this.dirLight.target.position.copy(this.currentPos);
+    this.fitShadow();
+  }
+
+  /** Top of the tallest placed model (m); the shadow box reaches up to it. */
+  private sceneTop = 45;
+  /** The shadow map is stale: redraw it in the next render(). */
+  private shadowDirty = true;
+  private shadowMoving = false;
+  private shadowKey = [NaN, NaN, NaN, NaN, NaN];
+  /** Largest shadow map side (px): 4096 on desktop, 1024 on phones. */
+  private shadowResMax = 4096;
+  /** The shadow box across the light: its two axes and its extent along them (world-anchored). */
+  private shadowBox = { ax: new THREE.Vector3(), ay: new THREE.Vector3(), x0: 0, x1: 0, y0: 0, y1: 0 };
+  /** Open door leaves inside the shadow box (they cast while they swing). */
+  private doorsCasting = 0;
+  /** What the scenery's shadow casters are culled against: the shadow box, grown to a coarse grid. */
+  private cullCam = new THREE.OrthographicCamera();
+  private cullKey = [NaN, NaN, NaN, NaN, NaN, NaN, NaN];
+  /** What the static batches are culled against: the view, grown to a coarse grid. */
+  private viewCull = new THREE.OrthographicCamera();
+  private viewKey = [NaN, NaN, NaN, NaN, NaN];
+
+  /**
+   * Fit the sun's shadow box to what the camera sees: the slab of the view between the
+   * ground and the tallest roof in it, in the light's frame. A fixed 280 m box drew most of the
+   * city into the shadow map at every zoom (~750k triangles a frame) and spent its texels
+   * on ground outside the view. The box is snapped to its own texel grid in world space, so
+   * shadow edges do not crawl while panning, and its size moves in steps (quantSize).
+   *
+   * The same box, grown to a coarse grid, selects the scenery's shadow casters
+   * (StaticBatches.updateCasters): everything that can cast a shadow into the view.
+   */
+  private fitShadow(): void {
+    const cam = this.camera, light = this.dirLight, sc = light.shadow.camera;
+    cam.updateMatrixWorld();
+    const dir = cam.getWorldDirection(_gvDir);
+    // The shadow camera's axes (three: at the light, looking at its target, +Y up).
+    _sz.subVectors(light.position, light.target.position).normalize();
+    _sx.crossVectors(UP, _sz).normalize();
+    _sy.crossVectors(_sz, _sx);
+    // Along the light (z toward the sun), the plane at a height (the light's x axis is level).
+    const zAt = (y: number, height: number) => (height - y * _sy.y) / _sz.y;
+    // The box holds every surface in view: the view's slab from the ground up to the tallest
+    // roof IN VIEW (the town's tallest, a 52 m spire, would more than double it everywhere).
+    _viewFrustum.setFromProjectionMatrix(_viewProj.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+    const top = Math.max(SHADOW_MIN_TOP, this.statics.topIn(_viewFrustum) + 1);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const [sx, sy] of SCREEN_CORNERS) {
+      for (let k = 0; k < 2; k++) {
+        const p = _gvP.set(sx, sy, -1).unproject(cam);
+        p.addScaledVector(dir, ((k ? top : SHADOW_LOW) - p.y) / dir.y);
+        const x = p.dot(_sx), y = p.dot(_sy);
+        if (x < x0) x0 = x; if (x > x1) x1 = x;
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
+      }
+    }
+    const w = quantSize(x1 - x0), h = quantSize(y1 - y0);
+    // Map size: a box up to 128 m gets 6 cm texels or finer from 2048 px (the fixed 280 m
+    // box had 7 cm at 4096); drawing 4096 px every frame cost ~2 ms up close. w and h move
+    // in steps, so this does not flip back and forth while zooming.
+    const res = Math.min(this.shadowResMax, Math.max(w, h) <= 128 ? 2048 : 4096);
+    if (light.shadow.mapSize.x !== res) {
+      light.shadow.mapSize.set(res, res);
+      light.shadow.map?.dispose();
+      light.shadow.map = null; // three allocates the new size at the next shadow pass
+      this.shadowDirty = true;
+    }
+    // World-anchored light coordinates: centre on a texel, one texel of margin for the snap.
+    const tx = w / res, ty = h / res;
+    const cx = Math.round((x0 + x1) / 2 / tx) * tx, cy = Math.round((y0 + y1) / 2 / ty) * ty;
+    const hw = w / 2 + tx, hh = h / 2 + ty;
+    // Depth: whatever stands between the sun and the box casts into it, however tall, so
+    // the near plane clears the town's tallest roof; the far plane is the ground.
+    const zNear = Math.max(zAt(cy - hh, this.sceneTop), zAt(cy + hh, this.sceneTop)) + 1;
+    const zFar = Math.min(zAt(cy - hh, SHADOW_LOW), zAt(cy + hh, SHADOW_LOW)) - 1;
+
+    const box = this.shadowBox;
+    box.ax.copy(_sx); box.ay.copy(_sy);
+    box.x0 = cx - hw; box.x1 = cx + hw; box.y0 = cy - hh; box.y1 = cy + hh;
+    const px = light.position.dot(_sx), py = light.position.dot(_sy), pz = light.position.dot(_sz);
+    sc.left = cx - hw - px; sc.right = cx + hw - px;
+    sc.bottom = cy - hh - py; sc.top = cy + hh - py;
+    sc.near = pz - zNear; sc.far = pz - zFar;
+    sc.updateProjectionMatrix();
+    light.shadow.bias = -SHADOW_BIAS_M / (sc.far - sc.near);
+
+    const yaw = this.currentRotationAngle;
+    const key = this.shadowKey;
+    if (key[0] !== yaw || key[1] !== cx || key[2] !== cy || key[3] !== w || key[4] !== h) {
+      key[0] = yaw; key[1] = cx; key[2] = cy; key[3] = w; key[4] = h;
+      this.shadowDirty = true;
+    }
+
+    const g = Math.max(w, h) / 8;
+    const c = this.cullCam, ck = this.cullKey;
+    const l = Math.floor((cx - hw) / g) * g, r = Math.ceil((cx + hw) / g) * g;
+    const b = Math.floor((cy - hh) / g) * g, t = Math.ceil((cy + hh) / g) * g;
+    const n = -Math.ceil(zNear / g) * g, f = -Math.floor(zFar / g) * g;
+    if (ck[0] !== yaw || ck[1] !== l || ck[2] !== r || ck[3] !== b || ck[4] !== t || ck[5] !== n || ck[6] !== f) {
+      ck[0] = yaw; ck[1] = l; ck[2] = r; ck[3] = b; ck[4] = t; ck[5] = n; ck[6] = f;
+      c.left = l; c.right = r; c.bottom = b; c.top = t; c.near = n; c.far = f;
+      c.updateProjectionMatrix();
+      c.position.set(0, 0, 0);
+      c.quaternion.setFromRotationMatrix(_basis.makeBasis(_sx, _sy, _sz));
+      c.updateMatrixWorld(true);
+      this.statics.setCasterCamera(c);
+    }
+
+    // The batches (colour pass) are culled against the view itself, grown to a grid of an
+    // eighth of the zoom and anchored in the world, so the list is rebuilt when the camera
+    // crosses a grid line and not on every frame of a pan.
+    const e = cam.matrixWorld.elements;
+    const vx = cam.position.x * e[0] + cam.position.y * e[1] + cam.position.z * e[2];
+    const vy = cam.position.x * e[4] + cam.position.y * e[5] + cam.position.z * e[6];
+    const vg = Math.max(1, this.zoom / 8);
+    const vl = Math.floor((vx + cam.left) / vg) * vg, vr = Math.ceil((vx + cam.right) / vg) * vg;
+    const vb = Math.floor((vy + cam.bottom) / vg) * vg, vt = Math.ceil((vy + cam.top) / vg) * vg;
+    const v = this.viewCull, vk = this.viewKey;
+    if (vk[0] !== yaw || vk[1] !== vl || vk[2] !== vr || vk[3] !== vb || vk[4] !== vt) {
+      vk[0] = yaw; vk[1] = vl; vk[2] = vr; vk[3] = vb; vk[4] = vt;
+      v.left = vl; v.right = vr; v.bottom = vb; v.top = vt; v.near = -2000; v.far = 2000;
+      v.updateProjectionMatrix();
+      v.position.set(0, 0, 0);
+      v.quaternion.copy(cam.quaternion);
+      v.updateMatrixWorld(true);
+      this.statics.setCullCamera(v);
+    }
   }
 
   public setRotationQuadrant(q: number): void {
@@ -1214,6 +1407,15 @@ totalEmissiveRadiance += vec3(${g.r.toFixed(3)}, ${g.g.toFixed(3)}, ${g.b.toFixe
   }
 
   public render(): void {
+    // Shadows: the scenery is static and the sun turns with the camera, so the map only
+    // changes with the shadow box (fitShadow) or while something that casts is moving: near
+    // citizens, door leaves, a building fading in the cutaway. One more redraw after the
+    // last of those clears their shadows.
+    const moving = this.crowd.castsShadows || this.doorsCasting > 0 || this.cutaway.count > 0;
+    if (moving || this.shadowMoving || this.shadowDirty) this.renderer.shadowMap.needsUpdate = true;
+    this.shadowMoving = moving;
+    this.shadowDirty = false;
+    this.statics.updateCasters();
     this.renderer.render(this.scene, this.camera);
   }
 
