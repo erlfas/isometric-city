@@ -373,7 +373,9 @@ export class Wildlife {
         .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = vec3(normal);\nvec3 wP = position;\nwPose(wP, objectNormal);')
         .replace('#include <begin_vertex>', 'vec3 transformed = wP;');
     };
-    mat.customProgramCacheKey = () => `wildlife_${kind}`;
+    // Same shader for every kind (the rig is in the uniforms): one program, compiled once,
+    // not a stall per kind the first time deer or ducks come into view.
+    mat.customProgramCacheKey = () => 'wildlife-v1';
     const mesh = new THREE.InstancedMesh(geo, mat, cap);
     mesh.name = `wildlife_${kind}`;
     mesh.frustumCulled = false;
