@@ -45,7 +45,10 @@ export interface Door {
   pinned?: boolean;
 }
 
-export interface Spot { x: number; y: number; z: number; yaw: number; tag: string; taken: number }
+/** A place to stand outside. tag: work | stand | sell | guard; anchor_spot tags naming a work
+ *  loop (pick, tread, dig, ...) become tag 'work' with that loop in `anim`. */
+export interface Spot { x: number; y: number; z: number; yaw: number; tag: string; anim?: string; taken: number }
+const SPOT_TAGS = new Set(['work', 'stand', 'sell', 'guard']);
 
 /** One storey's floor. r and holes are model-space rectangles [minx, minz, maxx, maxz]. */
 export interface Room { y: number; r: number[]; holes: number[][] }
@@ -171,7 +174,9 @@ export class BuildingIndex {
       for (const s of raw.spots ?? []) {
         v.fromArray(s.p).applyMatrix4(pm.matrix);
         const [fx, fz] = dir(Math.sin(s.yaw), Math.cos(s.yaw));
-        b.spots.push({ x: v.x, y: v.y, z: v.z, yaw: Math.atan2(fx, fz), tag: s.tag, taken: 0 });
+        const loop = !SPOT_TAGS.has(s.tag);
+        b.spots.push({ x: v.x, y: v.y, z: v.z, yaw: Math.atan2(fx, fz), tag: loop ? 'work' : s.tag,
+          anim: loop ? s.tag : undefined, taken: 0 });
       }
       if (raw.rooms?.length) {
         const w = (p: number[]) => new THREE.Vector3().fromArray(p).applyMatrix4(pm.matrix);

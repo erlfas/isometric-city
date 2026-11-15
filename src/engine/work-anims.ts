@@ -12,6 +12,11 @@ export interface WorkPose {
   headPitch: number;
   headYaw: number;
   lean: number;
+  /** Legs (hip pitch, negative = forward) and a lift of the whole figure (m): 0 unless a
+   *  loop drives them (tread, bellows). */
+  legL: number;
+  legR: number;
+  bob: number;
 }
 
 /** t: seconds, already offset per citizen. pose arrives holding the idle values

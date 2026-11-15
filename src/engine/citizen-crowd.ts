@@ -36,6 +36,9 @@ interface KitMeta {
   groups: Record<string, Record<string, [number, number]>>;
   slots: Record<string, Palette>;
   anim: { work: string };
+  /** Trades drawn with this kit that look different (kit.trades in build_characters.py):
+   *  lower-case trade substring -> forced variant options, slot colour factor (soot). */
+  trades?: Record<string, { pick?: Record<string, string>; dim?: number }>;
 }
 
 const PARTS = ['body', 'head', 'arm_L', 'arm_R', 'leg_L', 'leg_R'] as const;
@@ -172,7 +175,7 @@ const _parts = PARTS.map(() => new THREE.Matrix4());
 const _frustum = new THREE.Frustum();
 const _viewProj = new THREE.Matrix4();
 const _sphere = new THREE.Sphere(new THREE.Vector3(), CULL_RADIUS);
-const _pose: WorkPose = { armL: 0, armR: 0, headPitch: 0, headYaw: 0, lean: 0 };
+const _pose: WorkPose = { armL: 0, armR: 0, headPitch: 0, headYaw: 0, lean: 0, legL: 0, legR: 0, bob: 0 };
 const _row = new THREE.Color();
 const _blob = new THREE.Matrix4();
 const _pitch = new Float64Array(PARTS.length);
@@ -398,6 +401,14 @@ export class CitizenCrowd {
         colors[slot] = new THREE.Color(hex).offsetHSL(0, (rnd() - 0.5) * 0.06, (rnd() - 0.5) * 0.05);
       }
       if (age > 0.8) colors.hair = colors.hair_old ?? colors.hair;
+      // After every random draw, so other citizens' looks do not change.
+      const trade = (c.trade || '').toLowerCase();
+      for (const [key, t] of Object.entries(meta.trades ?? {})) {
+        if (!trade.includes(key)) continue;
+        Object.assign(choices, t.pick);
+        if (t.dim) for (const [slot, col] of Object.entries(colors)) if (!/^(skin|hair)/.test(slot)) col.multiplyScalar(t.dim);
+        break;
+      }
     }
     const sexScale = female ? 0.94 : 1.0;
     const ageScale = age < 0.2 ? 0.96 : 1.0;
@@ -691,6 +702,7 @@ export class CitizenCrowd {
         const breathe = Math.sin(t * 2.2) * 0.03;
         const wp = _pose;
         wp.armL = breathe; wp.armR = -breathe; wp.headPitch = 0; wp.headYaw = Math.sin(t * 0.37) * 0.35; wp.lean = 0;
+        wp.legL = 0; wp.legR = 0; wp.bob = 0;
         const anim = c.activityAnim ?? (c.state === 'WORKING' || c.state === 'PATROLLING' ? 'work' : 'idle');
         if (anim === 'work') this.workAnim[i]?.(t, wp);
         else if (anim !== 'idle') WORK_ANIMS[anim]?.(t, wp); // gossip, pay, draw_water (M7)
@@ -699,9 +711,9 @@ export class CitizenCrowd {
         headPitch = wp.headPitch * still;
         headYaw = wp.headYaw * still;
         lean = lean * m.amp + wp.lean * still;
-        legL *= m.amp;
-        legR *= m.amp;
-        bob += Math.sin(t * 2.2) * 0.004 * still;
+        legL = legL * m.amp + wp.legL * still;
+        legR = legR * m.amp + wp.legR * still;
+        bob += (Math.sin(t * 2.2) * 0.004 + wp.bob) * still;
       }
 
       // Carrying home (M7): loaves held to the chest, or a heavy bucket that barely swings.

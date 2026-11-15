@@ -4543,7 +4543,7 @@ def _qf_crane(bm, level, a, TIMBER, PLANK):
     anchor_machine("crane", axle=tuple(P(wu, wt, wz)), axis=(tv.x, tv.y, 0.0), r=QF_WHEEL_R,
                    tip=tuple(tip), lo=round(quarry_height(below.x, below.y), 3), hi=round(h + 1.2, 3))
     # The walker treads inside the wheel (on its rim bottom), facing out of the pit.
-    anchor_spot(tuple(P(wu, wt, wz - QF_WHEEL_R)), (u.x, u.y))
+    anchor_spot(tuple(P(wu, wt, wz - QF_WHEEL_R)), (u.x, u.y), tag="tread")
 
 
 def build_quarry_face(mats):
@@ -4606,7 +4606,10 @@ def build_quarry_face(mats):
     for (r, a) in ((7.0, 3.0), (8.0, -28.0), (qf_radius(0, 25.0) + 3.6, 25.0), (qf_radius(1, 20.0) + 3.4, 20.0)):
         x, y = _qf_xy(r, a)
         t = QF_AXIS + math.radians(a)
-        anchor_spot((x, y, quarry_height(x, y)), (-math.cos(t), -math.sin(t)))
+        f = Vector((-math.cos(t), -math.sin(t), 0.0))
+        anchor_spot((x, y, quarry_height(x, y)), (f.x, f.y), tag="load")
+        bx, by = x - f.y * 1.1, y + f.x * 1.1                 # his barrow beside him, wheel out
+        _iw_barrow(bm, bx, by, (f.x, f.y), TIMBER, PLANK, TIMBER, load=ASHLAR, z=quarry_height(bx, by))
     # Talus at the cliff feet: low spalls (below the knee, they don't block the way), and a
     # few big half-split blocks where nobody works.
     for k in range(3):
@@ -4745,8 +4748,8 @@ def build_quarry_yard(mats):
     # Ox carts on the track (it comes in from the north = Blender +y side, see INDUSTRY_PATHS).
     _ox_cart(bm, 9.5, 11.0, (0.0, 1.0), 2, (TIMBER, PLANK, IRON, ASHLAR, HIDE, HORN))
     _ox_cart(bm, -11.0, -1.0, (0.0, -1.0), 0, (TIMBER, PLANK, IRON, ASHLAR, HIDE, HORN))
-    anchor_spot((11.3, 15.6), (-1.0, 0.0))                 # carter at his oxen
-    anchor_spot((-12.8, -5.6), (1.0, 0.0))
+    anchor_spot((11.3, 15.6), (-1.0, 0.0), tag="watch")    # carter at his oxen
+    anchor_spot((-12.8, -5.6), (1.0, 0.0), tag="watch")
     anchor_spot((-3.6, 4.5), (0.0, 1.0), tag="stand")       # by the stacks
     _ws_finish(bm, mat_list, "Mesh_QuarryYard", "QuarryYard", "quarry_yard")
 
@@ -4798,11 +4801,12 @@ def _iw_mats():
     }
 
 
-def _iw_barrow(bm, x, y, face, TIMBER, PLANK, IRON, load=None):
-    """Wooden wheelbarrow at (x, y), wheel toward `face`; load = material of a heap in its tray."""
+def _iw_barrow(bm, x, y, face, TIMBER, PLANK, IRON, load=None, z=0.0):
+    """Wooden wheelbarrow at (x, y) on ground height z, wheel toward `face`; load = material
+    of a heap in its tray."""
     f = Vector((face[0], face[1], 0.0)).normalized()
     s = Vector((-f.y, f.x, 0.0))
-    o = Vector((x, y, 0.0))
+    o = Vector((x, y, z))
     _ws_cyl(bm, o + f * 0.75 - s * 0.05 + Vector((0, 0, 0.25)), o + f * 0.75 + s * 0.05 + Vector((0, 0, 0.25)), 0.25, segs=10, mat=TIMBER)
     for sx in (-1.0, 1.0):
         add_timber_beam(bm, o + f * 0.8 + s * 0.12 * sx + Vector((0, 0, 0.25)), o - f * 0.95 + s * 0.3 * sx + Vector((0, 0, 0.55)),
@@ -4813,7 +4817,7 @@ def _iw_barrow(bm, x, y, face, TIMBER, PLANK, IRON, load=None):
         add_timber_beam(bm, o - f * 0.45 + s * 0.3 * sx + Vector((0, 0, 0.62)), o + f * 0.35 + s * 0.3 * sx + Vector((0, 0, 0.62)),
                         width=0.04, depth=0.22, mat_idx=PLANK)
     if load is not None:
-        add_beehive_dome(bm, o.x - f.x * 0.05, o.y - f.y * 0.05, 0.52, 0.32, 0.22, segs_u=8, segs_v=2, mat_idx=load)
+        add_beehive_dome(bm, o.x - f.x * 0.05, o.y - f.y * 0.05, z + 0.52, 0.32, 0.22, segs_u=8, segs_v=2, mat_idx=load)
 
 
 def _iw_billets(bm, cx, cy, length, rows, layers, mat, along=(1.0, 0.0), r=0.11):
@@ -4887,10 +4891,10 @@ def build_bog_works(mats):
     for (sx, sy) in ((2.6, -0.4), (-11.2, -3.6)):
         add_timber_beam(bm, Vector((sx, sy, 0.6)), Vector((sx + 0.15, sy - 0.1, 1.85)), width=0.05, depth=0.05, mat_idx=TIMBER)
         add_box(bm, sx - 0.02, sy + 0.01, 0.55, 0.22, 0.04, 0.3, mat_idx=IRON)
-    anchor_spot((-1.6, -2.0), (0.0, 1.0))                      # diggers at the cut faces
-    anchor_spot((1.8, -2.2), (0.0, 1.0))
-    anchor_spot((-9.5, -4.8), (0.0, 1.0))
-    anchor_spot((3.2, -8.6), (0.0, 1.0))                       # sorting at the ore heap
+    anchor_spot((-1.6, -2.0), (0.0, 1.0), tag="dig")           # diggers at the cut faces
+    anchor_spot((1.8, -2.2), (0.0, 1.0), tag="dig")
+    anchor_spot((-9.5, -4.8), (0.0, 1.0), tag="dig")
+    anchor_spot((3.2, -8.6), (0.0, 1.0), tag="load")           # sorting at the ore heap
     _ws_finish(bm, mat_list, "Mesh_BogWorks", "BogWorks", "bog_works")
 
 
@@ -4935,7 +4939,7 @@ def build_charcoal_clamp(mats):
     add_box(bm, hx + 1.32, hy, 0.6, 0.12, 0.7, 1.2, mat_idx=SOOT)                     # doorway
     add_box(bm, hx + 2.2, hy - 1.2, 0.2, 0.9, 0.35, 0.4, mat_idx=PLANK)                 # bench
     anchor_spot((cx + 0.3, cy - R - 0.7), (0.0, 1.0))                                  # tending the clamp
-    anchor_spot((4.3, 1.2), (1.0, 0.0))                                                # at the billets
+    anchor_spot((4.3, 1.2), (1.0, 0.0), tag="chop")                                    # at the billets
     _ws_finish(bm, mat_list, "Mesh_CharcoalClamp", "CharcoalClamp", "charcoal_clamp")
 
 
@@ -4947,8 +4951,8 @@ BELLOWS_BACK = 2.2               # bellows pair this far behind (+Y) a furnace's
 def build_bloomery(mats):
     """Three bloomery furnaces (18 x 12 m): clay shafts ~2.6 m on fieldstone footings, tapping
     arch toward the yard (-Y), a clay tuyere from the foot bellows behind each (bellows are
-    bloomery_bellows.glb, placed by industry.ts from the `bellows` anchors) under a thatched
-    lean-to; ore roasting heap, slag heap, a work table with a bloom, barrels and charcoal."""
+    bloomery_bellows.glb, placed by industry.ts from the `bellows` anchors), all in the open;
+    ore roasting heap, slag heap, a work table with a bloom, barrels and charcoal."""
     clear_scene()
     bm = bmesh.new()
     iw = _iw_mats()
@@ -4970,16 +4974,11 @@ def build_bloomery(mats):
         # Tuyere from the bellows into the back of the shaft.
         _ws_cyl(bm, (x, y0 + BELLOWS_BACK - 0.7, 0.32), (x, y0 + 0.62, 0.62), 0.09, segs=8, mat=CLAY)
         anchor_machine("bellows", p=(x, y0 + BELLOWS_BACK, 0.0), face=[0.0, 1.0])  # glTF (x, z): toward the furnace
-        anchor_spot((x, y0 + BELLOWS_BACK + 0.85), (0.0, -1.0))                       # treading the bellows
-    # Thatched lean-to over the bellows row, eaves high on the furnace side.
-    yf, yb, zf, zb = y0 + 1.25, y0 + 4.1, 2.9, 2.2
-    for x in (-7.2, -2.5, 2.5, 7.2):
-        add_timber_beam(bm, Vector((x, yf, 0.0)), Vector((x, yf, zf)), width=0.18, depth=0.18, mat_idx=TIMBER)
-        add_timber_beam(bm, Vector((x, yb, 0.0)), Vector((x, yb, zb)), width=0.18, depth=0.18, mat_idx=TIMBER)
-    for (yy, zz) in ((yf, zf), (yb, zb)):
-        add_timber_beam(bm, Vector((-7.5, yy, zz)), Vector((7.5, yy, zz)), width=0.16, depth=0.18, mat_idx=TIMBER)
-    _ws_prism(bm, [(-7.8, yf - 0.4, zf + 0.25), (7.8, yf - 0.4, zf + 0.25), (7.8, yb + 0.5, zb - 0.05), (-7.8, yb + 0.5, zb - 0.05)],
-              0.3, THATCH)
+        anchor_spot((x, y0 + BELLOWS_BACK + 0.85), (0.0, -1.0), tag="bellows")        # treading the bellows
+    # Open air, as in concept_art/iron_smelting.jpg: a roof over the bellows hid the treaders
+    # from every camera angle. A low plank rain board shields each furnace's tuyere instead.
+    for x in BLOOMERY_X:
+        add_box(bm, x, y0 + 1.25, 0.9, 0.5, 0.5, 0.05, mat_idx=PLANK)
     # Ore roasting heap (-X), slag heap (+X), charcoal by the furnaces.
     add_beehive_dome(bm, -7.6, -2.4, 0.0, 1.3, 0.7, segs_u=12, segs_v=3, mat_idx=ORE)
     add_beehive_dome(bm, -7.6, -2.4, 0.66, 0.5, 0.06, segs_u=8, segs_v=2, mat_idx=CHAR)
@@ -5001,7 +5000,7 @@ def build_bloomery(mats):
     add_water_trough(bm, 3.4, -3.8, 0.0, w=1.8, d=0.8, h=0.6, mat_wood=PLANK, mat_water=WATER)
     for (bx, by) in ((-8.0, 2.6), (-7.3, 3.1)):
         _ws_barrel(bm, bx, by, 0.0, r=0.36, h=0.9, mat_wood=PLANK, mat_hoop=IRON)
-    anchor_spot((0.0, y0 - 1.9), (0.0, 1.0))                                         # tapping the middle furnace
+    anchor_spot((0.0, y0 - 1.9), (0.0, 1.0), tag="stoke")                            # charging the middle furnace
     _ws_finish(bm, mat_list, "Mesh_Bloomery", "Bloomery", "bloomery")
 
 

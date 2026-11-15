@@ -231,6 +231,10 @@ class Kit:
         self.groups = {}                # group -> {option: [weight_male, weight_female]}
         self.slots = {}                 # slot -> palette list
         self.anim = {"work": "idle"}
+        # Trades drawn with this kit that look different: lower-case trade substring ->
+        # {"pick": {group: option}, "dim": factor on every slot colour (soot)}. A forced
+        # option may have weight 0 (never chosen at random).
+        self.trades = {}
         self.slot("skin", SKIN)
         self.slot("hair", HAIR)
         self.slot("hair_old", HAIR_OLD)
@@ -646,6 +650,7 @@ def export_kit(kit):
         "groups": kit.groups,
         "slots": kit.slots,
         "anim": kit.anim,
+        "trades": kit.trades,
     })
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     path = os.path.join(OUTPUT_DIR, f"{kit.name}.glb")

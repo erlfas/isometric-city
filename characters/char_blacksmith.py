@@ -26,8 +26,13 @@ def build(kit):
         add_tube(bm, [((sx * 0.239, -0.055, 0.90), 0.05, 0.052), ((sx * 0.24, -0.06, 0.83), 0.045, 0.047)],
                  segs=8, mat_idx=lt)
 
+    # Bloomery smelters (ironworks) wear this kit too: sooty, no hammer, long bloom tongs.
+    kit.trades = {"smelter": {"pick": {"hammer": "no", "tongs": "long"}, "dim": 0.68}}
+
     # Cross-peen hammer in the right fist: handle forward-down, head across its end.
-    bm = kit.bm("arm_R")
+    kit.option("hammer", "yes", 1, 1)
+    kit.option("hammer", "no", 0, 0)
+    bm = kit.bm("arm_R", "hammer:yes")
     wa, ir = kit.mat("wood_ash"), kit.mat("iron_dark")
     a, b = Vector((-0.24, 0.02, 0.81)), Vector((-0.24, -0.25, 0.68))
     add_tube(bm, [(tuple(a), 0.014, 0.014), (tuple(b), 0.016, 0.016)], segs=6, mat_idx=wa)
@@ -38,7 +43,14 @@ def build(kit):
     # Tongs in the left hand (optional).
     kit.option("tongs", "yes", 2, 2)
     kit.option("tongs", "no", 1, 1)
+    kit.option("tongs", "long", 0, 0)
     bm = kit.bm("arm_L", "tongs:yes")
     for dx in (-0.012, 0.012):
         add_tube(bm, [((0.24 + dx, -0.03, 0.83), 0.007, 0.007), ((0.24 + dx * 0.4, -0.16, 0.66), 0.007, 0.007),
                       ((0.24 + dx * 1.4, -0.22, 0.52), 0.008, 0.008)], segs=4, mat_idx=ir, smooth=False)
+    # Long bloom tongs (smelters): both reins from the right fist, jaws far out forward-down.
+    bm = kit.bm("arm_R", "tongs:long")
+    for dx in (-0.016, 0.016):
+        add_tube(bm, [((-0.24 + dx, 0.06, 0.86), 0.009, 0.009), ((-0.24 + dx * 0.5, -0.07, 0.80), 0.01, 0.01),
+                      ((-0.24 + dx * 0.4, -0.55, 0.52), 0.01, 0.01), ((-0.24 + dx * 2.2, -0.68, 0.43), 0.014, 0.012)],
+                     segs=4, mat_idx=ir, smooth=False)

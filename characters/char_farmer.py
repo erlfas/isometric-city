@@ -107,6 +107,9 @@ def build(kit):
     kit.option("tool", "scythe", 3, 3)
     kit.option("tool", "hoe", 3, 3)
     kit.option("tool", "flail", 2, 2)
+    kit.option("tool", "spade", 0, 0)
+    # Bog-ore diggers (ironworks) are farmers with an iron-shod spade, muddied.
+    kit.trades = {"ore digger": {"pick": {"tool": "spade"}, "dim": 0.82}}
     top, hand, foot = Vector((-0.245, -0.17, 1.62)), Vector((-0.24, -0.068, 0.80)), Vector((-0.29, 0.03, 0.1))
 
     bm = kit.bm("arm_R", "tool:hoe")
@@ -124,6 +127,17 @@ def build(kit):
     add_tube(bm, [((-0.29, 0.03, 0.1), 0.026, 0.02), ((-0.33, -0.02, 0.105), 0.044, 0.006),
                   ((-0.42, -0.12, 0.14), 0.046, 0.005), ((-0.5, -0.26, 0.2), 0.036, 0.004),
                   ((-0.52, -0.4, 0.28), 0.01, 0.003)], segs=4, mat_idx=st, smooth=False)
+
+    # Iron-shod spade: short shaft with a cross grip above the fist, flat oak blade at the
+    # foot (pointing forward), iron shoe on its edge.
+    bm = kit.bm("arm_R", "tool:spade")
+    grip = Vector((-0.245, -0.12, 1.22))
+    add_tube(bm, [(tuple(grip), 0.017, 0.017), (tuple(hand), 0.018, 0.018), ((-0.285, 0.0, 0.3), 0.02, 0.02)],
+             segs=6, mat_idx=wa)
+    add_tube(bm, [(tuple(grip + Vector((-0.07, 0, 0))), 0.014, 0.014), (tuple(grip + Vector((0.07, 0, 0))), 0.014, 0.014)],
+             segs=4, mat_idx=wa)
+    add_box(bm, -0.29, 0.02, 0.2, 0.19, 0.03, 0.22, mat_idx=wd)
+    add_box(bm, -0.29, 0.025, 0.075, 0.2, 0.034, 0.05, mat_idx=kit.mat("iron_dark"))
 
     bm = kit.bm("arm_R", "tool:flail")
     hinge = Vector((-0.27, -0.01, 0.42))

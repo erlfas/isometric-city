@@ -18,7 +18,9 @@ Checks:
      Slot_* material has a palette, triangle budgets hold, metallic <= KIT_MAX_METALLIC,
      variants per part and colour slots fit the crowd renderer's limits.
   7. Work loops: every kit.anim name is a file in src/engine/work-anims/ (or "idle"), each file
-     is used by exactly one kit (parallel kit authors overwrite a shared name).
+     is used by exactly one kit (parallel kit authors overwrite a shared name). A work spot
+     tag other than work/stand/sell/guard (anchor_spot in build_assets.py) names a loop file
+     too; the sim plays it there whatever the kit.
   8. Vegetation and wildlife triangle budgets (MODEL_TRIS, by model name prefix); wildlife parts
      have pivots (check_animal).
 """
@@ -147,6 +149,8 @@ def model_tris(gltf):
 
 
 anim_users = {}  # work-anim name -> kits using it
+spot_anims = {}  # work-anim name -> building models whose spots play it
+SPOT_TAGS = {"work", "stand", "sell", "guard"}  # any other spot tag names a work loop
 
 
 def check_kit(name, gltf):
@@ -252,6 +256,13 @@ def main():
         seen_materials.update(m.get("name", "") for m in mats)
         check_kit(name, gltf)
         check_animal(name, gltf)
+        # Work spots may name the loop played there (anchor_spot tag = work-anim name).
+        sc = gltf.get("scenes", [{}])[0].get("extras", {})
+        if "anchors" in sc:
+            anchors = json.loads(sc["anchors"]) if isinstance(sc["anchors"], str) else sc["anchors"]
+            for s in anchors.get("spots", []):
+                if s.get("tag") not in SPOT_TAGS:
+                    spot_anims.setdefault(s["tag"], set()).add(name)
         budget = next((b for prefix, b in MODEL_TRIS if name.startswith(prefix)), None)
         if budget is not None:
             tris = model_tris(gltf)
@@ -287,7 +298,10 @@ def main():
             fail(f"work-anims/{anim}.ts is used by {len(kits)} kits ({', '.join(kits)}); give each kit its own loop")
     # Loops the simulation plays by name (Citizen.activityAnim), whatever the kit.
     sim_src = open(os.path.join(os.path.dirname(WORK_ANIMS), "simulation.ts"), encoding="utf-8").read()
-    for anim in sorted(anim_files - set(anim_users)):
+    for anim, models in sorted(spot_anims.items()):
+        if anim not in anim_files:
+            fail(f"{', '.join(sorted(models))}: spot tag '{anim}' has no src/engine/work-anims/{anim}.ts")
+    for anim in sorted(anim_files - set(anim_users) - set(spot_anims)):
         if f"'{anim}'" in sim_src:
             continue
         fail(f"work-anims/{anim}.ts is used by no kit (kit.anim) nor by simulation.ts; delete it or reference it")

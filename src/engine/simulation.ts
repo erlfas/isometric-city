@@ -832,7 +832,7 @@ export class SimulationEngine {
   private arriveSpot(ag: Agent, s: Spot): void {
     ag.c.pose = undefined;
     ag.c.faceYaw = s.yaw;
-    ag.c.activityAnim = s.tag === 'stand' ? 'idle' : 'work';
+    ag.c.activityAnim = s.tag === 'stand' ? 'idle' : s.anim ?? 'work';
     this.setPhase(ag, Phase.SPOT);
   }
 

@@ -591,6 +591,8 @@ export class ThreeIsometricRenderer {
       'char_weaver',
       'char_stonemason',
       'char_woodcutter',
+      'char_quarryman',
+      'char_collier',
       'char_friar',
       'char_guard',
       'char_merchant',
@@ -962,6 +964,11 @@ export class ThreeIsometricRenderer {
     const rank = (c.guildRank || '').toLowerCase();
     const wealth = c.wealthClass || '';
 
+    // Quarry and ironworks (kit.trades in the kits sets the smelter's and digger's looks).
+    if (trade.includes('quarryman')) return 'char_quarryman';
+    if (trade.includes('collier')) return 'char_collier';
+    if (trade.includes('smelter')) return 'char_blacksmith';
+    if (trade.includes('ore digger')) return 'char_farmer';
     if (trade.includes('baker')) return 'char_baker';
     if (trade.includes('tanner') || trade.includes('shoemaker') || trade.includes('furrier') || trade.includes('butcher')) return 'char_tanner';
     if (trade.includes('carpenter') || trade.includes('joiner') || trade.includes('wheelwright')) return 'char_carpenter';
