@@ -161,15 +161,15 @@ All models bind to the unified 2048x2048 texture atlas through standard material
 
 #### 11. Stepped Limestone Quarry & Stonemasons' Yard
 - **ID:** `bldg_limestone_quarry`
-- **Location:** Southern loess cliff outcrop overlooking Bystrzyca valley.
-- **Dimensions:** $24.0\text{m (W)} \times 28.0\text{m (D)} \times 9.0\text{m (Pit Depth)}$.
-- **Stories:** 3 terraced excavation rock ledges.
+- **Location (as built):** a knoll south-east of the town, pit centre ~(208, 184) (`QUARRY_SITE` in `generate_city_plan.py`); the pit opens south-east toward the default camera.
+- **Dimensions:** parcel $64\text{m} \times 52\text{m}$; three benches, cliff feet at radii 14 / 21 / 28 m, each cliff 4 m high (`QF_*` in `build_assets.py`).
+- **Stories:** 3 terraced benches (walkable `anchor_ground` patches), with ramps between them.
 - **Architectural Motifs:** Jagged stepped limestone rock walls; chisel scar channels; rock rubble talus mounds.
 - **Exterior Workspace / Station:** 
-  - **Timber Derrick / Jib Crane:** Heavy timber A-frame with stone counterweight box, rope pulley tackle, and suspended limestone ashlar block.
-  - **Masons' Trestles:** Outdoor wooden benches with stone mallets, iron chisels, and rows of finished square building blocks.
-- **Associated Workers:** `worker_quarryman_hewer`, `worker_stonemason`.
-- **Blender Generator:** `build_stone_quarry()` $\rightarrow$ `public/models/stone_quarry.glb`.
+  - **Treadwheel Cranes (3):** timber frames with jibs in the static model; the wheel, rope and hook block are placed by `src/engine/industry.ts` and hoist while a quarryman treads the wheel.
+  - **Stone Yard and Masons' Lodges:** ox carts and block stacks (`quarry_yard`), three open lodges with trestles (`masons_lodge`) at the pit mouth.
+- **Associated Workers:** quarrymen (`char_quarryman`: pick, tread, load), carters.
+- **Blender Generators:** `build_quarry_face()`, `build_quarry_yard()`, `build_masons_lodge()`, `build_crane_*` $\rightarrow$ `public/models/quarry_face.glb`, `quarry_yard.glb`, `masons_lodge.glb`, `crane_wheel/rope/block.glb`. The forest ironworks (bog_works, charcoal_clamp, bloomery, forge_shed, smithy_hut) are described in KEY_FINDINGS §21.
 
 #### 12. Logging Camp & Pit Sawmill (*Trak Ciesielski*)
 - **ID:** `bldg_logging_camp_sawmill`
