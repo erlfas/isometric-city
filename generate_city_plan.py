@@ -945,13 +945,16 @@ IRONWORKS_SITE = {"x": 198.0, "z": -125.0}
 QUARRY_PARCELS = [
     ("face", "quarry_face", 212.0, 188.0, 64.0, 52.0, 0.0, "limestone_quarry_face",
      "Kamieniołom (Limestone Quarry)", QUARRY_CRAFT),
-    ("yard", "quarry_yard", 262.0, 202.0, 26.0, 30.0, 0.0, "quarry_stone_yard",
+    # The pit opens toward the south-east (pit floor centre ~(208, 184)); the yard and the
+    # lodges crowd its mouth. masons_lodge: 7 x 12 m, open side local +X (orientation 180 =
+    # open to the west).
+    ("yard", "quarry_yard", 246.0, 196.0, 26.0, 30.0, 0.0, "quarry_stone_yard",
      "Plac kamieniarski (Stone Yard)", CARTER_CRAFT),
-    ("lodge_1", "masons_lodge", 262.0, 172.0, 12.0, 7.0, 0.0, "quarry_masons_lodge",
+    ("lodge_1", "masons_lodge", 226.0, 224.0, 7.0, 12.0, 0.0, "quarry_masons_lodge",
      "Loża kamieniarzy (Masons' Lodge)", None),
-    ("lodge_2", "masons_lodge", 287.0, 200.0, 12.0, 7.0, -90.0, "quarry_masons_lodge",
+    ("lodge_2", "masons_lodge", 268.0, 186.0, 7.0, 12.0, 180.0, "quarry_masons_lodge",
      "Loża kamieniarzy (Masons' Lodge)", None),
-    ("lodge_3", "masons_lodge", 246.0, 229.0, 12.0, 7.0, 0.0, "quarry_masons_lodge",
+    ("lodge_3", "masons_lodge", 266.0, 222.0, 7.0, 12.0, 180.0, "quarry_masons_lodge",
      "Loża kamieniarzy (Masons' Lodge)", None),
 ]
 IRONWORKS_PARCELS = [
@@ -976,7 +979,7 @@ IRONWORKS_CLEARING = (152.0, -162.0, 232.0, -86.0)
 # kind: spoil = pale trodden stone dust, mud = dark wet peat, yard = trodden earth,
 # pool = standing water in the bog (drawn as water, blocked for walkers).
 INDUSTRY_GROUNDS = [
-    ("quarry_floor", "spoil", [(181, 160), (246, 158), (300, 168), (300, 240), (240, 244), (183, 216)]),
+    ("quarry_floor", "spoil", [(186, 166), (226, 160), (262, 166), (280, 182), (280, 234), (240, 240), (204, 232), (188, 206)]),
     ("ironworks_yard", "yard", [(160, -126), (186, -134), (214, -136), (230, -126), (228, -100), (206, -90), (164, -106)]),
     ("bog_mud", "mud", [(188, -152), (205, -160), (222, -160), (226, -150), (222, -138), (200, -136), (187, -141)]),
     ("bog_pool_1", "pool", [(192, -150), (197, -153), (201, -150), (198, -146), (193, -146)]),
@@ -984,8 +987,8 @@ INDUSTRY_GROUNDS = [
     ("bog_pool_3", "pool", [(216, -146), (221, -147), (222, -142), (217, -141)]),
 ]
 INDUSTRY_PATHS = [
-    ("path_quarry", "track", 3.2, [(193.0, 26.0), (196.0, 60.0), (194.0, 100.0), (205.0, 135.0), (238.0, 150.0),
-                                   (258.0, 160.0), (268.0, 184.0)]),
+    ("path_quarry", "track", 3.2, [(193.0, 26.0), (196.0, 60.0), (194.0, 100.0), (205.0, 135.0), (236.0, 150.0),
+                                   (252.0, 164.0), (254.0, 180.0)]),
     ("path_ironworks", "track", 2.4, [(200.0, 14.0), (206.0, -25.0), (203.0, -60.0), (197.0, -88.0),
                                       (198.0, -104.0), (194.0, -112.0)]),
 ]

@@ -14,6 +14,7 @@ import { InteriorProps, roomAt, roomCentre } from './interiors';
 import { parcelHash, parcelKind } from './parcel-kind';
 import { SHADOW_LAYER, StaticBatches, type PlacedModel, type Placement, type Tint } from './static-batches';
 import { MillWheels, SHADOWLESS, paintPaths, vegetationTint } from './riverside';
+import { IndustryMachines } from './industry';
 import { EDGE_MASK_PX, GROUND_HALF, SKIRT, WorldEdge, extendRiver } from './world-edge';
 
 const _gvDir = new THREE.Vector3();
@@ -147,6 +148,7 @@ export class ThreeIsometricRenderer {
   private edge: WorldEdge | null = null;
   /** Watermill wheels, races and white water (riverside.ts); null without a mill. */
   public mills: MillWheels | null = null;
+  public industry: IndustryMachines | null = null;
   /** Buildings, walls, stalls, trees: instanced per chunk (static-batches.ts). */
   private statics = new StaticBatches();
   private cutaway: Cutaway;
@@ -571,7 +573,7 @@ export class ThreeIsometricRenderer {
       'footbridge',
       'windmill',
       'stone_quarry',
-      'quarry_face',
+      'quarry_face', 'quarry_yard', 'masons_lodge', 'crane_wheel', 'crane_rope', 'crane_block',
       'logging_camp',
       'river_harbor',
       'gate_krakow',
@@ -875,6 +877,8 @@ export class ThreeIsometricRenderer {
     for (const c of plan.river?.crossings ?? []) {
       this.put(m(c.model), c.x, 0, c.z, (-c.angle * Math.PI) / 180);
     }
+    // Quarry cranes' wheels, ropes and blocks (industry.ts), from the site models' anchors.
+    this.industry = new IndustryMachines(this.scene, (n) => this.models.get(n), this.statics.placed);
     if (millsPlaced.length) {
       this.mills = new MillWheels(this.scene, m('watermill_wheel'), millsPlaced, (race) => this.river?.raceWater(race) ?? null);
       this.mills.ripple = (x, z, s) => this.river?.addRipple(x, z, s);

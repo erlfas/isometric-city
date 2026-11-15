@@ -55,6 +55,9 @@ const BINDINGS: Record<string, Binding> = {
   Leaves: { families: ['leaf_canopy'], jitter: 0.1 },
   Bark: { families: ['tree_bark'], jitter: 0.06 },
   RiverStone: { families: ['plaster_lime'], tint: 0x9c9890, jitter: 0.1 }, // smooth mottled stone
+  // The quarry's worked rock (mottled pale limestone) and the turf on the knoll above it.
+  QuarryRock: { families: ['plaster_lime'], tint: 0xb4aea2, jitter: 0.04 },
+  QuarryTurf: { families: ['grass'], tint: 0xd8d8d0, jitter: 0.05 },
 };
 
 const VARIANTS = 8;

@@ -833,6 +833,15 @@ def anchor_ground(bm, mat_names, cell=0.5):
                           "y": heights, "mats": list(mat_names)}
 
 
+def anchor_machine(kind, **parts):
+    """A moving part the runtime adds and animates (src/engine/industry.ts), e.g. a treadwheel
+    crane: kind="crane", axle / tip points and axis direction (Blender, converted here)."""
+    d = {"kind": kind}
+    for k, v in parts.items():
+        d[k] = _gl(v) if isinstance(v, (tuple, list, Vector)) and len(v) == 3 else v
+    _ANCHORS.setdefault("machines", []).append(d)
+
+
 def anchor_spot(p, face, tag="work"):
     """face: Blender (x, y) direction the citizen looks in."""
     fx, fz = face[0], -face[1]                       # glTF ground-plane direction
@@ -1021,12 +1030,13 @@ def export_object(obj, name):
         del out["chimneys"]
     if _INTERIOR["rooms"]:
         out.update(_INTERIOR)
-    if _ANCHORS["doors"] or _ANCHORS["spots"] or "ground" in _ANCHORS:
+    if _ANCHORS["doors"] or _ANCHORS["spots"] or "ground" in _ANCHORS or "machines" in _ANCHORS:
         scene["anchors"] = json.dumps(out)
     elif "anchors" in scene:
         del scene["anchors"]
     _ANCHORS["doors"], _ANCHORS["spots"], _ANCHORS["chimneys"] = [], [], []
     _ANCHORS.pop("ground", None)
+    _ANCHORS.pop("machines", None)
     for k in _INTERIOR:
         _INTERIOR[k] = []
     _ROOM_USED.clear()
@@ -4442,7 +4452,7 @@ QF_AXIS = math.radians(135.0)      # toward the knoll (Blender: -x, +y = north-w
 QF_RISE = 4.0                      # height of each cliff
 QF_R = (14.0, 21.0, 28.0)          # cliff foot radii
 QF_BATTER = 0.6                    # cliff foot -> lip (a near-vertical face, 81 deg)
-QF_TOP, QF_FOOT = 32.0, 46.0       # plateau edge; the knoll's back reaches the ground here
+QF_TOP_W, QF_BACK = 4.0, 14.0      # plateau past the top cliff; the knoll's back reaches the ground after
 # Per cliff: angular extent relative to QF_AXIS (deg): full height between in0 and in1,
 # fading to nothing at out0 / out1.
 QF_SPAN = (
@@ -4457,66 +4467,318 @@ def _qf_smooth(t):
     return t * t * (3.0 - 2.0 * t)
 
 
+def qf_radius(k, a):
+    """Foot radius of cliff k at angle a (deg, relative to QF_AXIS): jogs and bays, so the
+    faces read as worked rock rather than a turned bowl. Same phase for every cliff, so the
+    benches keep their width."""
+    t = math.radians(a)
+    return QF_R[k] + 0.8 * math.sin(t * 3.0 + 0.4) + 0.45 * math.sin(t * 7.3 + 1.1) + 0.3 * math.sin(t * 17.0 + 2.0 + k)
+
+
+def _qf_polar(x, y):
+    dx, dy = x - QF_C[0], y - QF_C[1]
+    a = math.degrees(math.atan2(dy, dx) - QF_AXIS)
+    return math.hypot(dx, dy), (a + 180.0) % 360.0 - 180.0
+
+
+def _qf_xy(r, a):
+    t = QF_AXIS + math.radians(a)
+    return QF_C[0] + r * math.cos(t), QF_C[1] + r * math.sin(t)
+
+
 def quarry_height(x, y):
     """Surface height of the quarry terrain at Blender (x, y) (0 = the plain ground)."""
-    dx, dy = x - QF_C[0], y - QF_C[1]
-    r = math.hypot(dx, dy)
-    a = math.degrees(math.atan2(dy, dx) - QF_AXIS)
-    a = (a + 180.0) % 360.0 - 180.0
+    r, a = _qf_polar(x, y)
     hgt = 0.0
     for k, (o0, i0, i1, o1) in enumerate(QF_SPAN):
         span = min(_qf_smooth((a - o0) / (i0 - o0)), _qf_smooth((o1 - a) / (o1 - i1)))
-        hgt += QF_RISE * span * _qf_smooth((r - QF_R[k]) / QF_BATTER)
-    if r > QF_TOP:
-        hgt *= 1.0 - _qf_smooth((r - QF_TOP) / (QF_FOOT - QF_TOP)) ** 0.8
+        hgt += QF_RISE * span * _qf_smooth((r - qf_radius(k, a)) / QF_BATTER)
+    top = qf_radius(2, a) + QF_TOP_W
+    if r > top:
+        hgt *= 1.0 - _qf_smooth((r - top) / QF_BACK) ** 0.8
     return hgt
+
+
+# Treadwheel cranes on the bench lips: (bench level 1|2, angle rel. QF_AXIS). Each stands
+# 2.2 m behind the lip of the cliff below it, its jib reaching QF_JIB out over the level
+# below; the wheel (crane_wheel.glb, turned at runtime) stands beside the frame.
+QF_CRANES = ((1, 15.0), (1, -48.0), (2, 35.0))
+QF_JIB = 4.6
+QF_WHEEL_R, QF_WHEEL_W = 1.6, 1.2
+QF_WHEEL_AT = (1.4, 2.3, 1.75)     # wheel axle: out from the frame foot, along the bench, up
+
+
+def _qf_frame(r, a):
+    """Crane foot at (r, a): position, outward unit (away from the pit centre) and tangent."""
+    t = QF_AXIS + math.radians(a)
+    u = Vector((math.cos(t), math.sin(t), 0.0))
+    return Vector((*_qf_xy(r, a), 0.0)), u, Vector((-u.y, u.x, 0.0))
+
+
+def _qf_crane(bm, level, a, TIMBER, PLANK):
+    rb = qf_radius(level - 1, a) + 2.2
+    o, u, tv = _qf_frame(rb, a)
+    h = quarry_height(o.x, o.y)
+    P = lambda du, dt, z: o + u * du + tv * dt + Vector((0.0, 0.0, h + z))
+    beam = lambda p, q, w=0.24: add_timber_beam(bm, p, q, width=w, depth=w, mat_idx=TIMBER)
+    for dt in (-1.1, 1.1):                               # sills, cross pieces
+        beam(P(-0.5, dt, 0.13), P(3.3, dt, 0.13), 0.26)
+    for du in (-0.4, 3.2):
+        beam(P(du, -1.25, 0.3), P(du, 1.25, 0.3), 0.22)
+    apex = P(0.25, 0.0, 6.0)
+    for dt in (-1.1, 1.1):                               # A-frame legs and backstays
+        beam(P(0.4, dt, 0.25), apex)
+        beam(P(3.0, dt * 0.85, 0.25), apex, 0.2)
+    beam(P(0.35, -0.95, 2.6), P(0.35, 0.95, 2.6), 0.18)  # collar
+    tip = P(-QF_JIB, 0.0, 6.8)
+    beam(P(0.0, 0.0, 0.8), tip, 0.28)                    # jib
+    beam(apex, tip, 0.09)                                # stay rope (timber-coloured)
+    wu, wt, wz = QF_WHEEL_AT
+    for dt in (wt - QF_WHEEL_W * 0.5 - 0.25, wt + QF_WHEEL_W * 0.5 + 0.25):   # wheel trestles
+        for du in (wu - 0.9, wu + 0.9):
+            beam(P(du, dt, 0.1), P(wu, dt, wz + 0.15), 0.18)
+        beam(P(wu - 1.0, dt, 0.13), P(wu + 1.0, dt, 0.13), 0.2)
+    add_box(bm, *(P(wu, wt, 0.06)), QF_WHEEL_W + 0.5, QF_WHEEL_W + 0.5, 0.12, mat_idx=PLANK)  # tread board under the wheel
+    below = o + u * (-QF_JIB)
+    anchor_machine("crane", axle=tuple(P(wu, wt, wz)), axis=(tv.x, tv.y, 0.0), r=QF_WHEEL_R,
+                   tip=tuple(tip), lo=round(quarry_height(below.x, below.y), 3), hi=round(h + 1.2, 3))
+    # The walker treads inside the wheel (on its rim bottom), facing out of the pit.
+    anchor_spot(tuple(P(wu, wt, wz - QF_WHEEL_R)), (u.x, u.y))
 
 
 def build_quarry_face(mats):
     clear_scene()
-    rock = create_mat("QuarryRock", (0.70, 0.69, 0.64), roughness=0.9)
-    turf = create_mat("QuarryTurf", (0.36, 0.42, 0.22), roughness=0.95)
-    mat_list = [rock, turf, mats["stone_limestone"], mats["timber_dark"]]
-    ROCK, TURF, ASHLAR, TIMBER = 0, 1, 2, 3
+    rock = create_mat("QuarryRock", (0.46, 0.45, 0.41), roughness=0.9)
+    turf = create_mat("QuarryTurf", (0.17, 0.22, 0.09), roughness=0.95)
+    mat_list = [rock, turf, mats["stone_limestone"], mats["timber_dark"], mats["timber_plank"]]
+    ROCK, TURF, ASHLAR, TIMBER, PLANK = 0, 1, 2, 3, 4
     bm = bmesh.new()
 
-    # Polar grid: radii dense at each cliff (foot, lip), angles every 3 deg.
-    radii = {QF_R[0] - 1.0, QF_TOP, QF_FOOT}
-    for R in QF_R:
-        radii |= {R - 0.01, R + QF_BATTER, R + 2.0, R + 4.5}
-    radii |= {QF_TOP + s for s in (2.0, 4.5, 7.5, 10.5)}
-    radii = sorted(r for r in radii if QF_R[0] - 1.0 <= r <= QF_FOOT)
+    # Polar grid whose rows follow the (jogging) cliffs: foot, lip, bench, then the top and
+    # the knoll's back. Angles every 3 deg.
+    def rows(a):
+        out = [qf_radius(0, a) - 1.0]
+        for k in range(3):
+            R = qf_radius(k, a)
+            out += [R - 0.01, R + QF_BATTER, R + 2.2] + ([R + 4.4] if k < 2 else [])
+        top = qf_radius(2, a) + QF_TOP_W
+        out += [top, top + 2.5, top + 5.5, top + 9.0, top + QF_BACK]
+        return out
     a_lo = min(s[0] for s in QF_SPAN)
     a_hi = max(s[3] for s in QF_SPAN)
     n_a = int((a_hi - a_lo) / 3.0)
-    angs = [math.radians(a_lo + (a_hi - a_lo) * j / n_a) + QF_AXIS for j in range(n_a + 1)]
-    grid = []
-    for r in radii:
-        row = []
-        for t in angs:
-            x, y = QF_C[0] + r * math.cos(t), QF_C[1] + r * math.sin(t)
-            row.append(bm.verts.new(Vector((x, y, quarry_height(x, y)))))
-        grid.append(row)
-    for i in range(len(radii) - 1):
-        for j in range(n_a):
-            q = [grid[i][j], grid[i + 1][j], grid[i + 1][j + 1], grid[i][j + 1]]
+    angs = [a_lo + (a_hi - a_lo) * j / n_a for j in range(n_a + 1)]
+    cols = []
+    for a in angs:
+        col = []
+        for r in rows(a):
+            x, y = _qf_xy(r, a)
+            col.append(bm.verts.new(Vector((x, y, quarry_height(x, y)))))
+        cols.append(col)
+    n_r = len(cols[0])
+    top_row = n_r - 5
+    for j in range(n_a):
+        for i in range(n_r - 1):
+            q = [cols[j][i], cols[j][i + 1], cols[j + 1][i + 1], cols[j + 1][i]]
             if max(v.co.z for v in q) < 0.02:
                 continue                          # plain ground: the ground plane shows
             f = bm.faces.new(q)                   # radial x tangential = +z: faces up / inward
-            f.material_index = TURF if radii[i] >= QF_TOP - 0.01 else ROCK
+            f.material_index = TURF if i >= top_row else ROCK
     anchor_ground(bm, [rock.name, turf.name])
 
-    # Hewers at the faces (on the bench below each cliff, facing it), on all three levels.
-    for k, R in enumerate(QF_R):
-        for da in (-40.0, -10.0, 25.0):
-            t = QF_AXIS + math.radians(da + 8.0 * k)
-            rr = R - 1.4
-            x, y = QF_C[0] + rr * math.cos(t), QF_C[1] + rr * math.sin(t)
+    # Hewers at the faces (on the level below each cliff, facing it): floor, bench 1, bench 2.
+    for k, das in enumerate(((-25.0, 0.0, 40.0), (-25.0, 45.0, 75.0), (-40.0, -5.0, 70.0))):
+        for da in das:
+            x, y = _qf_xy(qf_radius(k, da) - 1.4, da)
+            t = QF_AXIS + math.radians(da)
             anchor_spot((x, y, quarry_height(x, y)), (math.cos(t), math.sin(t)))
-    # Loose blocks on the pit floor (rough ashlar waiting for the cranes).
-    for bx, by, s in ((2.0, -2.0, 1.1), (5.0, 1.5, 0.9), (-1.0, -6.0, 1.0), (7.5, -4.5, 0.8)):
-        add_box(bm, bx, by, s * 0.4, s * 1.6, s, s * 0.8, mat_idx=ASHLAR)
+    for level, a in QF_CRANES:
+        _qf_crane(bm, level, a, TIMBER, PLANK)
+
+    # Rough blocks waiting for the cranes and the barrows: on the floor and on bench 1,
+    # with the barrow men's spots beside them.
+    rng = random.Random(1392_31)
+    for (r, a, s) in ((8.0, 10.0, 1.1), (9.5, -20.0, 0.9), (6.0, 35.0, 1.0), (10.5, 55.0, 0.8),
+                      (qf_radius(0, 18.0) + 4.4, 18.0, 0.9)):
+        x, y = _qf_xy(r, a)
+        z = quarry_height(x, y)
+        add_box(bm, x, y, z + s * 0.4, s * 1.6, s, s * 0.8, mat_idx=ASHLAR)
+    for (r, a) in ((7.0, 3.0), (8.0, -28.0), (qf_radius(0, 25.0) + 3.6, 25.0), (qf_radius(1, 20.0) + 3.4, 20.0)):
+        x, y = _qf_xy(r, a)
+        t = QF_AXIS + math.radians(a)
+        anchor_spot((x, y, quarry_height(x, y)), (-math.cos(t), -math.sin(t)))
+    # Talus at the cliff feet: low spalls (below the knee, they don't block the way), and a
+    # few big half-split blocks where nobody works.
+    for k in range(3):
+        o0, i0, i1, o1 = QF_SPAN[k]
+        for _ in range(26):
+            a = rng.uniform(i0, i1)
+            x, y = _qf_xy(qf_radius(k, a) - rng.uniform(0.3, 1.0), a)
+            z = quarry_height(x, y)
+            w = rng.uniform(0.3, 0.7)
+            add_box(bm, x, y, z + w * 0.25, w, w * rng.uniform(0.6, 1.0), w * 0.5, mat_idx=ROCK)
+    for a, k in ((-70.0, 0), (60.0, 0), (-75.0, 1), (85.0, 2), (-60.0, 2)):
+        x, y = _qf_xy(qf_radius(k, a) - 1.2, a)
+        z = quarry_height(x, y)
+        add_box(bm, x, y, z + 0.6, 1.8, 1.2, 1.2, mat_idx=ROCK)
     _ws_finish(bm, mat_list, "Mesh_QuarryFace", "QuarryFace", "quarry_face")
+
+
+def build_crane_wheel(mats):
+    """Treadwheel of the quarry cranes: axle along X, centred on the origin (turned at runtime)."""
+    clear_scene()
+    bm = bmesh.new()
+    mat_list = [mats["timber_dark"], mats["timber_plank"]]
+    R, W, n = QF_WHEEL_R, QF_WHEEL_W, 20
+    for side in (-W * 0.5, W * 0.5):                      # two rims of straight felloes
+        for i in range(n):
+            a0, a1 = 2 * math.pi * i / n, 2 * math.pi * (i + 1) / n
+            p = lambda a, rr=R + 0.08: Vector((side, rr * math.cos(a), rr * math.sin(a)))
+            add_timber_beam(bm, p(a0), p(a1), width=0.14, depth=0.16, mat_idx=0)
+        for i in range(8):                                # spokes
+            a = 2 * math.pi * i / 8 + 0.2
+            add_timber_beam(bm, Vector((side, 0.0, 0.0)), Vector((side, R * math.cos(a), R * math.sin(a))),
+                            width=0.11, depth=0.11, mat_idx=0)
+    for i in range(n * 2):                                # treads across the rims
+        a = 2 * math.pi * i / (n * 2)
+        add_timber_beam(bm, Vector((-W * 0.5 - 0.05, R * math.cos(a), R * math.sin(a))),
+                        Vector((W * 0.5 + 0.05, R * math.cos(a), R * math.sin(a))), width=0.06, depth=0.2, mat_idx=1)
+    _ws_cyl(bm, (-W * 0.5 - 0.4, 0.0, 0.0), (W * 0.5 + 0.4, 0.0, 0.0), 0.12, segs=8, mat=0)   # axle
+    _ws_finish(bm, mat_list, "Mesh_CraneWheel", "CraneWheel", "crane_wheel")
+
+
+def build_crane_rope(mats):
+    """1 m of hoisting rope hanging from the origin (scaled to length at runtime)."""
+    clear_scene()
+    bm = bmesh.new()
+    add_box(bm, 0.0, 0.0, -0.5, 0.05, 0.05, 1.0, mat_idx=0)
+    _ws_finish(bm, [create_mat("Rope", (0.42, 0.34, 0.22), roughness=0.95)], "Mesh_CraneRope", "CraneRope", "crane_rope")
+
+
+def build_crane_block(mats):
+    """Hook, sling and a rough ashlar block hanging from the hook at the origin."""
+    clear_scene()
+    bm = bmesh.new()
+    mat_list = [mats["iron_wrought"], create_mat("Rope", (0.42, 0.34, 0.22), roughness=0.95), mats["stone_limestone"]]
+    add_box(bm, 0.0, 0.0, -0.12, 0.12, 0.12, 0.24, mat_idx=0)       # hook
+    add_box(bm, 0.0, 0.0, -0.26, 0.3, 0.08, 0.06, mat_idx=0)
+    for sx in (-0.55, 0.55):                                           # sling to the block's ends
+        add_timber_beam(bm, Vector((0.0, 0.0, -0.28)), Vector((sx, 0.0, -0.95)), width=0.04, depth=0.04, mat_idx=1)
+    add_box(bm, 0.0, 0.0, -1.35, 1.4, 0.85, 0.8, mat_idx=2)
+    _ws_finish(bm, mat_list, "Mesh_CraneBlock", "CraneBlock", "crane_block")
+
+
+def _ox(bm, x, y, face, HIDE, HORN):
+    """A draught ox standing at (x, y) looking along `face` (Blender unit xy)."""
+    f = Vector((face[0], face[1], 0.0)).normalized()
+    s = Vector((-f.y, f.x, 0.0))
+    o = Vector((x, y, 0.0))
+    body = o + Vector((0.0, 0.0, 1.05))
+    add_timber_beam(bm, body - f * 1.0, body + f * 0.9, width=0.75, depth=0.85, mat_idx=HIDE)
+    head = body + f * 1.25 + Vector((0.0, 0.0, 0.05))
+    add_timber_beam(bm, body + f * 0.8, head, width=0.35, depth=0.45, mat_idx=HIDE)
+    add_timber_beam(bm, head - f * 0.05, head + f * 0.45 - Vector((0.0, 0.0, 0.2)), width=0.3, depth=0.35, mat_idx=HIDE)
+    for sx in (-1.0, 1.0):
+        add_timber_beam(bm, head + s * 0.12 + Vector((0.0, 0.0, 0.15)), head + s * (0.45 * sx / abs(sx)) * sx + Vector((0.0, 0.0, 0.32)),
+                        width=0.06, depth=0.06, mat_idx=HORN)
+        for fa in (-0.75, 0.7):
+            p = o + f * fa + s * 0.24 * sx
+            add_timber_beam(bm, p + Vector((0.0, 0.0, 0.75)), p, width=0.15, depth=0.15, mat_idx=HIDE)
+
+
+def _ox_cart(bm, x, y, face, load, mats_idx):
+    """Two-ox block cart at (x, y) (cart centre), oxen ahead along `face`; load = blocks on it."""
+    TIMBER, PLANK, IRON, ASHLAR, HIDE, HORN = mats_idx
+    f = Vector((face[0], face[1], 0.0)).normalized()
+    s = Vector((-f.y, f.x, 0.0))
+    o = Vector((x, y, 0.0))
+    bed = o + Vector((0.0, 0.0, 0.95))
+    add_timber_beam(bm, bed - f * 1.6, bed + f * 1.6, width=1.6, depth=0.14, mat_idx=PLANK)
+    for sx in (-1.0, 1.0):
+        add_timber_beam(bm, bed + s * 0.85 * sx - f * 1.6 + Vector((0, 0, 0.2)), bed + s * 0.85 * sx + f * 1.6 + Vector((0, 0, 0.2)),
+                        width=0.08, depth=0.3, mat_idx=PLANK)
+        c = o + s * 1.0 * sx + Vector((0.0, 0.0, 0.62))
+        _ws_cyl(bm, c - s * 0.07, c + s * 0.07, 0.62, segs=14, mat=TIMBER)
+    add_timber_beam(bm, bed + f * 1.6, bed + f * 3.6 - Vector((0.0, 0.0, 0.1)), width=0.14, depth=0.14, mat_idx=TIMBER)  # pole
+    add_timber_beam(bm, bed + f * 3.5 - s * 0.9 + Vector((0, 0, 0.35)), bed + f * 3.5 + s * 0.9 + Vector((0, 0, 0.35)),
+                    width=0.14, depth=0.14, mat_idx=TIMBER)                                                           # yoke
+    for sx in (-1.0, 1.0):
+        oxp = o + f * 4.2 + s * 0.55 * sx
+        _ox(bm, oxp.x, oxp.y, face, HIDE, HORN)
+    for k in range(load):
+        p = bed + f * (-0.9 + 1.0 * k) + Vector((0.0, 0.0, 0.47))
+        add_box(bm, p.x, p.y, p.z, 0.85, 1.3, 0.8, mat_idx=ASHLAR)
+
+
+def build_quarry_yard(mats):
+    """Stone yard beside the pit: dressed-block stacks, rubble heaps, timber, sacks, crates and
+    two ox carts (one loaded) on the track. ~26 x 30 m, centred on the origin."""
+    clear_scene()
+    bm = bmesh.new()
+    hide = create_mat("OxHide", (0.42, 0.27, 0.15), roughness=0.9)
+    horn = create_mat("OxHorn", (0.80, 0.74, 0.60), roughness=0.6)
+    mat_list = [mats["timber_dark"], mats["timber_plank"], mats["iron_wrought"], mats["stone_limestone"],
+                hide, horn, mats["flour_sack_cloth"], create_mat("QuarryRock", (0.46, 0.45, 0.41), roughness=0.9)]
+    TIMBER, PLANK, IRON, ASHLAR, HIDE, HORN, SACK, ROCK = range(8)
+    rng = random.Random(1392_33)
+    # Dressed-block stacks in rows (three courses, stepped).
+    for (cx, cy, rows_, cols_) in ((-6.0, 8.0, 3, 4), (-6.0, 1.5, 2, 5), (2.0, 10.5, 3, 3), (6.5, -9.0, 2, 4)):
+        for r in range(rows_):
+            for c in range(cols_ - r):
+                add_box(bm, cx + c * 1.05 + r * 0.5, cy, 0.38 + r * 0.72, 0.95, 1.5, 0.7, mat_idx=ASHLAR)
+    # Rubble heaps (spalls for fill and lime) and a pile of blocks waiting for the masons.
+    for (cx, cy, n, rad) in ((-9.0, -7.0, 34, 2.6), (9.0, 6.0, 22, 2.0), (-1.5, -11.5, 18, 1.6)):
+        for _ in range(n):
+            a, d = rng.uniform(0, 2 * math.pi), rng.uniform(0, rad)
+            w = rng.uniform(0.3, 0.75)
+            hgt = max(0.15, (1.0 - d / rad) * 1.3)
+            add_box(bm, cx + d * math.cos(a), cy + d * math.sin(a), hgt * 0.5, w, w * 0.8, hgt, mat_idx=ROCK)
+    for k in range(5):
+        add_box(bm, 1.0 + k * 1.3 + rng.uniform(-0.2, 0.2), -2.5 + rng.uniform(-0.4, 0.4), 0.45, 1.2, 0.9, 0.9, mat_idx=ROCK)
+    # Timber for the cranes and sledges, sacks of lime, crates of tools.
+    for k in range(6):
+        _ws_cyl(bm, (8.0, -1.5 + k * 0.32, 0.17 + (k % 2) * 0.28), (12.0, -1.5 + k * 0.32, 0.17 + (k % 2) * 0.28), 0.17, segs=7, mat=TIMBER)
+    for k in range(7):
+        add_box(bm, 3.5 + (k % 4) * 0.7, -6.0 + (k // 4) * 0.8, 0.3, 0.6, 0.45, 0.6, mat_idx=SACK)
+    for (cx, cy) in ((5.0, -4.0), (5.9, -4.2), (5.4, -4.1)):
+        add_box(bm, cx, cy, 0.35, 0.8, 0.8, 0.7, mat_idx=PLANK)
+    # Ox carts on the track (it comes in from the north = Blender +y side, see INDUSTRY_PATHS).
+    _ox_cart(bm, 9.5, 11.0, (0.0, 1.0), 2, (TIMBER, PLANK, IRON, ASHLAR, HIDE, HORN))
+    _ox_cart(bm, -11.0, -1.0, (0.0, -1.0), 0, (TIMBER, PLANK, IRON, ASHLAR, HIDE, HORN))
+    anchor_spot((11.3, 15.6), (-1.0, 0.0))                 # carter at his oxen
+    anchor_spot((-12.8, -5.6), (1.0, 0.0))
+    anchor_spot((-3.6, 4.5), (0.0, 1.0), tag="stand")       # by the stacks
+    _ws_finish(bm, mat_list, "Mesh_QuarryYard", "QuarryYard", "quarry_yard")
+
+
+def build_masons_lodge(mats):
+    """Masons' lodge at the quarry: open-fronted thatched shed (12 m long along Blender Y,
+    7 m deep), fieldstone back wall on -X, two bankers with blocks being dressed; open +X."""
+    clear_scene()
+    bm = bmesh.new()
+    mat_list = [mats["timber_dark"], mats["roof_thatch"], mats["stone_fieldstone"], mats["timber_plank"],
+                mats["stone_limestone"]]
+    TIMBER, THATCH, FIELD, PLANK, ASHLAR = range(5)
+    W, D, H = 7.0, 12.0, 2.6
+    add_box(bm, -W * 0.5 + 0.3, 0.0, H * 0.5, 0.6, D, H, mat_idx=FIELD)              # back wall
+    for y in (-D * 0.5 + 0.2, -2.0, 2.0, D * 0.5 - 0.2):                             # front posts
+        add_box(bm, W * 0.5 - 0.2, y, H * 0.5, 0.24, 0.24, H, mat_idx=TIMBER)
+    add_timber_beam(bm, Vector((W * 0.5 - 0.2, -D * 0.5, H)), Vector((W * 0.5 - 0.2, D * 0.5, H)), width=0.24, depth=0.26, mat_idx=TIMBER)
+    add_gable_roof(bm, 0.0, 0.0, H, W, D, 2.6, 0.6, THATCH, PLANK, TIMBER, frame=False, loft_windows=0, eave_lip=0.25)
+    # Gable-end walls of boards below the roof (open front keeps the work visible).
+    for sy in (-1.0, 1.0):
+        add_box(bm, -1.2, sy * (D * 0.5 - 0.05), H * 0.5, 4.6, 0.1, H, mat_idx=PLANK)
+    # Bankers: a block on a timber trestle; masons stand on the open side.
+    for by in (-3.0, 2.5):
+        add_box(bm, 0.2, by, 0.4, 1.4, 1.0, 0.8, mat_idx=TIMBER)
+        add_box(bm, 0.2, by, 1.15, 1.2, 0.8, 0.7, mat_idx=ASHLAR)
+        anchor_spot((1.4, by), (-1.0, 0.0))
+    anchor_spot((1.6, 0.0), (-1.0, 0.0), tag="stand")
+    for k in range(9):                                                               # chips
+        add_box(bm, 0.8 + (k % 3) * 0.4, -3.6 + k * 0.7, 0.04, 0.25, 0.2, 0.08, mat_idx=ASHLAR)
+    for k in range(4):                                                               # finished blocks
+        add_box(bm, W * 0.5 + 1.2, -4.5 + k * 1.1, 0.35, 0.9, 1.0, 0.7, mat_idx=ASHLAR)
+    _ws_finish(bm, mat_list, "Mesh_MasonsLodge", "MasonsLodge", "masons_lodge")
 
 # -------------------------------------------------------------
 # 21. Logging Camp & Pit Sawmill (Trak Ciesielski)
@@ -5171,6 +5433,11 @@ def main():
         "windmill": build_windmill,
         "stone_quarry": build_stone_quarry,
         "quarry_face": build_quarry_face,
+        "crane_wheel": build_crane_wheel,
+        "crane_rope": build_crane_rope,
+        "crane_block": build_crane_block,
+        "quarry_yard": build_quarry_yard,
+        "masons_lodge": build_masons_lodge,
         "logging_camp": build_logging_camp,
         "river_harbor": build_river_harbor,
         "blacksmith_workshop": build_blacksmith_workshop,
