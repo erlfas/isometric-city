@@ -1143,6 +1143,233 @@ def add_industry(parcels, citizens, vegetation, paths, river):
     return grounds, sites
 
 
+# ------------------------------------------------------------------------------------------
+# Clash pass (after everything else, no RNG): houses that the parcel generator let into the
+# town wall, its towers and gates, or deep into each other, are pushed clear. The generator's
+# own overlap test (get_obb_corners) rotates by +orientation while the renderer turns a model
+# by -orientation about Y, so rotated parcels were tested mirrored; this pass uses the
+# renderer's convention. Only x/z of the clashing parcels change (ids, residents, schedules
+# stay), and plants under a moved house are dropped.
+# ------------------------------------------------------------------------------------------
+WALL_HALF = 1.7            # curtain wall half thickness incl. battlements and plinth, + margin
+TOWER_HALF = 4.6           # curtain_tower is 8.2 m square at the cornice, + margin
+GATE_HALF_EXT = {"gate_krakow": (6.5, 6.5), "gate_grodzka": (6.0, 6.0)}
+HOUSE_PAD = 0.3            # model overhang past the parcel rectangle
+PAIR_SLACK = 0.25          # terraced houses may touch this much
+
+
+def _render_corners(cx, cz, hw, hd, angle_deg):
+    """Rectangle corners as the renderer turns a model: local (x, z) -> (x c + z s, -x s + z c)."""
+    a = math.radians(angle_deg)
+    c, s = math.cos(a), math.sin(a)
+    return [(cx + x * c + z * s, cz - x * s + z * c) for x, z in ((-hw, -hd), (hw, -hd), (hw, hd), (-hw, hd))]
+
+
+def _sat_depth(a, b):
+    """Penetration depth of two convex polygons (> 0 = overlap) and the axis to push b along."""
+    best, axis = float("inf"), (0.0, 0.0)
+    for poly in (a, b):
+        for i in range(len(poly)):
+            (px, pz), (qx, qz) = poly[i], poly[(i + 1) % len(poly)]
+            ln = math.hypot(qx - px, qz - pz) or 1.0
+            ax, az = -(qz - pz) / ln, (qx - px) / ln
+            pa = [x * ax + z * az for x, z in a]
+            pb = [x * ax + z * az for x, z in b]
+            d1, d2 = max(pa) - min(pb), max(pb) - min(pa)
+            d = min(d1, d2)
+            if d <= 0:
+                return 0.0, (0.0, 0.0)
+            if d < best:
+                best, axis = d, ((ax, az) if d1 < d2 else (-ax, -az))
+    return best, axis
+
+
+# Ground footprint of each parcel model (model space x0, z0, x1, z1, metres, everything below
+# 4 m incl. yard clutter), unscaled. Measured from the GLBs in the running app (template bounds);
+# re-measure after changing a house model.
+MODEL_FOOTPRINT = {
+    "house_patrician_brick": (-4.69, -7.12, 4.69, 8.25), "house_half_timber": (-5.2, -6.0, 5.25, 6.55),
+    "house_timber_log": (-5.2, -5.88, 6.2, 7.05), "shed_timber": (-2.75, -3.25, 3.0, 3.85),
+    "house_baker": (-4.77, -6.04, 7.1, 6.85), "house_weaver": (-4.45, -6.14, 7.88, 9.17),
+    "house_potter": (-4.02, -5.15, 8.75, 5.55), "house_brewer": (-4.51, -6.96, 8.98, 10.85),
+    "house_tanner": (-4.11, -6.05, 8.15, 8.79), "blacksmith_workshop": (-3.9, -6.49, 5.65, 7.59),
+    "logging_camp": (-6.4, -5.0, 6.6, 4.95), "watermill": (-3.5, -6.5, 6.28, 10.65),
+}
+
+
+def _parcel_hash(p, index):
+    """src/engine/parcel-kind.ts parcelHash (JS int32 string hash)."""
+    s = p["id"] or f"parcel_{index}"
+    h = 0
+    for ch in s:
+        h = ((h << 5) - h + ord(ch)) & 0xFFFFFFFF
+    if h >= 0x80000000:
+        h -= 0x100000000
+    return abs(h)
+
+
+def parcel_model(p, index):
+    """Model and scale the renderer draws a parcel with (parcel-kind.ts parcelKind +
+    three-renderer.ts populateCityScene). Keep in sync with both."""
+    craft = (p.get("craft") or {}).get("id", "")
+    t = p.get("buildingType") or ""
+    h = _parcel_hash(p, index)
+    has = lambda *parts: any(s in t for s in parts)
+    clamp = lambda v: min(1.15, max(0.85, v))
+    scale = (clamp(p["width"] / 8.5), clamp(p["depth"] / 12.0))
+    if p.get("model"):
+        return p["model"], (1.0, 1.0)
+    if p.get("isShed") or t.startswith("shed_"):
+        return "shed_timber", (clamp(p["width"] / 5.2), clamp(p["depth"] / 6.2))
+    for model, crafts, parts in (("house_baker", ("baker",), ("baker",)), ("house_tanner", ("tanner",), ("tanner",)),
+                                 ("house_brewer", ("brewer",), ("brewer",)),
+                                 ("blacksmith_workshop", ("blacksmith", "armorer"), ("blacksmith",)),
+                                 ("house_potter", ("potter",), ("potter",)), ("house_weaver", ("weaver", "tailor"), ("weaver",))):
+        if craft in crafts or has(*parts):
+            return model, scale
+    if has("watermill"):
+        return "watermill", scale
+    if has("windmill"):
+        return "windmill", scale
+    if has("quarry"):
+        return "stone_quarry", scale
+    if has("sawmill", "logging") or (craft == "carpenter" and p["district"] == "krakow_suburb" and h % 4 == 0):
+        return "logging_camp", scale
+    if has("harbor"):
+        return "river_harbor", scale
+    if has("patrician", "kamienica", "brick", "stone_arches") or craft == "goldsmith":
+        return "house_patrician_brick", scale
+    if has("fachwerk", "half_timber", "jettied", "narrow_gable", "furrier", "shoemaker") \
+            or craft in ("shoemaker", "furrier", "candlemaker", "roper", "butcher"):
+        return "house_half_timber", scale
+    if has("log", "timber", "thatched", "cruck", "longhouse", "cottage", "loess", "cooper") \
+            or craft in ("cooper", "wheelwright", "carpenter"):
+        return "house_timber_log", scale
+    if p["district"] == "market_square":
+        return ("house_half_timber" if h % 4 == 0 else "house_patrician_brick"), scale
+    if p["district"] == "krakow_suburb":
+        return ("house_half_timber" if h % 3 == 0 else "house_timber_log"), scale
+    return ("house_half_timber" if h % 2 == 0 else "house_timber_log"), scale
+
+
+def resolve_clashes(parcels, wall_points, landmarks, castle_elements, vegetation):
+    shapes = {}
+    for i, p in enumerate(parcels):
+        model, (sx, sz) = parcel_model(p, i)
+        fp = MODEL_FOOTPRINT.get(model)
+        if fp is None:
+            fp = (-p["width"] * 0.5, -p["depth"] * 0.5, p["width"] * 0.5, p["depth"] * 0.5)
+            sx = sz = 1.0
+        shapes[p["id"]] = (fp[0] * sx - HOUSE_PAD, fp[1] * sz - HOUSE_PAD, fp[2] * sx + HOUSE_PAD, fp[3] * sz + HOUSE_PAD)
+
+    def house(p, x=None, z=None):
+        x0, z0, x1, z1 = shapes[p["id"]]
+        a = math.radians(p["orientation"])
+        c, s = math.cos(a), math.sin(a)
+        cx, cz = (p["x"] if x is None else x), (p["z"] if z is None else z)
+        return [(cx + lx * c + lz * s, cz - lx * s + lz * c) for lx, lz in ((x0, z0), (x1, z0), (x1, z1), (x0, z1))]
+    fixed = []   # (name, polygon): wall pieces, towers, gates, landmarks
+    n = len(wall_points)
+    for i in range(n):
+        a, b = wall_points[i], wall_points[(i + 1) % n]
+        L = math.hypot(b["x"] - a["x"], b["z"] - a["z"])
+        ux, uz = (b["x"] - a["x"]) / L, (b["z"] - a["z"]) / L
+        fixed.append(("wall", [(a["x"] - uz * WALL_HALF, a["z"] + ux * WALL_HALF), (b["x"] - uz * WALL_HALF, b["z"] + ux * WALL_HALF),
+                               (b["x"] + uz * WALL_HALF, b["z"] - ux * WALL_HALF), (a["x"] + uz * WALL_HALF, a["z"] - ux * WALL_HALF)]))
+        hx, hz = GATE_HALF_EXT.get(a.get("id"), (TOWER_HALF, TOWER_HALF))
+        fixed.append(("tower", [(a["x"] - hx, a["z"] - hz), (a["x"] + hx, a["z"] - hz), (a["x"] + hx, a["z"] + hz), (a["x"] - hx, a["z"] + hz)]))
+    for l in list(landmarks) + [e for e in castle_elements if "width" in e and "x" in e]:
+        fixed.append(("landmark", _render_corners(l["x"], l["z"], l["width"] * 0.5 + 1.0, l["depth"] * 0.5 + 1.0, 0.0)))
+
+    # Relaxation: every round, each clashing house is pushed out of the walls / landmarks by
+    # the full depth and away from each overlapping neighbour by half of it (the neighbour
+    # takes the other half), until nothing clashes or the rounds run out. Moves are capped at
+    # MAX_SHIFT from where the generator put the house.
+    MAX_SHIFT, ROUNDS, CELLB = 12.0, 120, 24.0
+    movable = [p for p in parcels if not p.get("model")]
+    start = {p["id"]: (p["x"], p["z"]) for p in movable}
+    fixed_polys = [f for _, f in fixed]
+    fixed_box = [(min(c[0] for c in f), min(c[1] for c in f), max(c[0] for c in f), max(c[1] for c in f)) for f in fixed_polys]
+
+    def worst_state():
+        polys = {p["id"]: house(p) for p in movable}
+        bins = {}
+        for p in movable:
+            bins.setdefault((int(p["x"] // CELLB), int(p["z"] // CELLB)), []).append(p)
+        push = {p["id"]: [0.0, 0.0] for p in movable}
+        wall_hits, pair_hits = set(), set()
+        for p in movable:
+            poly = polys[p["id"]]
+            xs, zs = [c[0] for c in poly], [c[1] for c in poly]
+            for f, (bx0, bz0, bx1, bz1) in zip(fixed_polys, fixed_box):
+                if bx1 < min(xs) or bx0 > max(xs) or bz1 < min(zs) or bz0 > max(zs):
+                    continue
+                d, ax = _sat_depth(f, poly)
+                if d > 0:
+                    wall_hits.add(p["id"])
+                    push[p["id"]][0] += ax[0] * (d + 0.1)
+                    push[p["id"]][1] += ax[1] * (d + 0.1)
+            bx, bz = int(p["x"] // CELLB), int(p["z"] // CELLB)
+            for ix in (bx - 1, bx, bx + 1):
+                for iz in (bz - 1, bz, bz + 1):
+                    for q in bins.get((ix, iz), ()):
+                        if q["id"] <= p["id"]:
+                            continue
+                        d, ax = _sat_depth(polys[p["id"]], polys[q["id"]])   # ax pushes q away from p
+                        if d > PAIR_SLACK:
+                            pair_hits.add((p["id"], q["id"]))
+                            k = (d - PAIR_SLACK) * 0.5 + 0.05
+                            push[q["id"]][0] += ax[0] * k
+                            push[q["id"]][1] += ax[1] * k
+                            push[p["id"]][0] -= ax[0] * k
+                            push[p["id"]][1] -= ax[1] * k
+        return push, wall_hits, pair_hits
+
+    walls0 = pairs0 = None
+    for _ in range(ROUNDS):
+        push, wall_hits, pair_hits = worst_state()
+        if walls0 is None:
+            walls0, pairs0 = len(wall_hits), len(pair_hits)
+        if not wall_hits and not pair_hits:
+            break
+        for p in movable:
+            dx, dz = push[p["id"]]
+            if dx == 0 and dz == 0:
+                continue
+            x0, z0 = start[p["id"]]
+            nx, nz = p["x"] + dx, p["z"] + dz
+            off = math.hypot(nx - x0, nz - z0)
+            if off > MAX_SHIFT:
+                nx, nz = x0 + (nx - x0) * MAX_SHIFT / off, z0 + (nz - z0) * MAX_SHIFT / off
+            p["x"], p["z"] = nx, nz
+    _, wall_hits, pair_hits = worst_state()
+    moved = []
+    for p in movable:
+        x0, z0 = start[p["id"]]
+        p["x"], p["z"] = round(p["x"], 2), round(p["z"], 2)
+        if (p["x"], p["z"]) != (x0, z0):
+            moved.append((p["id"], round(math.hypot(p["x"] - x0, p["z"] - z0), 1)))
+    stuck = sorted(wall_hits) + [f"{a}/{b}" for a, b in sorted(pair_hits)]
+    print(f"[CityPlanGenerator] Clash pass: wall/tower/landmark clashes {walls0} -> {len(wall_hits)}, "
+          f"house pairs {pairs0} -> {len(pair_hits)}")
+    moved_ids = {m[0] for m in moved}
+    polys = [house(p) for p in parcels if p["id"] in moved_ids]
+    before = len(vegetation)
+
+    def under(v):
+        r = 1.5 if v["type"].startswith("tree_") else 0.4
+        for poly in polys:
+            xs = [c[0] for c in poly]
+            zs = [c[1] for c in poly]
+            if min(xs) - r < v["x"] < max(xs) + r and min(zs) - r < v["z"] < max(zs) + r:
+                return True
+        return False
+    vegetation[:] = [v for v in vegetation if not under(v)]
+    print(f"[CityPlanGenerator] Clash pass: moved {len(moved)} parcels clear of the wall and each other "
+          f"(max {max([m[1] for m in moved] or [0])} m), {len(stuck)} left clashing {stuck}; "
+          f"dropped {before - len(vegetation)} plants under moved houses.")
+
+
 def generate_lublin_city_plan():
     print("[CityPlanGenerator] Synthesizing Lublin 1392 morphology & agent schedules...")
 
@@ -1969,6 +2196,7 @@ def generate_lublin_city_plan():
     assign_woodcutters(parcels, citizens)
     add_watermill(parcels, citizens, mill_site)
     grounds, industry_sites = add_industry(parcels, citizens, vegetation, paths, river)
+    resolve_clashes(parcels, wall_points, civic_landmarks, castle_elements, vegetation)
     print(f"[CityPlanGenerator] Simulated {len(citizens)} persistent citizens across {len(home_parcels)} households.")
 
     # 4. Royal Fair Systemic Events Specification

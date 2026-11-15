@@ -37,7 +37,8 @@ export function parcelKind(p: Parcel, hash: number): ParcelKind {
   if (is('weaver', 'tailor') || has('weaver')) return 'weaver';
   if (has('watermill')) return 'watermill';
   if (has('windmill')) return 'windmill';
-  if (has('quarry') || is('mason')) return 'quarry';
+  // Town masons live in ordinary houses (their building type) and work the quarry's lodges.
+  if (has('quarry')) return 'quarry';
   if (has('sawmill', 'logging') || (is('carpenter') && p.district === 'krakow_suburb' && hash % 4 === 0)) return 'logging';
   if (has('harbor')) return 'harbor';
   if (has('patrician', 'kamienica', 'brick', 'stone_arches') || is('goldsmith')) return 'brick';
