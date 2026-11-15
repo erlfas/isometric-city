@@ -3,6 +3,7 @@ import { ThreeIsometricRenderer } from './engine/three-renderer';
 import { SpatialHashGrid } from './engine/spatial-hash';
 import { SimulationEngine } from './engine/simulation';
 import { NavGrid } from './engine/nav-grid';
+import { GroundPatches } from './engine/ground-patches';
 import { channelQuads, riverFrames } from './engine/river-course';
 import { bridgeOpenings, raceQuads } from './engine/riverside';
 import { BuildingIndex, type Building } from './engine/building-anchors';
@@ -56,8 +57,9 @@ async function bootstrap() {
   // Nobody wades the Bystrzyca: its channel (plus half a metre of bank) is blocked.
   // The footbridge's deck is open over it; the mill race is blocked like the river.
   const river = plan.river ? [...channelQuads(riverFrames(plan.river), 0.5), ...raceQuads(plan.river)] : [];
+  // Quarry benches and ramps are walked on (ground-patches.ts): cliffs block, feet follow them.
   const nav = new NavGrid(-350, -275, 350, 275, placed, [...buildings.seeds(), { x: -15.5, z: -25.5 }], river,
-    bridgeOpenings(plan.river));
+    bridgeOpenings(plan.river), new GroundPatches(placed));
   console.log(`[Lublin 1392] Navigation grid ${nav.w}x${nav.h} built in ${nav.buildMs.toFixed(0)} ms (${buildings.all.length} buildings with doors/spots).`);
   const sim = new SimulationEngine(plan, spatialGrid, nav, buildings);
   const audio = new Soundscape();

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { STEP_MAX, groundOf, sampleGround, type GroundPatches } from './ground-patches';
 
 /**
  * Walkable ground for citizens: a 0.5 m occupancy grid over the whole map, built from the
@@ -68,11 +69,16 @@ export class NavGrid {
   /** Walkable components left (1 = every street connects). */
   components = 0;
 
+  /** Raised walkable surfaces carried by models (quarry benches), or null. */
+  readonly ground: GroundPatches | null;
+
   /** `obstacles`: extra world-space polygons that block (the river channel, river-course.ts);
-   *  `openings`: polygons walkable whatever is under them (a bridge deck over the channel). */
+   *  `openings`: polygons walkable whatever is under them (a bridge deck over the channel);
+   *  `ground`: the placements' ground patches (cliffs block, see ground-patches.ts). */
   constructor(minX: number, minZ: number, maxX: number, maxZ: number, placements: NavPlacement[], seeds: { x: number; z: number }[],
-    obstacles: { x: number; z: number }[][] = [], openings: { x: number; z: number }[][] = []) {
+    obstacles: { x: number; z: number }[][] = [], openings: { x: number; z: number }[][] = [], ground: GroundPatches | null = null) {
     const t0 = performance.now();
+    this.ground = ground;
     this.minX = minX;
     this.minZ = minZ;
     this.w = Math.ceil((maxX - minX) / CELL);
@@ -85,6 +91,7 @@ export class NavGrid {
     this.seen = new Uint32Array(n);
     this.closed = new Uint32Array(n);
     for (const p of placements) this.stamp(p);
+    if (ground) this.stampCliffs(ground);
     for (const poly of obstacles) this.rasterPoly(poly.map((q) => q.x), poly.map((q) => q.z));
     for (const poly of openings) this.rasterPoly(poly.map((q) => q.x), poly.map((q) => q.z), true);
     this.sealEnclosed(seeds);
@@ -406,9 +413,13 @@ export class NavGrid {
     const v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
     const poly: number[] = [];
     const tmp: number[] = [];
+    // A model with a ground patch: its terrain does not block (stampCliffs does), and the rest
+    // stands on that terrain, so heights count from the surface under each vertex.
+    const ground = groundOf(template);
     template.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
+      if (ground && ground.mats.has((mesh.material as THREE.Material).name)) return;
       m.multiplyMatrices(inv, mesh.matrixWorld);
       const pos = mesh.geometry.attributes.position;
       const idx = mesh.geometry.index;
@@ -417,6 +428,10 @@ export class NavGrid {
         for (let k = 0; k < 3; k++) {
           const vi = idx ? idx.getX(t * 3 + k) : t * 3 + k;
           v[k].fromBufferAttribute(pos, vi).applyMatrix4(m);
+          if (ground) {
+            const s = sampleGround(ground, v[k].x, v[k].z);
+            if (!Number.isNaN(s)) v[k].y -= s;
+          }
         }
         const ylo = Math.min(v[0].y, v[1].y, v[2].y), yhi = Math.max(v[0].y, v[1].y, v[2].y);
         if (yhi < BODY_LO || ylo > BODY_HI) continue;
@@ -433,6 +448,36 @@ export class NavGrid {
     const fp = { pts: new Float32Array(pts), starts: new Uint32Array(starts) };
     this.footprints.set(template, fp);
     return fp;
+  }
+
+  /** Block both cells of every neighbouring pair whose surfaces differ by more than STEP_MAX
+   *  (quarry faces, bench edges, the hill's steep flanks); ramps stay open. */
+  private stampCliffs(ground: GroundPatches): void {
+    for (const p of ground.patches) {
+      const cx0 = Math.max(0, Math.floor((p.x0 - this.minX) / CELL)), cx1 = Math.min(this.w - 1, Math.floor((p.x1 - this.minX) / CELL));
+      const cz0 = Math.max(0, Math.floor((p.z0 - this.minZ) / CELL)), cz1 = Math.min(this.h - 1, Math.floor((p.z1 - this.minZ) / CELL));
+      const W = cx1 - cx0 + 1;
+      const hs = new Float32Array(W * (cz1 - cz0 + 1));
+      for (let cz = cz0; cz <= cz1; cz++) {
+        for (let cx = cx0; cx <= cx1; cx++) {
+          const h = ground.heightAt(this.minX + (cx + 0.5) * CELL, this.minZ + (cz + 0.5) * CELL);
+          hs[(cz - cz0) * W + (cx - cx0)] = h ?? 0;
+        }
+      }
+      for (let cz = cz0; cz <= cz1; cz++) {
+        for (let cx = cx0; cx <= cx1; cx++) {
+          const k = (cz - cz0) * W + (cx - cx0), h = hs[k];
+          if (cx < cx1 && Math.abs(hs[k + 1] - h) > STEP_MAX) {
+            this.blocked[cz * this.w + cx] = 1;
+            this.blocked[cz * this.w + cx + 1] = 1;
+          }
+          if (cz < cz1 && Math.abs(hs[k + W] - h) > STEP_MAX) {
+            this.blocked[cz * this.w + cx] = 1;
+            this.blocked[(cz + 1) * this.w + cx] = 1;
+          }
+        }
+      }
+    }
   }
 
   private stamp(p: NavPlacement): void {

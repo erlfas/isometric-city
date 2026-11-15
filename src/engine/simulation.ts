@@ -1663,8 +1663,13 @@ export class SimulationEngine {
     ag.dest = { ...d, x: tx, z: tz };
   }
 
-  /** Feet height on open ground: a bridge deck, the parcel's raised yard, else the street. */
+  /** Feet height on open ground: a quarry bench (ground patch), a bridge deck, the parcel's
+   *  raised yard, else the street. */
   private groundAt(x: number, z: number): number {
+    if (this.nav.ground?.patches.length) {
+      const g = this.nav.ground.heightAt(x, z);
+      if (g !== null) return g;
+    }
     if (this.crossings.length) {
       const deck = deckHeight(this.crossings, x, z);
       if (deck !== null) return deck;

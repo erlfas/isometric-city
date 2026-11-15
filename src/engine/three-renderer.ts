@@ -571,6 +571,7 @@ export class ThreeIsometricRenderer {
       'footbridge',
       'windmill',
       'stone_quarry',
+      'quarry_face',
       'logging_camp',
       'river_harbor',
       'gate_krakow',

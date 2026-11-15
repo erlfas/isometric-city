@@ -806,6 +806,33 @@ def anchor_chimney(x, y, z_top):
     _ANCHORS["chimneys"].append(_gl((x, y, z_top)))
 
 
+NO_SURFACE = -32768   # ground-patches.ts NO_SURFACE
+
+
+def anchor_ground(bm, mat_names, cell=0.5):
+    """Walkable terrain of this model (quarry benches and ramps) as a height grid in the
+    anchors: rays straight down on a `cell` grid over the bmesh's bounds (glTF space: x, z =
+    -Blender y), heights in cm, NO_SURFACE where they miss. Call with a bmesh that holds only
+    the terrain (props added after it stand on it). mat_names: the terrain's materials, which
+    the nav grid leaves out of its footprints (ground-patches.ts)."""
+    from mathutils.bvhtree import BVHTree
+    tree = BVHTree.FromBMesh(bm)
+    xs = [v.co.x for v in bm.verts]
+    ys = [v.co.y for v in bm.verts]
+    x0 = math.floor(min(xs) / cell) * cell
+    z0 = math.floor(-max(ys) / cell) * cell
+    w = int(math.ceil((max(xs) - x0) / cell)) + 1
+    h = int(math.ceil((-min(ys) - z0) / cell)) + 1
+    top = max(v.co.z for v in bm.verts) + 10.0
+    heights = []
+    for r in range(h):
+        for c in range(w):
+            loc = tree.ray_cast(Vector((x0 + c * cell, -(z0 + r * cell), top)), Vector((0.0, 0.0, -1.0)))[0]
+            heights.append(int(round(loc.z * 100)) if loc is not None else NO_SURFACE)
+    _ANCHORS["ground"] = {"x0": round(x0, 3), "z0": round(z0, 3), "cell": cell, "w": w, "h": h,
+                          "y": heights, "mats": list(mat_names)}
+
+
 def anchor_spot(p, face, tag="work"):
     """face: Blender (x, y) direction the citizen looks in."""
     fx, fz = face[0], -face[1]                       # glTF ground-plane direction
@@ -994,11 +1021,12 @@ def export_object(obj, name):
         del out["chimneys"]
     if _INTERIOR["rooms"]:
         out.update(_INTERIOR)
-    if _ANCHORS["doors"] or _ANCHORS["spots"]:
+    if _ANCHORS["doors"] or _ANCHORS["spots"] or "ground" in _ANCHORS:
         scene["anchors"] = json.dumps(out)
     elif "anchors" in scene:
         del scene["anchors"]
     _ANCHORS["doors"], _ANCHORS["spots"], _ANCHORS["chimneys"] = [], [], []
+    _ANCHORS.pop("ground", None)
     for k in _INTERIOR:
         _INTERIOR[k] = []
     _ROOM_USED.clear()
@@ -4398,6 +4426,98 @@ def build_stone_quarry(mats):
     bpy.context.collection.objects.link(obj)
     export_object(obj, "stone_quarry")
 
+
+# -------------------------------------------------------------
+# 20b. The big limestone quarry outside the walls (quarry & ironworks plan, M2/M3).
+# A knoll cut into three benches round a pit that opens toward the default camera (+X, -Y
+# in Blender = the viewer's side). The terrain is a polar height field about the pit
+# centre QF_C: each cliff k rises 4 m at radius QF_R[k] over an angular span with tapered
+# ends; cliffs end at different sides, so each bench is reached by a ramp along its arc
+# (bench 1 from the floor on the +angle side, bench 2 from bench 1 on the -angle side).
+# Beyond QF_TOP the knoll's grassy back falls to the ground at QF_FOOT. The walkable surface
+# goes to the anchors (anchor_ground); the nav grid blocks the cliffs from it.
+# -------------------------------------------------------------
+QF_C = (-4.0, 4.0)                 # pit centre, model space (Blender x, y)
+QF_AXIS = math.radians(135.0)      # toward the knoll (Blender: -x, +y = north-west in the world)
+QF_RISE = 4.0                      # height of each cliff
+QF_R = (14.0, 21.0, 28.0)          # cliff foot radii
+QF_BATTER = 0.6                    # cliff foot -> lip (a near-vertical face, 81 deg)
+QF_TOP, QF_FOOT = 32.0, 46.0       # plateau edge; the knoll's back reaches the ground here
+# Per cliff: angular extent relative to QF_AXIS (deg): full height between in0 and in1,
+# fading to nothing at out0 / out1.
+QF_SPAN = (
+    (-125.0, -100.0, 60.0, 95.0),   # floor -> bench 1 (the ramp up to bench 1 is at +60..+95)
+    (-95.0, -60.0, 100.0, 125.0),   # bench 1 -> bench 2 (its ramp from bench 1 at -95..-60)
+    (-115.0, -90.0, 90.0, 115.0),   # bench 2 -> top
+)
+
+
+def _qf_smooth(t):
+    t = max(0.0, min(1.0, t))
+    return t * t * (3.0 - 2.0 * t)
+
+
+def quarry_height(x, y):
+    """Surface height of the quarry terrain at Blender (x, y) (0 = the plain ground)."""
+    dx, dy = x - QF_C[0], y - QF_C[1]
+    r = math.hypot(dx, dy)
+    a = math.degrees(math.atan2(dy, dx) - QF_AXIS)
+    a = (a + 180.0) % 360.0 - 180.0
+    hgt = 0.0
+    for k, (o0, i0, i1, o1) in enumerate(QF_SPAN):
+        span = min(_qf_smooth((a - o0) / (i0 - o0)), _qf_smooth((o1 - a) / (o1 - i1)))
+        hgt += QF_RISE * span * _qf_smooth((r - QF_R[k]) / QF_BATTER)
+    if r > QF_TOP:
+        hgt *= 1.0 - _qf_smooth((r - QF_TOP) / (QF_FOOT - QF_TOP)) ** 0.8
+    return hgt
+
+
+def build_quarry_face(mats):
+    clear_scene()
+    rock = create_mat("QuarryRock", (0.70, 0.69, 0.64), roughness=0.9)
+    turf = create_mat("QuarryTurf", (0.36, 0.42, 0.22), roughness=0.95)
+    mat_list = [rock, turf, mats["stone_limestone"], mats["timber_dark"]]
+    ROCK, TURF, ASHLAR, TIMBER = 0, 1, 2, 3
+    bm = bmesh.new()
+
+    # Polar grid: radii dense at each cliff (foot, lip), angles every 3 deg.
+    radii = {QF_R[0] - 1.0, QF_TOP, QF_FOOT}
+    for R in QF_R:
+        radii |= {R - 0.01, R + QF_BATTER, R + 2.0, R + 4.5}
+    radii |= {QF_TOP + s for s in (2.0, 4.5, 7.5, 10.5)}
+    radii = sorted(r for r in radii if QF_R[0] - 1.0 <= r <= QF_FOOT)
+    a_lo = min(s[0] for s in QF_SPAN)
+    a_hi = max(s[3] for s in QF_SPAN)
+    n_a = int((a_hi - a_lo) / 3.0)
+    angs = [math.radians(a_lo + (a_hi - a_lo) * j / n_a) + QF_AXIS for j in range(n_a + 1)]
+    grid = []
+    for r in radii:
+        row = []
+        for t in angs:
+            x, y = QF_C[0] + r * math.cos(t), QF_C[1] + r * math.sin(t)
+            row.append(bm.verts.new(Vector((x, y, quarry_height(x, y)))))
+        grid.append(row)
+    for i in range(len(radii) - 1):
+        for j in range(n_a):
+            q = [grid[i][j], grid[i + 1][j], grid[i + 1][j + 1], grid[i][j + 1]]
+            if max(v.co.z for v in q) < 0.02:
+                continue                          # plain ground: the ground plane shows
+            f = bm.faces.new(q)                   # radial x tangential = +z: faces up / inward
+            f.material_index = TURF if radii[i] >= QF_TOP - 0.01 else ROCK
+    anchor_ground(bm, [rock.name, turf.name])
+
+    # Hewers at the faces (on the bench below each cliff, facing it), on all three levels.
+    for k, R in enumerate(QF_R):
+        for da in (-40.0, -10.0, 25.0):
+            t = QF_AXIS + math.radians(da + 8.0 * k)
+            rr = R - 1.4
+            x, y = QF_C[0] + rr * math.cos(t), QF_C[1] + rr * math.sin(t)
+            anchor_spot((x, y, quarry_height(x, y)), (math.cos(t), math.sin(t)))
+    # Loose blocks on the pit floor (rough ashlar waiting for the cranes).
+    for bx, by, s in ((2.0, -2.0, 1.1), (5.0, 1.5, 0.9), (-1.0, -6.0, 1.0), (7.5, -4.5, 0.8)):
+        add_box(bm, bx, by, s * 0.4, s * 1.6, s, s * 0.8, mat_idx=ASHLAR)
+    _ws_finish(bm, mat_list, "Mesh_QuarryFace", "QuarryFace", "quarry_face")
+
 # -------------------------------------------------------------
 # 21. Logging Camp & Pit Sawmill (Trak Ciesielski)
 # -------------------------------------------------------------
@@ -5050,6 +5170,7 @@ def main():
         "footbridge": build_footbridge,
         "windmill": build_windmill,
         "stone_quarry": build_stone_quarry,
+        "quarry_face": build_quarry_face,
         "logging_camp": build_logging_camp,
         "river_harbor": build_river_harbor,
         "blacksmith_workshop": build_blacksmith_workshop,
