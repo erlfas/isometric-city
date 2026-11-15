@@ -87,7 +87,15 @@ export interface Building {
   /** World tops of its flues (smoke while the hearth burns); houses without a chimney get
    *  a smoke vent at the middle of the roof ridge. */
   chimneys: THREE.Vector3[];
+  /** Flues that smoke day and night whoever is there (charcoal clamp vents). */
+  vents: THREE.Vector3[];
 }
+
+/** How a flue smokes (chimney-smoke.ts); anchor_chimney's style, the 4th number of its anchor. */
+export type FlueStyle = 'chimney' | 'clamp' | 'furnace';
+const FLUE_STYLES: FlueStyle[] = ['chimney', 'clamp', 'furnace'];
+/** Style of a flue that is not a plain chimney (keyed by the Building.chimneys / vents vector). */
+export const FLUE_STYLE = new WeakMap<THREE.Vector3, FlueStyle>();
 
 interface RawAnchors {
   doors?: { p: number[]; n: number[]; w: number; h?: number; stair?: number[][] }[];
@@ -151,8 +159,13 @@ export class BuildingIndex {
       };
       v.setFromMatrixPosition(pm.matrix);
       const b: Building = { name: pm.template.name, index, parcelId: pm.parcelId, x: v.x, y: v.y, z: v.z, doors: [], spots: [],
-        chimneys: [] };
-      for (const c of raw.chimneys ?? []) b.chimneys.push(new THREE.Vector3().fromArray(c).applyMatrix4(pm.matrix));
+        chimneys: [], vents: [] };
+      for (const c of raw.chimneys ?? []) {
+        const f = new THREE.Vector3().fromArray(c).applyMatrix4(pm.matrix);
+        const style = FLUE_STYLES[c[3] ?? 0] ?? 'chimney';
+        if (style !== 'chimney') FLUE_STYLE.set(f, style);
+        (style === 'clamp' ? b.vents : b.chimneys).push(f);
+      }
       if (!b.chimneys.length && raw.rooms?.length) b.chimneys.push(ridgeOf(pm.template).clone().applyMatrix4(pm.matrix));
       for (const d of raw.doors ?? []) {
         v.fromArray(d.p).applyMatrix4(pm.matrix);

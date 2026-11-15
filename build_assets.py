@@ -801,9 +801,17 @@ def add_door_steps(bm, p, n, w, mat_idx, tread=0.3, landing=0.35):
     return [foot, land]
 
 
-def anchor_chimney(x, y, z_top):
-    """Top of a flue (Blender model space)."""
-    _ANCHORS["chimneys"].append(_gl((x, y, z_top)))
+FLUE_STYLES = ("chimney", "clamp", "furnace")   # chimney-smoke.ts FlueStyle (index = 4th number)
+
+
+def anchor_chimney(x, y, z_top, style="chimney"):
+    """Top of a flue (Blender model space). style (chimney-smoke.ts): "chimney" smokes while the
+    hearth burns; "clamp" (charcoal clamp vent) smokes thick and pale day and night; "furnace"
+    (bloomery shaft) puffs dark with sparks while the smelt is worked."""
+    p = list(_gl((x, y, z_top)))
+    if style != "chimney":
+        p.append(FLUE_STYLES.index(style))
+    _ANCHORS["chimneys"].append(p)
 
 
 NO_SURFACE = -32768   # ground-patches.ts NO_SURFACE
@@ -4918,6 +4926,8 @@ def build_charcoal_clamp(mats):
             p = Vector((cx + R * math.cos(ph) * math.cos(th), cy + R * math.cos(ph) * math.sin(th), H * math.sin(ph)))
             n = Vector((math.cos(th), math.sin(th), 0.6)).normalized()
             add_timber_beam(bm, p - n * 0.06, p + n * 0.06, width=0.22, depth=0.22, mat_idx=SOOT)
+            if ph > 0.6 or k % 4 == 0:                                    # 8 of them smoking
+                anchor_chimney(p.x + n.x * 0.1, p.y + n.y * 0.1, p.z + 0.05, style="clamp")
     # Charcoal raked out and cooling (the -Y / yard side), a rake and a shovel.
     for (hx, hy, r, h) in ((-5.6, -4.2, 1.2, 0.55), (-2.6, -4.6, 0.9, 0.4)):
         add_beehive_dome(bm, hx, hy, 0.0, r, h, segs_u=12, segs_v=3, mat_idx=CHAR)
@@ -4967,12 +4977,15 @@ def build_bloomery(mats):
         _ws_lathe(bm, x, y0, 0.4, [(0.82, 0.0), (0.74, 0.9), (0.56, 1.8), (0.44, 2.2), (0.40, 2.25)], segs=12, mat=CLAY)
         add_beehive_dome(bm, x, y0, 2.6, 0.3, 0.05, segs_u=8, segs_v=2, mat_idx=CHAR)       # charge in the throat
         add_box(bm, x, y0, 2.62, 0.46, 0.46, 0.02, mat_idx=SOOT)
+        anchor_chimney(x, y0, 2.65, style="furnace")
         # Tapping arch on the yard side, glowing slag inside; a slag cake run out in front.
         add_box(bm, x, y0 - 0.74, 0.7, 0.55, 0.12, 0.6, mat_idx=SOOT)
         add_box(bm, x, y0 - 0.79, 0.55, 0.36, 0.04, 0.22, mat_idx=FIRE)
         add_box(bm, x, y0 - 1.25, 0.05, 0.7, 0.6, 0.1, mat_idx=SLAG)
         # Tuyere from the bellows into the back of the shaft.
         _ws_cyl(bm, (x, y0 + BELLOWS_BACK - 0.7, 0.32), (x, y0 + 0.62, 0.62), 0.09, segs=8, mat=CLAY)
+        add_timber_beam(bm, Vector((x, y0 + BELLOWS_BACK - 0.72, 0.3)), Vector((x, y0 + BELLOWS_BACK - 0.95, 0.32)),
+                        width=0.12, depth=0.12, mat_idx=IRON)                              # the bags' joint pipe
         anchor_machine("bellows", p=(x, y0 + BELLOWS_BACK, 0.0), face=[0.0, 1.0])  # glTF (x, z): toward the furnace
         anchor_spot((x, y0 + BELLOWS_BACK + 0.85), (0.0, -1.0), tag="bellows")        # treading the bellows
     # Open air, as in concept_art/iron_smelting.jpg: a roof over the bellows hid the treaders
@@ -5004,19 +5017,24 @@ def build_bloomery(mats):
     _ws_finish(bm, mat_list, "Mesh_Bloomery", "Bloomery", "bloomery")
 
 
+BELLOWS_DX = 0.36                # each bag this far either side of the pair's middle
+
+
 def build_bloomery_bellows(mats):
-    """Pair of foot bellows (moving part of bloomery.glb): two leather bags between boards side by
-    side, nozzles joined toward -Y (glTF +Z, the furnace). Origin: middle of the pair on the ground."""
+    """One foot bellows bag (moving part of bloomery.glb; industry.ts places two per `bellows`
+    anchor, the right one mirrored, and squashes each in height as its treader presses it): leather
+    bag between boards, its nozzle toward -Y (glTF +Z, the furnace) and in (-X) to the pair's joint
+    pipe (part of bloomery.glb). Origin: middle of the bag on the ground; this is the +X bag (on
+    the left of the treader, who faces the furnace)."""
     clear_scene()
     bm = bmesh.new()
-    mat_list = [mats["timber_plank"], mats["hide_leather"], mats["iron_wrought"], mats["timber_dark"]]
-    PLANK, HIDE, IRON, TIMBER = range(4)
-    for sx in (-0.36, 0.36):
-        add_box(bm, sx, 0.0, 0.05, 0.6, 1.0, 0.1, mat_idx=PLANK)                       # bottom board
-        add_box(bm, sx, 0.05, 0.22, 0.54, 0.84, 0.24, mat_idx=HIDE)                    # bag
-        add_box(bm, sx, 0.0, 0.37, 0.6, 1.0, 0.06, mat_idx=PLANK)                      # top board (trodden)
-        add_timber_beam(bm, Vector((sx, -0.5, 0.18)), Vector((sx * 0.3, -0.75, 0.3)), width=0.08, depth=0.08, mat_idx=IRON)
-    add_timber_beam(bm, Vector((0.0, -0.72, 0.3)), Vector((0.0, -0.95, 0.32)), width=0.12, depth=0.12, mat_idx=IRON)
+    mat_list = [mats["timber_plank"], mats["hide_leather"], mats["iron_wrought"]]
+    PLANK, HIDE, IRON = range(3)
+    add_box(bm, 0.0, 0.0, 0.05, 0.6, 1.0, 0.1, mat_idx=PLANK)                           # bottom board
+    add_box(bm, 0.0, 0.05, 0.22, 0.54, 0.84, 0.24, mat_idx=HIDE)                        # bag
+    add_box(bm, 0.0, 0.0, 0.37, 0.6, 1.0, 0.06, mat_idx=PLANK)                          # top board (trodden)
+    add_timber_beam(bm, Vector((0.0, -0.5, 0.18)), Vector((-BELLOWS_DX * 0.7, -0.75, 0.3)), width=0.08, depth=0.08,
+                    mat_idx=IRON)
     _ws_finish(bm, mat_list, "Mesh_BloomeryBellows", "BloomeryBellows", "bloomery_bellows")
 
 

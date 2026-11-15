@@ -32,7 +32,7 @@ export interface Listener {
 }
 
 interface Point { x: number; z: number }
-type EmitterKind = 'forge' | 'cooper' | 'saw' | 'loom' | 'mill';
+type EmitterKind = 'forge' | 'cooper' | 'saw' | 'loom' | 'mill' | 'quarry' | 'bloomery' | 'clamp';
 interface Emitter extends Point { kind: EmitterKind; next: number; pitch: number }
 type BellName = 'tenor' | 'treble' | 'friary';
 
@@ -46,6 +46,14 @@ function soundOf(p: Parcel, index: number): EmitterKind | 'water' | null {
     case 'weaver': return craft === 'tailor' ? null : 'loom';
     case 'logging': return 'saw';
     case 'watermill': return 'mill'; // the wheel turns day and night
+    case 'industry':  // the quarry and the ironworks: by the site model
+      switch (p.model) {
+        case 'quarry_face': return 'quarry';
+        case 'bloomery': return 'bloomery';
+        case 'forge_shed': return 'forge';
+        case 'charcoal_clamp': return 'clamp';
+        default: return null;
+      }
     case 'brick': case 'half_timber': case 'log': case 'district':
       // ordinary houses: the trade worked inside decides
       if (craft === 'cooper' || p.buildingType.includes('cooper')) return 'cooper';
@@ -55,7 +63,11 @@ function soundOf(p: Parcel, index: number): EmitterKind | 'water' | null {
   }
 }
 /** Reference distance (m) per kind: full volume within it, falling off beyond (see reach). */
-const EMITTER_REF: Record<EmitterKind, number> = { forge: 14, cooper: 9, saw: 7, loom: 7, mill: 14 };
+const EMITTER_REF: Record<EmitterKind, number> = {
+  forge: 14, cooper: 9, saw: 7, loom: 7, mill: 14, quarry: 26, bloomery: 14, clamp: 9,
+};
+/** Kinds that sound day and night (the rest only in working hours). */
+const ALWAYS: ReadonlySet<EmitterKind> = new Set<EmitterKind>(['mill', 'clamp']);
 const MAX_ACTIVE_EMITTERS = 5;
 const DOOR_RATE = 3;   // door sounds per second, sustained
 const DOOR_BURST = 4;
@@ -489,7 +501,7 @@ export class Soundscape {
     const rate = hour >= 12 && hour < 13 ? 0.4 : 1; // the midday meal
     for (const e of this.active) {
       if (t < e.next) continue;
-      if (e.kind !== 'mill' && (!working || Math.random() > rate)) {
+      if (!ALWAYS.has(e.kind) && (!working || Math.random() > rate)) {
         e.next = t + rand(3, 6);
         continue;
       }
@@ -540,6 +552,32 @@ export class Soundscape {
         for (let i = 0; i < n; i++) R.paddleSplash(ctx, out, t + i * rand(0.88, 0.96), nz, rand(0.6, 1));
         if (Math.random() < 0.6) R.wheelCreak(ctx, out, t + rand(0.2, 1.5), nz, 70 + e.pitch * 25, rand(0.7, 1.3), rand(0.6, 1));
         return n * 0.92;
+      }
+      case 'quarry': {
+        // A dozen hewers out of step: picks every ~2 s each (pick.ts), so a loose patter of
+        // clinks; now and then a treadwheel's axle groans under a block.
+        const n = 4 + Math.floor(Math.random() * 5);
+        let at = t;
+        for (let i = 0; i < n; i++) {
+          R.pickStrike(ctx, out, at, nz, 700 + e.pitch * 300 + rand(-120, 160), rand(0.5, 1));
+          at += rand(0.25, 0.7);
+        }
+        if (Math.random() < 0.3) R.wheelCreak(ctx, out, t + rand(0, 1.5), nz, 55 + e.pitch * 20, rand(1.2, 2), rand(0.5, 0.9));
+        return at - t + rand(0.3, 1.5);
+      }
+      case 'bloomery': {
+        // The bellows on the treaders' 1.2 s beat (bellows.ts: a bag pressed every 0.6 s) over
+        // the furnaces' roar.
+        const n = 6 + Math.floor(Math.random() * 4);
+        for (let i = 0; i < n; i++) R.bellowsBreath(ctx, out, t + i * 0.6, nz, 0.55, rand(0.6, 1));
+        R.fireRoar(ctx, out, t, nz, n * 0.6, 0.8);
+        return n * 0.6 - 0.15;
+      }
+      case 'clamp': {
+        // A smouldering clamp: a soft roar and a crackle, day and night.
+        const dur = rand(3, 5);
+        R.fireRoar(ctx, out, t, nz, dur, 0.4);
+        return dur - 0.3;
       }
     }
   }

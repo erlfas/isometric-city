@@ -323,6 +323,9 @@ async function bootstrap() {
   const shownInside: Citizen[] = [];
   const awake = new Set<number>();
   const hearths = new Set<Building>();
+  // A charcoal burn runs for days: the clamp's vents smoke whoever is there.
+  const clampVents = buildings.all.flatMap((b) => b.vents);
+  const worked = new Set<number>();   // placements whose fires burn (furnace mouths, forges glow)
   let windowsT = 0;
   const view = [0, 0, 0, 0];
 
@@ -376,8 +379,13 @@ async function bootstrap() {
     if (windowsT <= 0) {
       windowsT = 0.5;
       threeRenderer.updateWindows(sim.awakeInside(awake), sim.simTimeHours);
-      flues = [];
-      for (const b of sim.hearths(hearths)) flues.push(...b.chimneys);
+      flues = [...clampVents];
+      worked.clear();
+      for (const b of sim.hearths(hearths)) {
+        flues.push(...b.chimneys);
+        worked.add(b.index);
+      }
+      threeRenderer.updateFires(worked);
     }
     threeRenderer.updateSmoke(flues, sim.isPaused ? 0 : dt, sim.simTimeHours);
     birds.update(sim.isPaused ? 0 : dt, sim.simTimeHours, threeRenderer.camera, view, threeRenderer.zoom);

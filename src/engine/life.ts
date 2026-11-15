@@ -143,8 +143,14 @@ export class Life {
       const role: Role = c.guildRank === 'guardsman' ? (r() < 0.5 ? 'guard_day' : 'guard_night')
         : c.guildRank === 'brother' ? 'clergy' : c.guildRank === 'foreign_merchant' ? 'merchant' : 'worker';
       const ws = 6.9 + r() * 0.35, le = 13 + r() * 0.3, we = 17.9 + r() * 0.2;
+      // A charcoal burn runs for days: a collier who lives at the ironworks gets up twice a
+      // night to check the clamp (the only night work at the industry sites).
+      const watch = role === 'worker' && c.trade === 'Collier' && !!parcels.get(c.homeParcelId)?.model;
       const blocks: Block[] =
-        role === 'worker' ? [{ a: ws, b: 12, kind: 'work' }, { a: le, b: we, kind: 'work' }, { a: COMPLINE, b: hh.wake, kind: 'home' }]
+        watch ? [{ a: ws, b: 12, kind: 'work' }, { a: le, b: we, kind: 'work' }, { a: 3.1, b: hh.wake, kind: 'home' },
+          { a: COMPLINE, b: 23.4, kind: 'home' }, { a: 23.4, b: 23.9, kind: 'work' }, { a: 23.9, b: 2.6, kind: 'home' },
+          { a: 2.6, b: 3.1, kind: 'work' }]
+        : role === 'worker' ? [{ a: ws, b: 12, kind: 'work' }, { a: le, b: we, kind: 'work' }, { a: COMPLINE, b: hh.wake, kind: 'home' }]
         : role === 'guard_day' ? [{ a: 6, b: 12.25, kind: 'work' }, { a: 12.9, b: 18.5, kind: 'work' }, { a: 21.5, b: 5.5, kind: 'home' }]
         : role === 'guard_night' ? [{ a: 18, b: 6.5, kind: 'work' }, { a: 7.5, b: 14.5, kind: 'home' }]
         : role === 'clergy' ? [{ a: 5.5, b: 12, kind: 'work' }, { a: 13, b: 20.5, kind: 'work' }, { a: 21, b: 4.9, kind: 'home' }]

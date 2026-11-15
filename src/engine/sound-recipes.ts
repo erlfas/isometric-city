@@ -228,6 +228,43 @@ export function paddleSplash(ctx: BaseAudioContext, out: AudioNode, t: number, n
   tone(ctx, out, t, 'sine', 140 + Math.random() * 40, 0.12 * vel, 0.004, 0.12);
 }
 
+/** An iron pick or wedge on limestone: a short dull clink (anvil-like but damped, little
+ *  ring) and a gritty chip of noise. */
+export function pickStrike(ctx: BaseAudioContext, out: AudioNode, t: number, noise: Noise, f0: number, vel: number): void {
+  tone(ctx, out, t, 'triangle', f0, 0.24 * vel, 0.001, 0.09);
+  tone(ctx, out, t, 'sine', f0 * 2.4, 0.1 * vel, 0.001, 0.05);
+  noiseBurst(ctx, out, t, noise.white, 'bandpass', 2400, 1.2, 0.6 * vel, 0.07);
+  noiseBurst(ctx, out, t + 0.01, noise.pink, 'lowpass', 600, 0.7, 0.25 * vel, 0.12);
+}
+
+/** One push of a foot bellows: a breathy swell of filtered noise, falling as the bag empties. */
+export function bellowsBreath(ctx: BaseAudioContext, out: AudioNode, t: number, noise: Noise, dur: number, vel: number): void {
+  const lp = filtered(ctx, 'lowpass', 900, 0.8);
+  lp.frequency.setValueAtTime(500, t);
+  lp.frequency.linearRampToValueAtTime(1100, t + dur * 0.3);
+  lp.frequency.linearRampToValueAtTime(400, t + dur);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.2 * vel, t + dur * 0.3);
+  g.gain.linearRampToValueAtTime(0, t + dur);
+  noiseSource(ctx, noise.pink, t, dur).connect(lp).connect(g).connect(out);
+}
+
+/** A stretch of fire roar: a low rumbling bed of noise with a few crackles in it. */
+export function fireRoar(ctx: BaseAudioContext, out: AudioNode, t: number, noise: Noise, dur: number, vel: number): void {
+  const lp = filtered(ctx, 'lowpass', 260, 0.9);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.3 * vel, t + 0.4);
+  g.gain.setValueAtTime(0.3 * vel, t + dur - 0.4);
+  g.gain.linearRampToValueAtTime(0, t + dur);
+  noiseSource(ctx, noise.brown, t, dur).connect(lp).connect(g).connect(out);
+  const n = Math.floor(dur * 3 * Math.random());
+  for (let i = 0; i < n; i++) {
+    noiseBurst(ctx, out, t + Math.random() * dur, noise.white, 'highpass', 3000, 0.7, 0.12 * vel, 0.015);
+  }
+}
+
 // ---------------------------------------------------------------- voices and animals
 
 const VOWELS: [number, number][] = [[800, 1200], [500, 1800], [320, 2300], [500, 900], [360, 750], [650, 1500]];

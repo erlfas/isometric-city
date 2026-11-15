@@ -454,7 +454,8 @@ export class Wildlife {
       avoid.push({ x: m.wheel.x, z: m.wheel.z, r: 45 });
       for (const p of m.race ?? []) avoid.push({ x: p.x, z: p.z, r: 14 });
     }
-    for (const p of plan.parcels ?? []) avoid.push({ x: p.x, z: p.z, r: 38 });
+    // Industry sites (quarry, ironworks: Parcel.model) are big and loud: kept well clear.
+    for (const p of plan.parcels ?? []) avoid.push({ x: p.x, z: p.z, r: p.model ? 60 : 38 });
     for (const path of plan.paths ?? []) for (const p of path.points) avoid.push({ x: p.x, z: p.z, r: 11 });
     const blocked = (x: number, z: number) => avoid.some((a) => (a.x - x) ** 2 + (a.z - z) ** 2 < a.r * a.r);
 
@@ -578,6 +579,12 @@ export class Wildlife {
     const bad: { s: number; r: number }[] = [];
     for (const c of plan.river?.crossings ?? []) bad.push({ s: this.project(c.x, c.z).s, r: 4 });
     for (const m of plan.river?.mills ?? []) bad.push({ s: this.project(m.wheel.x, m.wheel.z).s, r: 30 });
+    // ...and of the ironworks in the meander (picks, bellows, smoke): any site within 80 m of the water.
+    for (const p of plan.parcels ?? []) {
+      if (!p.model) continue;
+      const q = this.project(p.x, p.z);
+      if (Math.abs(q.u) * q.half < 80) bad.push({ s: q.s, r: 40 });
+    }
     const inGround = (s: number) => { const p = this.at(s, 0); return Math.abs(p.x) < 330 && Math.abs(p.z) < 255; };
     const free = (s: number) => bad.every((b) => Math.abs(b.s - s) > 35 + b.r) && inGround(s - 35) && inGround(s + 35);
     // Four stretches clear of the mill, under open sky (few trees over and beside the water,

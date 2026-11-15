@@ -111,6 +111,9 @@ const CUT_STOREY = 2.2;
 const OCCLUDER_FADE = 0.85;
 /** Lit window glass at night (linear emissive, times nightFactor). */
 const WINDOW_GLOW = new THREE.Color(1.0, 0.55, 0.22).multiplyScalar(1.3);
+const FIRE_GLOW = new THREE.Color(1.0, 0.42, 0.1).multiplyScalar(1.6);
+/** Glowing parts (window glass, fire) per placement index. */
+type GlowParts = Map<number, { mesh: THREE.BatchedMesh; id: number; tint: THREE.Color }[]>;
 
 export class ThreeIsometricRenderer {
   public scene: THREE.Scene;
@@ -169,6 +172,9 @@ export class ThreeIsometricRenderer {
   // Lit windows: glass parts per placement, which are lit now, the glass materials' night level.
   private glass = new Map<number, { mesh: THREE.BatchedMesh; id: number; tint: THREE.Color }[]>();
   private litNow = new Set<number>();
+  private fire = new Map<number, { mesh: THREE.BatchedMesh; id: number; tint: THREE.Color }[]>();
+  private fireNow = new Set<number>();
+  private uFire = { value: 0.35 };
   private uNight = { value: 0 };
   private glow4 = new THREE.Vector4();
 
@@ -1020,6 +1026,7 @@ export class ThreeIsometricRenderer {
     this.camera.updateMatrixWorld();
     this.crowd.update(citizens, (c) => this.getCitizenArchetype(c), dt, performance.now() * 0.001, this.camera,
       this.canvas.clientHeight);
+    this.industry?.update(citizens);   // cranes and bellows move with their walkers' loops
   }
 
   /** Chimney smoke: flues = tops of the chimneys burning now (null: unchanged). */
@@ -1151,41 +1158,57 @@ export class ThreeIsometricRenderer {
    * instance colour's alpha (1 normally, 2 lit) switches a warm emissive, scaled by uNight.
    */
   private collectGlass(): void {
+    // Glass glows at night only; fire (furnace mouths, forge hearths) dimly by day too.
+    const kinds: { name: string; parts: GlowParts; glow: THREE.Color; k: { value: number }; key: string }[] = [
+      { name: 'GlassDark', parts: this.glass, glow: WINDOW_GLOW, k: this.uNight, key: 'lit-glass' },
+      { name: 'FireOrange', parts: this.fire, glow: FIRE_GLOW, k: this.uFire, key: 'lit-fire' },
+    ];
     const patched = new Set<THREE.Material>();
     for (let i = 0; i < this.statics.placements.length; i++) {
       for (const p of this.statics.partsOfPlacement(i)) {
-        if (p.material.name !== 'GlassDark' || !p.mesh) continue;
-        let list = this.glass.get(i);
-        if (!list) this.glass.set(i, (list = []));
+        const kind = kinds.find((k) => k.name === p.material.name);
+        if (!kind || !p.mesh) continue;
+        let list = kind.parts.get(i);
+        if (!list) kind.parts.set(i, (list = []));
         list.push({ mesh: p.mesh, id: p.id!, tint: p.tint });
         if (patched.has(p.material)) continue;
         patched.add(p.material);
-        const night = this.uNight;
-        const g = WINDOW_GLOW;
+        const { glow: g, k } = kind;
         p.material.onBeforeCompile = (s) => {
-          s.uniforms.uNight = night;
-          s.fragmentShader = 'uniform float uNight;\n' + s.fragmentShader.replace('#include <emissivemap_fragment>',
+          s.uniforms.uGlowK = k;
+          s.fragmentShader = 'uniform float uGlowK;\n' + s.fragmentShader.replace('#include <emissivemap_fragment>',
             `#include <emissivemap_fragment>
 #ifdef USE_COLOR_ALPHA
-totalEmissiveRadiance += vec3(${g.r.toFixed(3)}, ${g.g.toFixed(3)}, ${g.b.toFixed(3)}) * clamp(vColor.a - 1.0, 0.0, 1.0) * uNight;
+totalEmissiveRadiance += vec3(${g.r.toFixed(3)}, ${g.g.toFixed(3)}, ${g.b.toFixed(3)}) * clamp(vColor.a - 1.0, 0.0, 1.0) * uGlowK;
 #endif`);
         };
-        p.material.customProgramCacheKey = () => 'lit-glass';
+        p.material.customProgramCacheKey = () => kind.key;
         p.material.needsUpdate = true;
       }
     }
   }
 
-  /** Light the windows of buildings with someone awake inside (lit: placement indices). */
-  public updateWindows(lit: ReadonlySet<number>, hour: number): void {
-    this.uNight.value = nightFactor(hour);
+  /** Switch the glow of one kind of part (glass / fire) to the placements in lit. */
+  private light(parts: GlowParts, now: Set<number>, lit: ReadonlySet<number>): void {
     const set = (i: number, on: boolean) => {
-      for (const g of this.glass.get(i) ?? []) {
+      for (const g of parts.get(i) ?? []) {
         g.mesh.setColorAt(g.id, this.glow4.set(g.tint.r, g.tint.g, g.tint.b, on ? 2 : 1) as unknown as THREE.Color);
       }
     };
-    for (const i of this.litNow) if (!lit.has(i)) { set(i, false); this.litNow.delete(i); }
-    for (const i of lit) if (!this.litNow.has(i) && this.glass.has(i)) { set(i, true); this.litNow.add(i); }
+    for (const i of now) if (!lit.has(i)) { set(i, false); now.delete(i); }
+    for (const i of lit) if (!now.has(i) && parts.has(i)) { set(i, true); now.add(i); }
+  }
+
+  /** Light the windows of buildings with someone awake inside (lit: placement indices). */
+  public updateWindows(lit: ReadonlySet<number>, hour: number): void {
+    this.uNight.value = nightFactor(hour);
+    this.uFire.value = 0.35 + 0.9 * this.uNight.value;
+    this.light(this.glass, this.litNow, lit);
+  }
+
+  /** Fires (FireOrange parts) of the placements being worked glow: furnaces, forges. */
+  public updateFires(worked: ReadonlySet<number>): void {
+    this.light(this.fire, this.fireNow, worked);
   }
 
   /** Crowd detail level, citizens drawn, triangles per pass (debug stats). */
@@ -1575,7 +1598,9 @@ totalEmissiveRadiance += vec3(${g.r.toFixed(3)}, ${g.g.toFixed(3)}, ${g.b.toFixe
     // A turning mill wheel casts a moving shadow too: redrawn in steps (millCasting).
     this.mills?.update();
     const moving = this.crowd.castsShadows || this.doorsCasting > 0 || this.cutaway.count > 0;
-    if (moving || this.shadowMoving || this.shadowDirty || this.millCasting()) this.renderer.shadowMap.needsUpdate = true;
+    if (moving || this.shadowMoving || this.shadowDirty || this.millCasting() || this.craneCasting()) {
+      this.renderer.shadowMap.needsUpdate = true;
+    }
     this.shadowMoving = moving;
     this.shadowDirty = false;
     this.statics.updateCasters();
@@ -1592,11 +1617,20 @@ totalEmissiveRadiance += vec3(${g.r.toFixed(3)}, ${g.g.toFixed(3)}, ${g.b.toFixe
    */
   private millCasting(): boolean {
     if (!this.mills || this.zoom >= MILL_SHADOW_ZOOM) return false;
+    return this.inShadowBox(this.mills.wheels.map((w) => w.at)) && this.mills.shadowDue();
+  }
+
+  /** The quarry cranes' wheels and blocks, likewise in steps (IndustryMachines.shadowDue). */
+  private craneCasting(): boolean {
+    if (!this.industry?.cranes.length || this.zoom >= MILL_SHADOW_ZOOM) return false;
+    return this.inShadowBox(this.industry.casters) && this.industry.shadowDue();
+  }
+
+  private inShadowBox(points: readonly THREE.Vector3[]): boolean {
     const b = this.shadowBox;
-    for (const w of this.mills.wheels) {
-      const p = w.at;
+    for (const p of points) {
       const x = p.x * b.ax.x + p.y * b.ax.y + p.z * b.ax.z, y = p.x * b.ay.x + p.y * b.ay.y + p.z * b.ay.z;
-      if (x > b.x0 - 3 && x < b.x1 + 3 && y > b.y0 - 3 && y < b.y1 + 3) return this.mills.shadowDue();
+      if (x > b.x0 - 3 && x < b.x1 + 3 && y > b.y0 - 3 && y < b.y1 + 3) return true;
     }
     return false;
   }

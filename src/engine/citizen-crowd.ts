@@ -154,6 +154,15 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
+/** Seconds added to real time for a citizen's work loop (the loops' `t`): machines that
+ *  move with a loop (industry.ts bellows) use the same clock. */
+const _phase = new Map<string, number>();
+export function animPhase(id: string): number {
+  let p = _phase.get(id);
+  if (p === undefined) _phase.set(id, (p = mulberry32(hashId(id))() * 100));
+  return p;
+}
+
 function weighted<T>(items: [T, number][], rnd: number): T | null {
   const total = items.reduce((s, [, w]) => s + w, 0);
   if (total <= 0) return null;
@@ -442,7 +451,7 @@ export class CitizenCrowd {
     citizens.forEach((c, i) => {
       const arch = this.archetypes.get(archetypeOf(c));
       const rnd = mulberry32(hashId(c.id));
-      this.phaseOffset[i] = rnd() * 100;
+      this.phaseOffset[i] = rnd() * 100;   // = animPhase(c.id)
       worn[i] = [];
       if (!arch) return;
       const look = this.look(c, arch.meta, rnd);

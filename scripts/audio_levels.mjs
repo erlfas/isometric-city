@@ -2,7 +2,7 @@
 // The only way to check the mix without ears: compare buses against each other and the music.
 //
 // usage: node scripts/audio_levels.mjs [scene ...] [--url http://localhost:5173/]
-//   scenes: market forge cooper saw loom mill water river bells herald night rooks doors (default: all)
+//   scenes: market forge cooper saw loom mill quarry ironworks clamp water river bells herald night rooks doors (default: all)
 // Needs `npm run dev`. Bus names and debugState(): src/engine/audio.ts.
 // Rough targets: music -23..-27 dB, a workshop you are zoomed onto -30..-40, crowd at the
 // market about -40, bells above the ducked music.
@@ -22,6 +22,10 @@ const SCENES = {
   loom: ['emitter("loom")', 6],
   // the watermill's wheel on the Bystrzyca: paddles slapping the race, the axle creaking
   mill: ['emitter("mill")', 8],
+  // the quarry's hewers and cranes; the ironworks' bellows and furnaces; the smouldering clamp
+  quarry: ['emitter("quarry")', 8],
+  ironworks: ['emitter("bloomery")', 8],
+  clamp: ['emitter("clamp")', 6],
   water: ['const w = __lublin.audio.water[0]; __lublin.snapTo(w.x, w.z, 15)', 4],
   river: ['const r = __lublin.audio.water.at(-12); __lublin.snapTo(r.x, r.z, 20)', 4],
   bells: ['__lublin.snapTo(0, 0, 40); __lublin.audio.tollHour(9)', 8],
