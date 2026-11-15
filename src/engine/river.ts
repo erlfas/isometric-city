@@ -144,6 +144,12 @@ const WATER_MAIN = /* glsl */ `
   float shoreN = gnoised(vWPos.xz * 0.42).x + 0.5 * gnoised(vWPos.xz * 1.3 + 7.1).x;
   float dShore = (1.0 - abs(rU)) * rHalf + shoreN * min(0.7, rHalf * 0.22);
   float depth = smoothstep(0.0, rHalf * 0.55, dShore);
+#ifdef STILL
+  // Standing pool: the noise in world space (radial u/v would draw rings round its centre),
+  // and a narrower pale rim (a peat hole is deep almost to its edge).
+  uM = vWPos.x; rV = vWPos.z;
+  depth = smoothstep(0.0, rHalf * 0.3, dShore);
+#endif
   float speed = riverSpeed(uc, rCurv) * uSpeedMul;
   float outside = clamp(-sign(rCurv) * uc, 0.0, 1.0) * clamp(abs(rCurv) * 30.0, 0.0, 1.0);
   // Slow sideways wobble so the surface does not slide like a conveyor belt.
@@ -195,6 +201,9 @@ const WATER_MAIN = /* glsl */ `
   float band = 0.22 + outside * 1.0;
   float fEdge = (1.0 - smoothstep(0.0, band, dShore)) * smoothstep(-0.25, 0.05, dShore);
   float foam = fEdge * smoothstep(0.5, 0.9, foamN * 0.5 + 0.5 + outside * 0.25) * 0.85;
+#ifdef STILL
+  foam = 0.0;
+#endif
   foam = clamp(foam + ring * 0.5, 0.0, 1.0);
 
   vec3 body = mix(uShallow, uDeep, depth);
@@ -397,13 +406,15 @@ export class RiverWater {
     return g;
   }
 
-  /** The water material; a race's (speedMul > 1) runs faster and fades in and out along aFade. */
+  /** The water material; a race's (speedMul > 1) runs faster and fades in and out along aFade;
+   *  still water (speedMul 0, the bog pools) has no aFade. */
   private buildMaterial(speedMul = 1): THREE.Material {
-    const race = speedMul !== 1;
+    const race = speedMul > 1, still = speedMul === 0;
     const mat = new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0, transparent: true, depthWrite: false });
-    mat.name = race ? 'RaceWater' : 'RiverWater';
+    mat.name = race ? 'RaceWater' : still ? 'PoolWater' : 'RiverWater';
     if (race) mat.defines = { RACE: '' };
-    mat.customProgramCacheKey = () => (race ? 'race-water-v1' : 'river-water-v1');
+    if (still) mat.defines = { STILL: '' };
+    mat.customProgramCacheKey = () => (race ? 'race-water-v1' : still ? 'pool-water-v1' : 'river-water-v1');
     const speed = { value: speedMul };
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, this.uniforms, { uSpeedMul: speed });
@@ -440,6 +451,71 @@ export class RiverWater {
     const fade = cum.map((s) => Math.min(1, s / 3, (L - s) / 3));
     const mesh = new THREE.Mesh(this.buildRibbon(f, cum, 0.35, 0.045, fade), this.buildMaterial(2.4));
     mesh.name = 'mill_race';
+    mesh.receiveShadow = true;
+    mesh.renderOrder = 1;
+    return mesh;
+  }
+
+  /**
+   * Standing pools (the ironworks bog, plan.grounds kind 'pool') as the river's water, still:
+   * one fan per ring, shore at the ring (pushed out `grow` m under the painted mud's edge),
+   * deepest at its centre. One mesh for all of them.
+   */
+  poolWater(rings: { x: number; z: number }[][], grow = 0.6): THREE.Mesh | null {
+    const pos: number[] = [], nor: number[] = [], river: number[] = [], rn: number[] = [], idx: number[] = [];
+    for (const raw of rings) {
+      if (raw.length < 3) continue;
+      // Round the plan's few-cornered rings (Chaikin, 3 passes), else the shallows show the corners.
+      let ring = raw;
+      for (let pass = 0; pass < 3; pass++) {
+        const out: { x: number; z: number }[] = [];
+        for (let k = 0; k < ring.length; k++) {
+          const a = ring[k], b = ring[(k + 1) % ring.length];
+          out.push({ x: a.x * 0.75 + b.x * 0.25, z: a.z * 0.75 + b.z * 0.25 }, { x: a.x * 0.25 + b.x * 0.75, z: a.z * 0.25 + b.z * 0.75 });
+        }
+        ring = out;
+      }
+      const n = ring.length;
+      const cx = ring.reduce((s, q) => s + q.x, 0) / n, cz = ring.reduce((s, q) => s + q.z, 0) / n;
+      // Half-width: the centre's distance to the nearest edge (the shallows' scale).
+      let half = Infinity;
+      for (let k = 0; k < n; k++) {
+        const a = ring[k], b = ring[(k + 1) % n];
+        const ex = b.x - a.x, ez = b.z - a.z, L2 = ex * ex + ez * ez || 1;
+        const t = Math.max(0, Math.min(1, ((cx - a.x) * ex + (cz - a.z) * ez) / L2));
+        half = Math.min(half, Math.hypot(cx - a.x - ex * t, cz - a.z - ez * t));
+      }
+      half = Math.max(0.8, half + grow);
+      const base = pos.length / 3;
+      const vert = (x: number, z: number, u: number) => {
+        pos.push(x, 0.03, z); nor.push(0, 1, 0); river.push(u, x + z, 0, half); rn.push(1, 0);
+      };
+      vert(cx, cz, 0);
+      for (const q of ring) {           // mid ring, then the shore
+        vert(cx + (q.x - cx) * 0.5, cz + (q.z - cz) * 0.5, 0.5);
+      }
+      for (const q of ring) {
+        const dx = q.x - cx, dz = q.z - cz, d = Math.hypot(dx, dz) || 1;
+        vert(q.x + (dx / d) * grow, q.z + (dz / d) * grow, 1);
+      }
+      for (let k = 0; k < n; k++) {
+        const k1 = (k + 1) % n, m0 = base + 1 + k, m1 = base + 1 + k1, s0 = m0 + n, s1 = m1 + n;
+        idx.push(base, m1, m0, m0, m1, s1, m0, s1, s0);
+      }
+    }
+    if (!idx.length) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute('aRiver', new THREE.Float32BufferAttribute(river, 4));
+    g.setAttribute('aRN', new THREE.Float32BufferAttribute(rn, 2));
+    g.setIndex(idx);
+    g.computeBoundingSphere();
+    g.computeBoundingBox();
+    const mat = this.buildMaterial(0);
+    mat.side = THREE.DoubleSide;        // rings come in either winding
+    const mesh = new THREE.Mesh(g, mat);
+    mesh.name = 'bog_pools';
     mesh.receiveShadow = true;
     mesh.renderOrder = 1;
     return mesh;

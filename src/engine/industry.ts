@@ -8,10 +8,21 @@ import type { PlacedModel } from './static-batches';
  *   machines: [{ kind: 'crane', axle, axis, r, tip, lo, hi }]  (glTF model space)
  *     axle: wheel centre, axis: axle direction, r: wheel radius (tread surface),
  *     tip: jib end (rope top), lo / hi: height the block rests at below / is landed at above.
+ *   machines: [{ kind: 'bellows', p, face }]: a bloomery's foot bellows (bloomery_bellows.glb).
  * Like the mill wheels these are ordinary scene objects, not in the static batches.
  */
 
 interface RawCrane { kind: 'crane'; axle: number[]; axis: number[]; r: number; tip: number[]; lo: number; hi: number }
+/** A bloomery's pair of foot bellows: p = middle of the pair on the ground, face = toward the
+ *  furnace (glTF ground-plane direction). */
+interface RawBellows { kind: 'bellows'; p: number[]; face: number[] }
+type RawMachine = RawCrane | RawBellows;
+
+export interface Bellows {
+  /** The pair (bloomery_bellows.glb, nozzles along its +Z); pumped in M6. */
+  obj: THREE.Object3D;
+  parcelId?: string;
+}
 
 export interface Crane {
   wheel: THREE.Object3D;
@@ -33,32 +44,43 @@ export interface Crane {
 const HOOK_ABOVE = 1.75;
 const X = new THREE.Vector3(1, 0, 0);
 
-function machinesOf(t: THREE.Object3D): RawCrane[] {
+function machinesOf(t: THREE.Object3D): RawMachine[] {
   let a: unknown = t.userData?.anchors;
   if (typeof a === 'string') {
     try { a = JSON.parse(a); } catch { return []; }
   }
-  return ((a as { machines?: RawCrane[] } | null)?.machines ?? []).filter((m) => m.kind === 'crane');
+  return (a as { machines?: RawMachine[] } | null)?.machines ?? [];
 }
 
 export class IndustryMachines {
   readonly cranes: Crane[] = [];
+  readonly bellows: Bellows[] = [];
 
   constructor(scene: THREE.Scene, model: (name: string) => THREE.Object3D | undefined, placed: readonly PlacedModel[]) {
     const wheelT = model('crane_wheel'), ropeT = model('crane_rope'), blockT = model('crane_block');
-    if (!wheelT || !ropeT || !blockT) return;
+    const bellowsT = model('bloomery_bellows');
     const pos = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+    const clone = (t: THREE.Object3D) => {
+      const o = t.clone(true);
+      o.traverse((c) => { if ((c as THREE.Mesh).isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+      scene.add(o);
+      return o;
+    };
     for (const pm of placed) {
       const raw = machinesOf(pm.template);
       if (!raw.length) continue;
       pm.matrix.decompose(pos, q, s);
       for (const m of raw) {
-        const clone = (t: THREE.Object3D) => {
-          const o = t.clone(true);
-          o.traverse((c) => { if ((c as THREE.Mesh).isMesh) { c.castShadow = true; c.receiveShadow = true; } });
-          scene.add(o);
-          return o;
-        };
+        if (m.kind === 'bellows') {
+          if (!bellowsT) continue;
+          const obj = clone(bellowsT);
+          obj.position.fromArray(m.p).applyMatrix4(pm.matrix);
+          const f = new THREE.Vector3(m.face[0], 0, m.face[1]).transformDirection(pm.matrix);
+          obj.rotation.y = Math.atan2(f.x, f.z);   // model's +Z (nozzles) toward the furnace
+          this.bellows.push({ obj, parcelId: pm.parcelId });
+          continue;
+        }
+        if (m.kind !== 'crane' || !wheelT || !ropeT || !blockT) continue;
         const axis = new THREE.Vector3().fromArray(m.axis).transformDirection(pm.matrix);
         const base = new THREE.Quaternion().setFromUnitVectors(X, axis);
         const wheel = clone(wheelT);

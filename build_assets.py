@@ -4780,6 +4780,361 @@ def build_masons_lodge(mats):
         add_box(bm, W * 0.5 + 1.2, -4.5 + k * 1.1, 0.35, 0.9, 1.0, 0.7, mat_idx=ASHLAR)
     _ws_finish(bm, mat_list, "Mesh_MasonsLodge", "MasonsLodge", "masons_lodge")
 
+
+# -------------------------------------------------------------
+# Forest ironworks (quarry & ironworks plan M4; concept_art/iron_smelting.jpg): bog-ore pits,
+# a charcoal clamp, three bloomery furnaces with foot bellows, a forge shed and two log huts.
+# All placed unscaled at orientation 0 except hut_1 (generate_city_plan.py IRONWORKS_PARCELS);
+# the works' yard lies toward Blender -Y (world +z), which is also the camera side.
+# -------------------------------------------------------------
+def _iw_mats():
+    return {
+        "peat": create_mat("Peat", (0.10, 0.065, 0.04), roughness=0.95),
+        "ore": create_mat("BogOre", (0.24, 0.085, 0.03), roughness=0.9),
+        "turf": create_mat("QuarryTurf", (0.20, 0.24, 0.10), roughness=0.95),
+        "slag": create_mat("Slag", (0.07, 0.065, 0.06), roughness=0.35),
+        "char": create_mat("Charcoal", (0.035, 0.033, 0.03), roughness=0.85),
+        "clay": create_mat("FurnaceClay", (0.34, 0.20, 0.11), roughness=0.9),
+    }
+
+
+def _iw_barrow(bm, x, y, face, TIMBER, PLANK, IRON, load=None):
+    """Wooden wheelbarrow at (x, y), wheel toward `face`; load = material of a heap in its tray."""
+    f = Vector((face[0], face[1], 0.0)).normalized()
+    s = Vector((-f.y, f.x, 0.0))
+    o = Vector((x, y, 0.0))
+    _ws_cyl(bm, o + f * 0.75 - s * 0.05 + Vector((0, 0, 0.25)), o + f * 0.75 + s * 0.05 + Vector((0, 0, 0.25)), 0.25, segs=10, mat=TIMBER)
+    for sx in (-1.0, 1.0):
+        add_timber_beam(bm, o + f * 0.8 + s * 0.12 * sx + Vector((0, 0, 0.25)), o - f * 0.95 + s * 0.3 * sx + Vector((0, 0, 0.55)),
+                        width=0.06, depth=0.06, mat_idx=TIMBER)
+        add_timber_beam(bm, o - f * 0.35 + s * 0.25 * sx + Vector((0, 0, 0.42)), o - f * 0.4 + s * 0.25 * sx, width=0.05, depth=0.05, mat_idx=TIMBER)
+    add_timber_beam(bm, o - f * 0.45 + Vector((0, 0, 0.5)), o + f * 0.35 + Vector((0, 0, 0.5)), width=0.6, depth=0.05, mat_idx=PLANK)
+    for sx in (-1.0, 1.0):
+        add_timber_beam(bm, o - f * 0.45 + s * 0.3 * sx + Vector((0, 0, 0.62)), o + f * 0.35 + s * 0.3 * sx + Vector((0, 0, 0.62)),
+                        width=0.04, depth=0.22, mat_idx=PLANK)
+    if load is not None:
+        add_beehive_dome(bm, o.x - f.x * 0.05, o.y - f.y * 0.05, 0.52, 0.32, 0.22, segs_u=8, segs_v=2, mat_idx=load)
+
+
+def _iw_billets(bm, cx, cy, length, rows, layers, mat, along=(1.0, 0.0), r=0.11):
+    """Stack of split billets (charcoal wood) lying along `along`."""
+    a = Vector((along[0], along[1], 0.0)).normalized()
+    s = Vector((-a.y, a.x, 0.0))
+    for k in range(layers):
+        for i in range(rows - k):
+            c = Vector((cx, cy, 0.0)) + s * ((i - (rows - k - 1) * 0.5) * r * 2.05) + Vector((0, 0, r + k * r * 1.8))
+            _ws_cyl(bm, c - a * length * 0.5, c + a * length * 0.5, r, segs=6, mat=mat)
+
+
+def build_bog_works(mats):
+    """Bog-ore pits (34 x 16 m parcel): two trenches cut into the peat (turfed banks, a rusty ore
+    bed on the floor, open toward the works on -Y), ore heaps, crates, a barrow and duckboards
+    over the mud. The three standing pools are not modelled: the plan paints them and the
+    runtime draws them as water (river.ts poolWater) - keep everything clear of them:
+    pools at about (-8.8, 1) r 4, (5.8, 5.8) r 3, (14, -4) r 3 (Blender x, y)."""
+    clear_scene()
+    bm = bmesh.new()
+    iw = _iw_mats()
+    mat_list = [mats["timber_dark"], mats["timber_plank"], mats["iron_wrought"], iw["peat"], iw["ore"], iw["turf"],
+                mats["flour_sack_cloth"]]
+    TIMBER, PLANK, IRON, PEAT, ORE, TURF, SACK = range(7)
+    rng = random.Random(1392_41)
+
+    def pit(cx, cy, w, d, hgt=0.8):
+        """Trench floor w x d at (cx, cy) (wet peat, ore lumps), banks of cut peat on +Y and both sides."""
+        add_box(bm, cx, cy, 0.015, w, d, 0.03, mat_idx=PEAT)
+        for (bx, by, bw, bd) in ((cx, cy + d * 0.5 + 0.75, w + 2.4, 1.5),
+                                 (cx - w * 0.5 - 0.6, cy - 0.2, 1.2, d - 0.4),
+                                 (cx + w * 0.5 + 0.6, cy - 0.2, 1.2, d - 0.4)):
+            h = hgt * rng.uniform(0.9, 1.1)
+            add_box(bm, bx, by, h * 0.5, bw, bd, h, mat_idx=PEAT)
+            add_box(bm, bx, by, h + 0.04, bw + 0.1, bd + 0.1, 0.08, mat_idx=TURF)
+        # Spoil: cut turves stacked to dry along the back.
+        for k in range(int(w / 0.9)):
+            add_box(bm, cx - w * 0.5 + 0.45 + k * 0.9, cy + d * 0.5 + 1.9, 0.2, 0.7, 0.45, 0.4, mat_idx=PEAT)
+        # Lumps of ore turned up on the floor.
+        for _ in range(int(w * 1.5)):
+            add_box(bm, cx + rng.uniform(-w, w) * 0.45, cy + rng.uniform(-d, d) * 0.4, 0.07,
+                    rng.uniform(0.15, 0.3), rng.uniform(0.12, 0.25), 0.12, mat_idx=ORE)
+
+    pit(0.0, -2.6, 7.0, 3.6)
+    pit(-9.5, -5.2, 5.0, 2.8)
+    # Ore heaps waiting for the roasting hearth; crates and baskets.
+    for (hx, hy, r, h) in ((3.2, -7.0, 1.1, 0.75), (5.4, -6.4, 0.9, 0.6), (-4.6, -7.0, 0.8, 0.5)):
+        add_beehive_dome(bm, hx, hy, 0.0, r, h, segs_u=10, segs_v=3, mat_idx=ORE)
+    for (bx, by) in ((7.2, -7.0), (8.0, -6.6), (7.6, -7.6)):
+        add_box(bm, bx, by, 0.25, 0.7, 0.55, 0.5, mat_idx=PLANK)
+        add_box(bm, bx, by, 0.52, 0.6, 0.45, 0.06, mat_idx=ORE)
+    for (bx, by) in ((-2.0, -6.8), (-1.3, -7.2)):
+        _ws_lathe(bm, bx, by, 0.0, [(0.22, 0.0), (0.3, 0.45)], segs=8, mat=PLANK)
+        add_box(bm, bx, by, 0.44, 0.4, 0.4, 0.04, mat_idx=ORE)
+    _iw_barrow(bm, 1.2, -6.4, (1.0, 0.0), TIMBER, PLANK, IRON, load=ORE)
+    # Duckboards: two runners and cross planks, from the yard to the pits and between the pools.
+    def boards(a, b):
+        a, b = Vector((a[0], a[1], 0.0)), Vector((b[0], b[1], 0.0))
+        t = (b - a).normalized()
+        s = Vector((-t.y, t.x, 0.0))
+        for sx in (-0.35, 0.35):
+            add_timber_beam(bm, a + s * sx + Vector((0, 0, 0.03)), b + s * sx + Vector((0, 0, 0.03)), width=0.08, depth=0.06, mat_idx=TIMBER)
+        n = int((b - a).length / 0.3)
+        for k in range(n):
+            c = a + t * (0.15 + k * 0.3) + Vector((0, 0, 0.075))
+            add_timber_beam(bm, c - s * 0.5, c + s * 0.5, width=0.24, depth=0.04, mat_idx=PLANK)
+    boards((-4.6, -9.0), (-4.6, 2.8))
+    boards((-4.6, 2.8), (1.5, 6.5))
+    boards((10.0, -8.5), (10.0, 1.0))
+    # Spades stuck in the bank, a sieve frame.
+    for (sx, sy) in ((2.6, -0.4), (-11.2, -3.6)):
+        add_timber_beam(bm, Vector((sx, sy, 0.6)), Vector((sx + 0.15, sy - 0.1, 1.85)), width=0.05, depth=0.05, mat_idx=TIMBER)
+        add_box(bm, sx - 0.02, sy + 0.01, 0.55, 0.22, 0.04, 0.3, mat_idx=IRON)
+    anchor_spot((-1.6, -2.0), (0.0, 1.0))                      # diggers at the cut faces
+    anchor_spot((1.8, -2.2), (0.0, 1.0))
+    anchor_spot((-9.5, -4.8), (0.0, 1.0))
+    anchor_spot((3.2, -8.6), (0.0, 1.0))                       # sorting at the ore heap
+    _ws_finish(bm, mat_list, "Mesh_BogWorks", "BogWorks", "bog_works")
+
+
+def build_charcoal_clamp(mats):
+    """Charcoal clamp (18 x 14 m): a turfed dome ~8 m across with vent holes, the collier's
+    turf-and-pole hut, billet stacks and charcoal heaps raked out on the -Y side."""
+    clear_scene()
+    bm = bmesh.new()
+    iw = _iw_mats()
+    mat_list = [mats["timber_dark"], mats["timber_log"], iw["turf"], iw["char"], mats["soot_black"], mats["timber_plank"],
+                mats["iron_wrought"]]
+    TIMBER, LOG, TURF, CHAR, SOOT, PLANK, IRON = range(7)
+    R, H, cx, cy = 4.0, 2.6, -1.0, 1.0
+    add_beehive_dome(bm, cx, cy, 0.0, R, H, segs_u=24, segs_v=7, mat_idx=TURF)
+    add_beehive_dome(bm, cx, cy, H - 0.12, 0.7, 0.18, segs_u=10, segs_v=2, mat_idx=CHAR)   # charred crown
+    for k in range(10):                                                   # vents round the shoulder
+        th = 2 * math.pi * k / 10 + 0.3
+        for ph in (math.radians(28), math.radians(52)):
+            if (k + (ph > 0.6)) % 2:
+                continue
+            p = Vector((cx + R * math.cos(ph) * math.cos(th), cy + R * math.cos(ph) * math.sin(th), H * math.sin(ph)))
+            n = Vector((math.cos(th), math.sin(th), 0.6)).normalized()
+            add_timber_beam(bm, p - n * 0.06, p + n * 0.06, width=0.22, depth=0.22, mat_idx=SOOT)
+    # Charcoal raked out and cooling (the -Y / yard side), a rake and a shovel.
+    for (hx, hy, r, h) in ((-5.6, -4.2, 1.2, 0.55), (-2.6, -4.6, 0.9, 0.4)):
+        add_beehive_dome(bm, hx, hy, 0.0, r, h, segs_u=12, segs_v=3, mat_idx=CHAR)
+    add_timber_beam(bm, Vector((-4.0, -3.6, 0.05)), Vector((-3.2, -2.0, 1.6)), width=0.05, depth=0.05, mat_idx=TIMBER)
+    add_box(bm, -4.02, -3.6, 0.06, 0.6, 0.08, 0.12, mat_idx=IRON)
+    # Billet stacks waiting for the next clamp (+X side).
+    _iw_billets(bm, 6.0, 3.5, 2.0, 7, 4, LOG, along=(1.0, 0.0))
+    _iw_billets(bm, 6.0, -1.0, 2.0, 7, 3, LOG, along=(1.0, 0.0))
+    for sy in (-1.0, 1.0):
+        for (bx, by) in ((6.0, 3.5), (6.0, -1.0)):
+            add_timber_beam(bm, Vector((bx - 1.05, by + sy * 0.85, 0.0)), Vector((bx - 1.05, by + sy * 0.85, 1.1)), width=0.08, depth=0.08, mat_idx=TIMBER)
+    # The collier's hut: a cone of poles under turf, the doorway toward the clamp (+X).
+    hx, hy = -6.6, 3.4
+    _ws_lathe(bm, hx, hy, 0.0, [(1.6, 0.0), (1.1, 1.2), (0.12, 2.6)], segs=10, mat=TURF, cap_bottom=False)
+    for k in range(6):
+        th = 2 * math.pi * k / 6
+        add_timber_beam(bm, Vector((hx + 1.62 * math.cos(th), hy + 1.62 * math.sin(th), 0.0)),
+                        Vector((hx - 0.1 * math.cos(th), hy - 0.1 * math.sin(th), 2.9)), width=0.07, depth=0.07, mat_idx=TIMBER)
+    add_box(bm, hx + 1.32, hy, 0.6, 0.12, 0.7, 1.2, mat_idx=SOOT)                     # doorway
+    add_box(bm, hx + 2.2, hy - 1.2, 0.2, 0.9, 0.35, 0.4, mat_idx=PLANK)                 # bench
+    anchor_spot((cx + 0.3, cy - R - 0.7), (0.0, 1.0))                                  # tending the clamp
+    anchor_spot((4.3, 1.2), (1.0, 0.0))                                                # at the billets
+    _ws_finish(bm, mat_list, "Mesh_CharcoalClamp", "CharcoalClamp", "charcoal_clamp")
+
+
+BLOOMERY_X = (-5.0, 0.0, 5.0)    # furnace centres along Blender X, at y = BLOOMERY_Y
+BLOOMERY_Y = 0.8
+BELLOWS_BACK = 2.2               # bellows pair this far behind (+Y) a furnace's centre
+
+
+def build_bloomery(mats):
+    """Three bloomery furnaces (18 x 12 m): clay shafts ~2.6 m on fieldstone footings, tapping
+    arch toward the yard (-Y), a clay tuyere from the foot bellows behind each (bellows are
+    bloomery_bellows.glb, placed by industry.ts from the `bellows` anchors) under a thatched
+    lean-to; ore roasting heap, slag heap, a work table with a bloom, barrels and charcoal."""
+    clear_scene()
+    bm = bmesh.new()
+    iw = _iw_mats()
+    mat_list = [mats["timber_dark"], mats["timber_plank"], mats["roof_thatch"], mats["stone_fieldstone"], iw["clay"],
+                mats["soot_black"], mats["fire_orange"], iw["slag"], iw["char"], iw["ore"], mats["iron_wrought"],
+                mats["water_clean"]]
+    TIMBER, PLANK, THATCH, FIELD, CLAY, SOOT, FIRE, SLAG, CHAR, ORE, IRON, WATER = range(12)
+    rng = random.Random(1392_43)
+    y0 = BLOOMERY_Y
+    for x in BLOOMERY_X:
+        add_box(bm, x, y0, 0.2, 1.9, 1.9, 0.4, mat_idx=FIELD)
+        _ws_lathe(bm, x, y0, 0.4, [(0.82, 0.0), (0.74, 0.9), (0.56, 1.8), (0.44, 2.2), (0.40, 2.25)], segs=12, mat=CLAY)
+        add_beehive_dome(bm, x, y0, 2.6, 0.3, 0.05, segs_u=8, segs_v=2, mat_idx=CHAR)       # charge in the throat
+        add_box(bm, x, y0, 2.62, 0.46, 0.46, 0.02, mat_idx=SOOT)
+        # Tapping arch on the yard side, glowing slag inside; a slag cake run out in front.
+        add_box(bm, x, y0 - 0.74, 0.7, 0.55, 0.12, 0.6, mat_idx=SOOT)
+        add_box(bm, x, y0 - 0.79, 0.55, 0.36, 0.04, 0.22, mat_idx=FIRE)
+        add_box(bm, x, y0 - 1.25, 0.05, 0.7, 0.6, 0.1, mat_idx=SLAG)
+        # Tuyere from the bellows into the back of the shaft.
+        _ws_cyl(bm, (x, y0 + BELLOWS_BACK - 0.7, 0.32), (x, y0 + 0.62, 0.62), 0.09, segs=8, mat=CLAY)
+        anchor_machine("bellows", p=(x, y0 + BELLOWS_BACK, 0.0), face=[0.0, 1.0])  # glTF (x, z): toward the furnace
+        anchor_spot((x, y0 + BELLOWS_BACK + 0.85), (0.0, -1.0))                       # treading the bellows
+    # Thatched lean-to over the bellows row, eaves high on the furnace side.
+    yf, yb, zf, zb = y0 + 1.25, y0 + 4.1, 2.9, 2.2
+    for x in (-7.2, -2.5, 2.5, 7.2):
+        add_timber_beam(bm, Vector((x, yf, 0.0)), Vector((x, yf, zf)), width=0.18, depth=0.18, mat_idx=TIMBER)
+        add_timber_beam(bm, Vector((x, yb, 0.0)), Vector((x, yb, zb)), width=0.18, depth=0.18, mat_idx=TIMBER)
+    for (yy, zz) in ((yf, zf), (yb, zb)):
+        add_timber_beam(bm, Vector((-7.5, yy, zz)), Vector((7.5, yy, zz)), width=0.16, depth=0.18, mat_idx=TIMBER)
+    _ws_prism(bm, [(-7.8, yf - 0.4, zf + 0.25), (7.8, yf - 0.4, zf + 0.25), (7.8, yb + 0.5, zb - 0.05), (-7.8, yb + 0.5, zb - 0.05)],
+              0.3, THATCH)
+    # Ore roasting heap (-X), slag heap (+X), charcoal by the furnaces.
+    add_beehive_dome(bm, -7.6, -2.4, 0.0, 1.3, 0.7, segs_u=12, segs_v=3, mat_idx=ORE)
+    add_beehive_dome(bm, -7.6, -2.4, 0.66, 0.5, 0.06, segs_u=8, segs_v=2, mat_idx=CHAR)
+    for _ in range(26):
+        a, d = rng.uniform(0, 2 * math.pi), rng.uniform(0, 1.5)
+        w = rng.uniform(0.25, 0.55)
+        add_box(bm, 7.4 + d * math.cos(a), -3.0 + d * math.sin(a), max(0.1, (1.6 - d) * 0.45) * 0.5, w, w * 0.8,
+                max(0.1, (1.6 - d) * 0.45), mat_idx=SLAG)
+    for (hx, hy) in ((-2.5, -0.6), (2.5, -0.6)):
+        add_beehive_dome(bm, hx, hy, 0.0, 0.7, 0.4, segs_u=10, segs_v=3, mat_idx=CHAR)
+    # Work table with a bloom and tongs, quench trough, barrels.
+    tx, ty = -3.2, -3.6
+    add_box(bm, tx, ty, 0.82, 2.0, 0.9, 0.08, mat_idx=PLANK)
+    for lx in (-0.85, 0.85):
+        for ly in (-0.35, 0.35):
+            add_box(bm, tx + lx, ty + ly, 0.39, 0.1, 0.1, 0.78, mat_idx=TIMBER)
+    add_beehive_dome(bm, tx + 0.3, ty, 0.86, 0.22, 0.16, segs_u=8, segs_v=2, mat_idx=IRON)
+    add_timber_beam(bm, Vector((tx - 0.6, ty - 0.1, 0.88)), Vector((tx + 0.1, ty + 0.1, 0.88)), width=0.04, depth=0.04, mat_idx=IRON)
+    add_water_trough(bm, 3.4, -3.8, 0.0, w=1.8, d=0.8, h=0.6, mat_wood=PLANK, mat_water=WATER)
+    for (bx, by) in ((-8.0, 2.6), (-7.3, 3.1)):
+        _ws_barrel(bm, bx, by, 0.0, r=0.36, h=0.9, mat_wood=PLANK, mat_hoop=IRON)
+    anchor_spot((0.0, y0 - 1.9), (0.0, 1.0))                                         # tapping the middle furnace
+    _ws_finish(bm, mat_list, "Mesh_Bloomery", "Bloomery", "bloomery")
+
+
+def build_bloomery_bellows(mats):
+    """Pair of foot bellows (moving part of bloomery.glb): two leather bags between boards side by
+    side, nozzles joined toward -Y (glTF +Z, the furnace). Origin: middle of the pair on the ground."""
+    clear_scene()
+    bm = bmesh.new()
+    mat_list = [mats["timber_plank"], mats["hide_leather"], mats["iron_wrought"], mats["timber_dark"]]
+    PLANK, HIDE, IRON, TIMBER = range(4)
+    for sx in (-0.36, 0.36):
+        add_box(bm, sx, 0.0, 0.05, 0.6, 1.0, 0.1, mat_idx=PLANK)                       # bottom board
+        add_box(bm, sx, 0.05, 0.22, 0.54, 0.84, 0.24, mat_idx=HIDE)                    # bag
+        add_box(bm, sx, 0.0, 0.37, 0.6, 1.0, 0.06, mat_idx=PLANK)                      # top board (trodden)
+        add_timber_beam(bm, Vector((sx, -0.5, 0.18)), Vector((sx * 0.3, -0.75, 0.3)), width=0.08, depth=0.08, mat_idx=IRON)
+    add_timber_beam(bm, Vector((0.0, -0.72, 0.3)), Vector((0.0, -0.95, 0.32)), width=0.12, depth=0.12, mat_idx=IRON)
+    _ws_finish(bm, mat_list, "Mesh_BloomeryBellows", "BloomeryBellows", "bloomery_bellows")
+
+
+def build_forge_shed(mats):
+    """Open-sided forge shed (9 x 6 m) where blooms are worked: stone hearth with a clay hood and
+    chimney, bellows, anvil on a stump, quench tub, A-frame tool rack, bar stock; shingle gable
+    roof on six posts, ridge along X."""
+    clear_scene()
+    bm = bmesh.new()
+    mat_list = [mats["timber_dark"], mats["timber_plank"], mats["roof_shingle"], mats["stone_limestone"], mats["iron_steel"],
+                mats["fire_orange"], mats["soot_black"], mats["coal_black"], mats["hide_leather"], mats["iron_wrought"],
+                mats["water_clean"], mats["timber_weathered"]]
+    TIMBER, PLANK, SHINGLE, STONE, STEEL, FIRE, SOOT, COAL, HIDE, IRON, WATER, WEATHER = range(12)
+    hx, hy, ze = 4.2, 2.6, 2.7
+    for x in (-hx, 0.0, hx):
+        for y in (-hy, hy):
+            add_timber_beam(bm, Vector((x, y, 0.0)), Vector((x, y, ze)), width=0.24, depth=0.24, mat_idx=TIMBER)
+    for y in (-hy, hy):
+        add_timber_beam(bm, Vector((-hx - 0.2, y, ze)), Vector((hx + 0.2, y, ze)), width=0.22, depth=0.22, mat_idx=TIMBER)
+    for x in (-hx, 0.0, hx):
+        add_timber_beam(bm, Vector((x, -hy - 0.1, ze)), Vector((x, hy + 0.1, ze)), width=0.2, depth=0.2, mat_idx=TIMBER)
+        for sx in (-1.0, 1.0):
+            if abs(x + sx * 0.8) <= hx:
+                for y in (-hy, hy):
+                    add_timber_beam(bm, Vector((x, y, ze - 0.8)), Vector((x + sx * 0.8, y, ze)), width=0.12, depth=0.12, mat_idx=TIMBER)
+    # add_gable_roof's ridge runs along its d (Blender Y); this shed's ridge runs along X,
+    # so the roof is two pitched faces (single, facing up: the materials are double-sided and
+    # check_models wants roofs wound outward).
+    rise = 1.8
+    for sy in (-1.0, 1.0):
+        _ws_face(bm, [(-hx - 0.5, 0.0, ze + rise + 0.15), (hx + 0.5, 0.0, ze + rise + 0.15),
+                      (hx + 0.5, sy * (hy + 0.6), ze - 0.25), (-hx - 0.5, sy * (hy + 0.6), ze - 0.25)], SHINGLE,
+                 Vector((0.0, sy * 3.0, ze - 3.0)))
+        add_timber_beam(bm, Vector((-hx - 0.5, sy * (hy + 0.6), ze - 0.3)), Vector((hx + 0.5, sy * (hy + 0.6), ze - 0.3)),
+                        width=0.12, depth=0.12, mat_idx=PLANK)                         # eaves board
+    for x in (-hx - 0.1, hx + 0.1):                                                    # board gables
+        _ws_face(bm, [(x, -hy, ze), (x, hy, ze), (x, 0.0, ze + rise)], PLANK, Vector((0.0, 0.0, ze + 0.5)))
+    # Hearth at the back (-X end): stone base, coals, clay hood, chimney through the roof.
+    fx, fy = -2.6, 1.4
+    add_box(bm, fx, fy, 0.4, 2.0, 1.6, 0.8, mat_idx=STONE)
+    add_box(bm, fx, fy - 0.1, 0.84, 1.3, 1.0, 0.08, mat_idx=COAL)
+    add_box(bm, fx, fy - 0.15, 0.9, 0.7, 0.5, 0.06, mat_idx=FIRE)
+    add_box(bm, fx, fy + 0.65, 1.3, 1.8, 0.3, 1.0, mat_idx=STONE)
+    add_box(bm, fx, fy + 0.2, 2.1, 1.8, 1.2, 0.6, mat_idx=STONE)
+    add_ashlar_chimney(bm, fx, fy + 0.3, 2.4, w=0.9, d=0.9, h=3.0, mat_stone=STONE, mat_soot=SOOT)
+    anchor_chimney(fx, fy + 0.3, 5.4)
+    # Bellows beside it, nozzle into the hearth.
+    add_box(bm, fx - 1.6, fy, 0.42, 0.55, 0.9, 0.84, mat_idx=WEATHER)
+    add_box(bm, fx - 1.6, fy, 1.0, 0.8, 1.1, 0.3, mat_idx=HIDE)
+    add_timber_beam(bm, Vector((fx - 1.2, fy, 1.0)), Vector((fx - 0.9, fy - 0.1, 0.95)), width=0.08, depth=0.08, mat_idx=IRON)
+    # Anvil on a stump, quench tub, bar stock, tool rack.
+    ax, ay = 0.0, 0.2
+    _ws_cyl(bm, (ax, ay, 0.0), (ax, ay, 0.7), 0.4, segs=10, mat=WEATHER)
+    add_box(bm, ax, ay, 0.78, 0.4, 0.6, 0.16, mat_idx=STEEL)
+    add_box(bm, ax, ay, 0.95, 0.24, 0.36, 0.2, mat_idx=STEEL)
+    add_box(bm, ax, ay + 0.05, 1.12, 0.3, 0.75, 0.14, mat_idx=STEEL)
+    add_timber_beam(bm, Vector((ax, ay - 0.32, 1.12)), Vector((ax, ay - 0.65, 1.16)), width=0.1, depth=0.1, mat_idx=STEEL)
+    _ws_tub(bm, 1.9, -0.9, 0.0, 0.45, 0.6, PLANK, WATER, mat_hoop=IRON)
+    for k in range(3):
+        for i in range(4 - k):
+            add_timber_beam(bm, Vector((2.2, 1.5 + i * 0.13 + k * 0.065, 0.05 + k * 0.09)),
+                            Vector((3.4, 1.5 + i * 0.13 + k * 0.065, 0.05 + k * 0.09)), width=0.09, depth=0.09, mat_idx=IRON)
+    rx = 3.6
+    for ry in (-1.9, -0.6):
+        for sx in (-0.35, 0.35):
+            add_timber_beam(bm, Vector((rx + sx, ry, 0.0)), Vector((rx, ry, 1.5)), width=0.09, depth=0.09, mat_idx=TIMBER)
+    add_timber_beam(bm, Vector((rx, -2.0, 1.45)), Vector((rx, -0.5, 1.45)), width=0.08, depth=0.08, mat_idx=TIMBER)
+    for k, ty in enumerate((-1.7, -1.35, -1.0, -0.75)):
+        add_timber_beam(bm, Vector((rx - 0.4, ty, 0.05)), Vector((rx - 0.05, ty, 1.6)), width=0.045, depth=0.045, mat_idx=PLANK)
+        add_box(bm, rx - 0.08, ty, 1.5, 0.08, 0.2 if k % 2 else 0.12, 0.18, mat_idx=STEEL)
+    # Charcoal bin by the hearth.
+    add_water_trough(bm, -3.6, -1.2, 0.0, w=1.2, d=1.2, h=0.7, mat_wood=PLANK, mat_water=COAL)
+    anchor_spot((ax, ay - 0.95), (0.0, 1.0))                     # at the anvil (striker)
+    anchor_spot((ax + 0.85, ay), (-1.0, 0.0))                    # holding the tongs
+    anchor_spot((fx, fy - 1.05), (0.0, 1.0))                     # at the hearth
+    anchor_spot((fx - 1.6, fy - 0.85), (0.0, 1.0))               # at the bellows
+    _ws_finish(bm, mat_list, "Mesh_ForgeShed", "ForgeShed", "forge_shed")
+
+
+def build_smithy_hut(mats):
+    """Ironworker's log hut (7 x 5 m) with a shingle gable roof, a fieldstone footing, the door
+    in the -Y gable and a smoke-hole chimney; one room with hearth, table and beds for a
+    household of up to five."""
+    clear_scene()
+    bm = bmesh.new()
+    mat_list = [mats["timber_log"], mats["timber_plank"], mats["roof_shingle"], mats["stone_fieldstone"],
+                mats["glass_dark"], mats["clay_mound"], mats["timber_dark"]]
+    LOG, PLANK, SHINGLE, FIELD, GLASS, CLAY, TIMBER = range(7)
+    # Wall top above floor + CUT_STOREY (three-renderer.ts, 2.2 m), or the cutaway keeps it as a lid.
+    W, D, z0, z1 = 7.0, 5.0, 0.3, 2.65
+    add_box(bm, 0.0, 0.0, z0 * 0.5, W + 0.3, D + 0.3, z0, mat_idx=FIELD)
+    add_box(bm, 0.0, 0.0, (z0 + z1) * 0.5, W, D, z1 - z0, mat_idx=LOG)
+    add_log_corner_crossings(bm, 0.0, 0.0, W, D, z0, z1, course=0.25, mat_idx=LOG)
+    # The door in the -Y gable wall, a window on each long side.
+    dx = 1.4
+    add_box(bm, dx, -D * 0.5 - 0.05, z0 + 0.95, 1.0, 0.12, 1.9, mat_idx=PLANK)
+    anchor_door((dx, -D * 0.5, z0), (0, -1), 0.95, h=1.9, steps=(bm, FIELD))
+    add_wall_window(bm, Vector((W * 0.5, 0.6, 1.5)), (0, 1, 0), (1, 0, 0), 0.6, 0.5, mat_glass=GLASS, mat_frame=PLANK,
+                    frame=0.1, shutters_mat=PLANK)
+    add_wall_window(bm, Vector((-W * 0.5, -0.6, 1.5)), (0, 1, 0), (-1, 0, 0), 0.6, 0.5, mat_glass=GLASS, mat_frame=PLANK)
+    # Ridge along Y (the gables are the short ends), board gables.
+    add_gable_roof(bm, 0.0, 0.0, z1, W, D, 2.6, overhang=0.45, mat_roof=SHINGLE, mat_plaster=PLANK, mat_timber=PLANK,
+                   frame=False, loft_windows=0)
+    # Wattle-and-clay smoke stack over the hearth.
+    hx, hy = -2.2, 1.0
+    add_box(bm, hx, hy, z1 + 2.0, 0.7, 0.7, 2.2, mat_idx=CLAY)
+    anchor_chimney(hx, hy, z1 + 3.1)
+    # Woodpile and a chopping block by the door.
+    add_prop_firewood_pile(bm, -1.6, -D * 0.5 - 0.75, 0.0, w=1.8, d=0.8, h=1.1, mat_bark=LOG, mat_end=PLANK)
+    _ws_cyl(bm, (3.4, -D * 0.5 - 1.2, 0.0), (3.4, -D * 0.5 - 1.2, 0.5), 0.3, segs=8, mat=TIMBER)
+    anchor_room(-3.2, -2.2, 3.2, 2.2, z0)
+    furnish("hearth", hx, hy + 0.4, (0, -1))
+    furnish("table", 0.6, 0.9, (0, -1))
+    got = fill_sleepers(0, 5, beds=1, chest=False)
+    print(f"  smithy_hut: {got} sleepers")
+    _ws_finish(bm, mat_list, "Mesh_SmithyHut", "SmithyHut", "smithy_hut")
+
 # -------------------------------------------------------------
 # 21. Logging Camp & Pit Sawmill (Trak Ciesielski)
 # -------------------------------------------------------------
@@ -5438,6 +5793,12 @@ def main():
         "crane_block": build_crane_block,
         "quarry_yard": build_quarry_yard,
         "masons_lodge": build_masons_lodge,
+        "bog_works": build_bog_works,
+        "charcoal_clamp": build_charcoal_clamp,
+        "bloomery": build_bloomery,
+        "bloomery_bellows": build_bloomery_bellows,
+        "forge_shed": build_forge_shed,
+        "smithy_hut": build_smithy_hut,
         "logging_camp": build_logging_camp,
         "river_harbor": build_river_harbor,
         "blacksmith_workshop": build_blacksmith_workshop,

@@ -574,6 +574,7 @@ export class ThreeIsometricRenderer {
       'windmill',
       'stone_quarry',
       'quarry_face', 'quarry_yard', 'masons_lodge', 'crane_wheel', 'crane_rope', 'crane_block',
+      'bog_works', 'charcoal_clamp', 'bloomery', 'bloomery_bellows', 'forge_shed', 'smithy_hut',
       'logging_camp',
       'river_harbor',
       'gate_krakow',
@@ -879,6 +880,9 @@ export class ThreeIsometricRenderer {
     }
     // Quarry cranes' wheels, ropes and blocks (industry.ts), from the site models' anchors.
     this.industry = new IndustryMachines(this.scene, (n) => this.models.get(n), this.statics.placed);
+    // The ironworks bog's standing pools: the river's water, still (walkers are kept out in main.ts).
+    const pools = this.river?.poolWater((plan.grounds ?? []).filter((g) => g.kind === 'pool').map((g) => g.points));
+    if (pools) this.scene.add(pools);
     if (millsPlaced.length) {
       this.mills = new MillWheels(this.scene, m('watermill_wheel'), millsPlaced, (race) => this.river?.raceWater(race) ?? null);
       this.mills.ripple = (x, z, s) => this.river?.addRipple(x, z, s);

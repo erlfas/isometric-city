@@ -57,6 +57,8 @@ async function bootstrap() {
   // Nobody wades the Bystrzyca: its channel (plus half a metre of bank) is blocked.
   // The footbridge's deck is open over it; the mill race is blocked like the river.
   const river = plan.river ? [...channelQuads(riverFrames(plan.river), 0.5), ...raceQuads(plan.river)] : [];
+  // Nor the ironworks bog's pools.
+  for (const g of plan.grounds ?? []) if (g.kind === 'pool') river.push(g.points);
   // Quarry benches and ramps are walked on (ground-patches.ts): cliffs block, feet follow them.
   const nav = new NavGrid(-350, -275, 350, 275, placed, [...buildings.seeds(), { x: -15.5, z: -25.5 }], river,
     bridgeOpenings(plan.river), new GroundPatches(placed));
