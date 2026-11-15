@@ -58,6 +58,7 @@ Commands:
 - **Specifications & Post-Mortem Documentation**:
   - [`BUILDINGS_AND_WORKERS_CATALOG.md`](BUILDINGS_AND_WORKERS_CATALOG.md): Master building & worker specification.
   - [`KEY_FINDINGS.md`](KEY_FINDINGS.md): Critical post-mortem findings (Sections 1–21; §16 = textures & lighting, §17 = timber joints & workshop yards, §18 = characters, §19 = navigation, interiors & citizen life, §20 = river, woods & wildlife, §21 = quarry & ironworks).
+  - [`docs/rpg_plan.md`](docs/rpg_plan.md): plan for the story game (player character Jan, Ink dialogue, items, journal, saving; milestones M1–M7). Story content: [`docs/story/case_drowned_scribe.md`](docs/story/case_drowned_scribe.md).
   - [`docs/material_board/`](docs/material_board/index.html), [`docs/texture_pilot/`](docs/texture_pilot/index.html): texture families, prompts, and the before/after sign-off.
   - [`docs/IMAGE_GENERATION_PROMPTS_AND_GALLERY.md`](docs/IMAGE_GENERATION_PROMPTS_AND_GALLERY.md): Exact prompts and visual gallery.
   - [`skills/`](skills/): Reusable procedural pipeline skills (`blender-procedural-asset-pipeline`, `blender-procedural-character-pipeline`, `procedural-model-creation-pipeline`).
