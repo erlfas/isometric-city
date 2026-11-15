@@ -1200,6 +1200,22 @@ MODEL_FOOTPRINT = {
 }
 
 
+# Landmarks the renderer places itself (three-renderer.ts populateCityScene `put`: model, x, z,
+# rotation about +Y in degrees) and their ground footprints (model space, below 4 m, measured
+# like MODEL_FOOTPRINT). Keep in sync with populateCityScene.
+RENDERED_LANDMARKS = [
+    ("town_hall", 0, 0, 0), ("szmatruz", 22, -18, 90), ("town_well", -14, 10, 0),
+    ("church_gothic", 130, 20, 90), ("castle_donjon", 275, 75, 0), ("archery_yard", 245, 95, 45),
+    ("monastery_cloister", 70, -60, 0),
+]
+LANDMARK_FOOTPRINT = {
+    "town_hall": (-9.19, -6.15, 11.15, 6.08), "szmatruz": (-10.55, -4.55, 10.55, 4.55),
+    "town_well": (-1.3, -1.36, 1.3, 1.36), "church_gothic": (-10.5, -16.06, 9.8, 23.1),
+    "castle_donjon": (-7.75, -7.75, 9.39, 12.3), "archery_yard": (-7.0, -10.07, 7.0, 10.5),
+    "monastery_cloister": (-12.17, -12.17, 12.17, 12.8),
+}
+
+
 def _parcel_hash(p, index):
     """src/engine/parcel-kind.ts parcelHash (JS int32 string hash)."""
     s = p["id"] or f"parcel_{index}"
@@ -1283,6 +1299,14 @@ def resolve_clashes(parcels, wall_points, landmarks, castle_elements, vegetation
         fixed.append(("tower", [(a["x"] - hx, a["z"] - hz), (a["x"] + hx, a["z"] - hz), (a["x"] + hx, a["z"] + hz), (a["x"] - hx, a["z"] + hz)]))
     for l in list(landmarks) + [e for e in castle_elements if "width" in e and "x" in e]:
         fixed.append(("landmark", _render_corners(l["x"], l["z"], l["width"] * 0.5 + 1.0, l["depth"] * 0.5 + 1.0, 0.0)))
+    # The landmarks where the renderer actually draws them (they do not all stand where the
+    # plan's list says: the monastery is drawn at (70, -60), the archery yard is not listed).
+    for model, x, z, rot in RENDERED_LANDMARKS:
+        x0, z0, x1, z1 = LANDMARK_FOOTPRINT[model]
+        a = math.radians(rot)
+        c, s = math.cos(a), math.sin(a)
+        fixed.append(("landmark", [(x + lx * c + lz * s, z - lx * s + lz * c)
+                                   for lx, lz in ((x0 - 1, z0 - 1), (x1 + 1, z0 - 1), (x1 + 1, z1 + 1), (x0 - 1, z1 + 1))]))
 
     # Relaxation: every round, each clashing house is pushed out of the walls / landmarks by
     # the full depth and away from each overlapping neighbour by half of it (the neighbour
