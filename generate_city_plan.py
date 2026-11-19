@@ -1416,6 +1416,132 @@ def route_stable_road(parcels, wall_points, vegetation, paths):
           f"the centreline; dropped {before - len(vegetation)} plants on it.")
 
 
+# Yard props of the stable site, in a site parcel's model space: (parcel suffix, model, Blender
+# x, y, turn in degrees added to the parcel's orientation). build_assets.py STABLE_DUNG = the
+# dung heap's place here (the muck spot is beside it).
+STABLE_PROPS = [
+    ("stable", "dung_heap", 4.0, -16.0, 0.0),
+    ("stable", "water_trough", -6.0, 0.0, -90.0),
+    ("stable", "hitching_post", -6.5, -9.5, -90.0),
+    ("stable", "hitching_post", -6.5, 9.5, -90.0),
+    ("carriage", "hay_rack", -7.5, -1.0, 0.0),
+]
+# Market clutter the renderer places itself (populateCityScene stallCoords, cartPositions):
+# x, z, radius kept clear. Keep in sync.
+MARKET_CLUTTER = [(x, z, 3.0) for x, z in ((-16, -14), (-10, -14), (-4, -14), (10, -14), (16, -14), (-16, 14), (-10, 14),
+                                          (-4, 14), (10, 14), (16, 14), (-22, -6), (-22, 2), (-22, 8), (26, -6), (26, 2))] \
+    + [(x, z, 2.0) for x, z in ((-24, -18), (22, -26), (-24, 16), (6, 18), (-2, -20))]
+HITCH_STAND = 1.5       # the tied horse stands this far out in front of the post (build_hitching_post)
+
+
+def _site_world(p, bx, by):
+    """A point in a model parcel's Blender model space -> world (x, z)."""
+    a = math.radians(p["orientation"])
+    c, s = math.cos(a), math.sin(a)
+    lx, lz = bx, -by                                  # glTF
+    return p["x"] + lx * c + lz * s, p["z"] - lx * s + lz * c
+
+
+def _inside_ring(x, z, ring):
+    inside = False
+    for k in range(len(ring)):
+        (ax, az), (bx, bz) = ring[k], ring[(k + 1) % len(ring)]
+        if (az > z) != (bz > z) and x < ax + (z - az) * (bx - ax) / (bz - az):
+            inside = not inside
+    return inside
+
+
+def add_props(parcels, wall_points, vegetation, paths):
+    """Small models outside the parcels (plan.props): the stable yard's dung heap, trough,
+    hay rack and hitching posts, and hitching posts in town where a rider would tie up: the
+    town hall, the Fara, outside both gates and at the two brewers' taverns nearest the
+    market. Each town post goes at the nearest free place to its building, with the horse's
+    standing place (HITCH_STAND m out, away from the building) clear too."""
+    props = []
+    by_id = {p["id"]: p for p in parcels}
+    for k, (suffix, model, bx, by, turn) in enumerate(STABLE_PROPS):
+        p = by_id[f"p_stable_{suffix}"]
+        x, z = _site_world(p, bx, by)
+        props.append({"id": f"prop_stable_{k}", "model": model, "x": round(x, 2), "z": round(z, 2),
+                      "rot": round((p["orientation"] + turn) % 360, 1), "near": p["id"]})
+
+    polys = [poly for _, poly in _parcel_polys(parcels)]
+    for model, x, z, rot in RENDERED_LANDMARKS:
+        x0, z0, x1, z1 = LANDMARK_FOOTPRINT[model]
+        polys.append(_render_corners(x + (x0 + x1) * 0.5, z + (z0 + z1) * 0.5, (x1 - x0) * 0.5 + 0.5, (z1 - z0) * 0.5 + 0.5,
+                                     rot))
+    ring = [(w["x"], w["z"]) for w in wall_points]
+    n = len(wall_points)
+    wall_segs = [((wall_points[k]["x"], wall_points[k]["z"]), (wall_points[(k + 1) % n]["x"], wall_points[(k + 1) % n]["z"]))
+                 for k in range(n)]
+    trees = [(v["x"], v["z"]) for v in vegetation if v["type"].startswith("tree_")]
+    lines = [([(q["x"], q["z"]) for q in pa["points"]], pa.get("width", 2.0) * 0.5) for pa in paths]
+    taken = []
+
+    def clear(x, z, need):
+        for poly in polys:
+            if abs(poly[0][0] - x) < 40 and abs(poly[0][1] - z) < 40 and _poly_dist(x, z, poly) < need:
+                return False
+        for a, b in wall_segs:
+            if _seg_dist(x, z, *a, *b) < need + 1.7:
+                return False
+        for wp in wall_points:
+            hx, hz = GATE_HALF_EXT.get(wp.get("id"), (TOWER_HALF, TOWER_HALF))
+            if abs(x - wp["x"]) < hx + need and abs(z - wp["z"]) < hz + need:
+                return False
+        if any(math.hypot(x - cx, z - cz) < r + need for cx, cz, r in MARKET_CLUTTER):
+            return False
+        if any(math.hypot(x - tx, z - tz) < 1.5 + need for tx, tz in trees):
+            return False
+        if any(math.hypot(x - tx, z - tz) < 4.0 for tx, tz in taken):
+            return False
+        return all(_polyline_dist(x, z, pts) >= hw + need + 0.3 for pts, hw in lines
+                   if any(abs(px - x) < 60 and abs(pz - z) < 60 for px, pz in pts[::4]))
+
+    def place(name, cx, cz, front=None, outside=None):
+        """Nearest free post place around (cx, cz); front = (fx, fz): only within 70 degrees of it;
+        outside = True/False: only outside / inside the town wall."""
+        for r10 in range(30, 260, 5):
+            r = r10 / 10.0
+            best = None
+            for k in range(48):
+                a = 2 * math.pi * k / 48
+                dx, dz = math.sin(a), math.cos(a)
+                if front and dx * front[0] + dz * front[1] < math.cos(math.radians(70)):
+                    continue
+                x, z = cx + dx * r, cz + dz * r
+                if outside is not None and _inside_ring(x, z, ring) == outside:
+                    continue
+                sx, sz = x + dx * HITCH_STAND, z + dz * HITCH_STAND
+                if clear(x, z, 0.5) and clear(sx, sz, 1.0):
+                    best = (x, z, dx, dz)
+                    break
+            if best:
+                x, z, dx, dz = best
+                taken.append((x, z))
+                props.append({"id": f"prop_hitch_{name}", "model": "hitching_post", "x": round(x, 2), "z": round(z, 2),
+                              "rot": round(math.degrees(math.atan2(dx, dz)) % 360, 1), "near": name})
+                return r
+        print(f"[CityPlanGenerator] Props: no free place for a hitching post at {name}")
+        return None
+
+    found = {}
+    found["town_hall"] = place("town_hall", 0.0, 0.0)
+    found["parish_fara"] = place("parish_fara", 130.0, 20.0)
+    for wp in wall_points:
+        if wp["type"] == "gate":
+            found[wp["id"]] = place(wp["id"], wp["x"], wp["z"], outside=True)
+    brewers = sorted((p for i, p in enumerate(parcels) if parcel_model(p, i)[0] == "house_brewer"
+                      and _inside_ring(p["x"], p["z"], ring)), key=lambda p: math.hypot(p["x"], p["z"]))
+    for p in brewers[:2]:
+        a = math.radians(p["orientation"])
+        found[p["id"]] = place(p["id"], p["x"], p["z"], front=(math.sin(a), math.cos(a)))
+    print("[CityPlanGenerator] Props: " + ", ".join(f"{len([q for q in props if q['model'] == m])} {m}"
+                                                     for m in sorted({q["model"] for q in props}))
+          + "; hitching posts at " + ", ".join(f"{k} ({v:.1f} m)" for k, v in found.items() if v is not None))
+    return props
+
+
 # ------------------------------------------------------------------------------------------
 # Clash pass (after everything else, no RNG): houses that the parcel generator let into the
 # town wall, its towers and gates, or deep into each other, are pushed clear. The generator's
@@ -2497,6 +2623,7 @@ def generate_lublin_city_plan():
     grounds += stable_grounds
     resolve_clashes(parcels, wall_points, civic_landmarks, castle_elements, vegetation)
     route_stable_road(parcels, wall_points, vegetation, paths)
+    props = add_props(parcels, wall_points, vegetation, paths)
     print(f"[CityPlanGenerator] Simulated {len(citizens)} persistent citizens across {len(home_parcels)} households.")
 
     # 4. Royal Fair Systemic Events Specification
@@ -2556,6 +2683,7 @@ def generate_lublin_city_plan():
         "river": river,
         "paths": paths,
         "grounds": grounds,
+        "props": props,
         "industrySites": industry_sites,
         "citizens": citizens,
         "bellHours": BELL_HOURS,

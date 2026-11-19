@@ -108,6 +108,7 @@ def get_materials():
         "hide_raw": create_mat("HideRaw", (0.78, 0.68, 0.52), roughness=0.8),
         "coal_black": create_mat("CoalBlack", (0.12, 0.12, 0.12), roughness=0.7),
         "clay_mound": create_mat("ClayMound", (0.58, 0.48, 0.38), roughness=0.9),
+        "dung": create_mat("Dung", (0.27, 0.2, 0.13), roughness=0.95),
         "brick_oven": create_mat("BrickOven", (0.62, 0.24, 0.14), roughness=0.85),
         "gold_pretzel": create_mat("GoldPretzel", (0.96, 0.76, 0.12), roughness=0.25, metallic=0.55),
         "bread_golden": create_mat("BreadGolden", (0.76, 0.50, 0.20), roughness=0.6),
@@ -857,6 +858,20 @@ def anchor_spot(p, face, tag="work"):
     _ANCHORS["spots"].append({"p": _gl(p), "yaw": round(math.atan2(fx, fz), 4), "tag": tag})
 
 
+def anchor_stall(p, face, tag="horse"):
+    """Where a horse (tag "horse") or the wagon (tag "wagon") stands at rest: p = the middle
+    of its body on the floor, face = Blender (x, y) direction its head points."""
+    p = (p[0], p[1], p[2] if len(p) > 2 else 0.0)
+    _ANCHORS.setdefault("stalls", []).append({"p": _gl(p), "yaw": round(math.atan2(face[0], -face[1]), 4), "tag": tag})
+
+
+def anchor_tie(ring, stand, face):
+    """A tie ring (Blender x, y, z) and where the tied horse stands (x, y: middle of its body)
+    with its head toward `face`."""
+    _ANCHORS.setdefault("ties", []).append({"p": _gl(ring), "a": _gl((stand[0], stand[1], 0.0)),
+                                            "yaw": round(math.atan2(face[0], -face[1]), 4)})
+
+
 # -------------------------------------------------------------
 # Interiors (M6): rooms, furniture and the slots people use, placed from data.
 # The furniture meshes live in interior_props.glb (build_interior_props, one node per prop,
@@ -888,6 +903,13 @@ PROPS = {
     "shelf":     (1.2, 0.45, []),
     "barrel":    (0.8, 0.8, []),
     "sacks":     (1.3, 0.7, []),
+    # Stable (stable_long): a horse stall (partition on its +X side, manger at the back, straw),
+    # groomed from the aisle in front; the tack room's saddle rack; hay in the loft; a plank
+    # partition module 1.4 m long.
+    "stall":     (1.95, 3.2, [("work", "stand", (0.0, -1.85, 0.0), (0, 1), (0.0, -2.25))]),
+    "saddle_rack": (1.4, 0.5, []),
+    "hay":       (1.6, 1.2, []),
+    "plank_wall": (1.4, 0.15, []),
 }
 LADDER_W, LADDER_OUT, HOLE_OUT = 0.9, 0.45, 1.0   # stairwell width, climber off the wall, hole depth
 
@@ -1038,13 +1060,13 @@ def export_object(obj, name):
         del out["chimneys"]
     if _INTERIOR["rooms"]:
         out.update(_INTERIOR)
-    if _ANCHORS["doors"] or _ANCHORS["spots"] or "ground" in _ANCHORS or "machines" in _ANCHORS:
+    if _ANCHORS["doors"] or _ANCHORS["spots"] or any(k in _ANCHORS for k in ("ground", "machines", "stalls", "ties")):
         scene["anchors"] = json.dumps(out)
     elif "anchors" in scene:
         del scene["anchors"]
     _ANCHORS["doors"], _ANCHORS["spots"], _ANCHORS["chimneys"] = [], [], []
-    _ANCHORS.pop("ground", None)
-    _ANCHORS.pop("machines", None)
+    for k in ("ground", "machines", "stalls", "ties"):
+        _ANCHORS.pop(k, None)
     for k in _INTERIOR:
         _INTERIOR[k] = []
     _ROOM_USED.clear()
@@ -5154,58 +5176,185 @@ def build_smithy_hut(mats):
 
 
 # -------------------------------------------------------------
-# 20c. The town stable and posting yard (generate_city_plan.py add_stable). M1 blockouts:
-# right size, doors, spots and flues, so the site can be walked and routed; the detailed
-# models (stalls, hayloft, tack room, interiors) replace them in M2.
+# 20c. The town stable and posting yard (generate_city_plan.py add_stable): the stable with
+# ten stalls, tack room and hayloft; the carriage house; the farrier's forge; the paddock; and
+# the yard props (hitching post, water trough, hay rack, dung heap; placed from plan.props).
+# Horses stand at anchor_stall points, tied ones at anchor_tie (building-anchors.ts).
+# Spot tags that will name M5 work loops are "work" for now (check_models wants a loop file
+# for any other tag); the comment says which loop.
 # -------------------------------------------------------------
+STABLE_W, STABLE_D = 9.0, 24.0
+# Where generate_city_plan.py STABLE_PROPS puts the dung heap, in the stable's model space
+# (Blender x, y). Keep in sync.
+STABLE_DUNG = (4.0, -16.0)
+
+
 def build_stable_long(mats):
-    """Stable (9 x 24 m): log walls, shingle saddle roof (ridge along Y), two wide doors in
-    the -X wall (the yard side; the parcel turns them toward world +x)."""
+    """Stable (9 x 24 m), ridge along Y. Log walls on a fieldstone footing between a dark
+    timber frame (sill, corner and door posts), shingle saddle roof with board gables. Two
+    wide plank doors in the -X wall (the yard side; the parcel turns it toward world +x),
+    small shuttered vents above the stalls, a loft hatch with a hoist beam in the -Y gable.
+    Inside: ten stalls along the +X wall facing a 5 m aisle, the tack room behind a plank
+    partition at the +Y end, a hayloft over the middle reached by a ladder."""
     clear_scene()
     bm = bmesh.new()
     mat_list = [mats["timber_log"], mats["timber_plank"], mats["roof_shingle"], mats["stone_fieldstone"],
-                mats["timber_dark"]]
-    LOG, PLANK, SHINGLE, FIELD, TIMBER = range(5)
-    W, D, z0, z1 = 9.0, 24.0, 0.15, 3.0
+                mats["timber_dark"], mats["glass_dark"], mats["iron_wrought"], mats["roof_thatch"]]
+    LOG, PLANK, SHINGLE, FIELD, TIMBER, GLASS, IRON, STRAW = range(8)
+    W, D, z0, z1 = STABLE_W, STABLE_D, 0.15, 3.0
+    hw, hd = W * 0.5, D * 0.5
     add_box(bm, 0.0, 0.0, z0 * 0.5, W + 0.3, D + 0.3, z0, mat_idx=FIELD)
     add_box(bm, 0.0, 0.0, (z0 + z1) * 0.5, W, D, z1 - z0, mat_idx=LOG)
-    add_log_corner_crossings(bm, 0.0, 0.0, W, D, z0, z1, course=0.25, mat_idx=LOG)
+    # Frame: sill beam, corner posts, posts every 4 m on the long walls, a wall plate.
+    for sx in (-1.0, 1.0):
+        add_timber_beam(bm, Vector((sx * (hw + 0.04), -hd, z0 + 0.1)), Vector((sx * (hw + 0.04), hd, z0 + 0.1)),
+                        width=0.2, depth=0.2, mat_idx=TIMBER)
+        add_timber_beam(bm, Vector((sx * (hw + 0.04), -hd - 0.1, z1 - 0.1)), Vector((sx * (hw + 0.04), hd + 0.1, z1 - 0.1)),
+                        width=0.22, depth=0.22, mat_idx=TIMBER)
+        for y in (-12.0, -8.0, -4.0, 0.0, 4.0, 8.0, 12.0):
+            if sx < 0 and abs(abs(y) - 6.0) < 1.5:
+                continue                                      # the door openings
+            add_box(bm, sx * (hw + 0.06), y, (z0 + z1) * 0.5, 0.2, 0.22, z1 - z0, mat_idx=TIMBER)
+    for sy in (-1.0, 1.0):
+        add_timber_beam(bm, Vector((-hw - 0.1, sy * (hd + 0.04), z0 + 0.1)), Vector((hw + 0.1, sy * (hd + 0.04), z0 + 0.1)),
+                        width=0.2, depth=0.2, mat_idx=TIMBER)
+    # Doors: posts, a lintel and braced plank double leaves (drawn shut; door-leaves.ts swings
+    # its own leaf in the opening).
     for y in (-6.0, 6.0):
-        add_box(bm, -W * 0.5 - 0.05, y, z0 + 1.3, 0.12, 2.4, 2.6, mat_idx=PLANK)
-        anchor_door((-W * 0.5, y, z0), (-1, 0), 2.4, h=2.6)
+        for s in (-1.0, 1.0):
+            add_box(bm, -hw - 0.08, y + s * 1.32, (z0 + z1) * 0.5, 0.24, 0.24, z1 - z0, mat_idx=TIMBER)
+        add_box(bm, -hw - 0.08, y, z0 + 2.72, 0.26, 2.9, 0.26, mat_idx=TIMBER)
+        for s in (-1.0, 1.0):
+            cy = y + s * 0.6
+            add_box(bm, -hw - 0.05, cy, z0 + 1.3, 0.1, 1.18, 2.6, mat_idx=PLANK)
+            for z in (0.5, 2.1):
+                add_box(bm, -hw - 0.11, cy, z0 + z, 0.05, 1.1, 0.12, mat_idx=TIMBER)
+            add_timber_beam(bm, Vector((-hw - 0.11, cy - s * 0.5, z0 + 0.55)), Vector((-hw - 0.11, cy + s * 0.5, z0 + 2.05)),
+                            width=0.1, depth=0.05, mat_idx=TIMBER)
+            add_box(bm, -hw - 0.13, y + s * 0.12, z0 + 1.2, 0.04, 0.06, 0.25, mat_idx=IRON)      # handles
+        anchor_door((-hw, y, z0), (-1, 0), 2.4, h=2.6)
+        # A stone mounting block beside each door.
+        add_box(bm, -hw - 0.7, y + (2.2 if y > 0 else -2.2), 0.2, 0.7, 0.9, 0.4, mat_idx=FIELD)
+        add_box(bm, -hw - 0.55, y + (2.2 if y > 0 else -2.2), 0.5, 0.4, 0.9, 0.2, mat_idx=FIELD)
+    # Shuttered vents high in the back wall (one per pair of stalls) and the yard wall.
+    for y in (-9.75, -5.85, -1.95, 1.95, 5.85):
+        add_wall_window(bm, Vector((hw, y, 2.35)), (0, 1, 0), (1, 0, 0), 0.7, 0.45, mat_glass=GLASS, mat_frame=TIMBER,
+                        frame=0.1, shutters_mat=PLANK)
+    for y in (-10.0, -1.5, 1.5, 10.0):
+        add_wall_window(bm, Vector((-hw, y, 2.35)), (0, 1, 0), (-1, 0, 0), 0.7, 0.45, mat_glass=GLASS, mat_frame=TIMBER,
+                        frame=0.1, shutters_mat=PLANK)
+    add_wall_window(bm, Vector((0.0, hd, 1.8)), (1, 0, 0), (0, 1, 0), 0.7, 0.6, mat_glass=GLASS, mat_frame=TIMBER,
+                    frame=0.1, shutters_mat=PLANK)                                         # tack room
     add_gable_roof(bm, 0.0, 0.0, z1, W, D, 3.4, overhang=0.6, mat_roof=SHINGLE, mat_plaster=PLANK, mat_timber=PLANK,
                    frame=False, loft_windows=0)
-    # Loft hatch in the -Y gable (hay goes up here).
-    add_box(bm, 0.0, -D * 0.5 - 0.05, z1 + 1.0, 1.4, 0.12, 1.2, mat_idx=TIMBER)
-    anchor_room(-W * 0.5 + 0.3, -D * 0.5 + 0.3, W * 0.5 - 0.3, D * 0.5 - 0.3, z0)
-    # Yard spots (M1): grooms at the doors, the stablemaster, the saddler's bench by the wall.
-    anchor_spot((-W * 0.5 - 2.0, -6.0), (1.0, 0.0), tag="work")  # M5: groom
-    anchor_spot((-W * 0.5 - 2.0, 6.0), (1.0, 0.0), tag="work")  # M5: groom
-    anchor_spot((-W * 0.5 - 4.5, 0.0), (1.0, 0.0), tag="watch")
-    anchor_spot((-W * 0.5 - 1.2, 2.0), (-1.0, 0.0), tag="work")  # M5: stitch
-    anchor_spot((-W * 0.5 - 3.0, -10.0), (0.0, -1.0), tag="work")  # M5: forkhay
+    # Loft hatch in the -Y gable: open doors, hay showing, the hoist beam with a pulley and rope.
+    zh = z1 + 0.9
+    add_box(bm, 0.0, -hd - 0.03, zh, 1.4, 0.06, 1.2, mat_idx=GLASS)
+    add_box(bm, 0.0, -hd - 0.06, zh - 0.3, 1.2, 0.08, 0.6, mat_idx=STRAW)
+    for s in (-1.0, 1.0):
+        add_box(bm, s * 1.15, -hd - 0.1, zh, 0.7, 0.06, 1.2, mat_idx=PLANK)
+        add_box(bm, s * 0.76, -hd - 0.08, zh, 0.12, 0.12, 1.36, mat_idx=TIMBER)
+    add_box(bm, 0.0, -hd - 0.08, zh + 0.68, 1.6, 0.14, 0.14, mat_idx=TIMBER)
+    add_box(bm, 0.0, -hd - 0.08, zh - 0.62, 1.6, 0.14, 0.12, mat_idx=TIMBER)
+    add_timber_beam(bm, Vector((0.0, -hd + 0.3, zh + 1.15)), Vector((0.0, -hd - 1.3, zh + 1.15)), width=0.18, depth=0.2,
+                    mat_idx=TIMBER)
+    _ws_cyl(bm, (-0.07, -hd - 1.15, zh + 0.95), (0.07, -hd - 1.15, zh + 0.95), 0.12, segs=8, mat=TIMBER)
+    add_timber_beam(bm, Vector((0.0, -hd - 1.15, zh + 0.85)), Vector((0.0, -hd - 1.15, 1.1)), width=0.03, depth=0.03,
+                    mat_idx=PLANK)
+    add_box(bm, 0.0, -hd - 1.15, 1.05, 0.1, 0.06, 0.12, mat_idx=IRON)                      # hook
+    # Inside. The aisle runs along the -X (door) wall; stalls stand against the +X wall.
+    room = anchor_room(-hw + 0.3, -hd + 0.3, hw - 0.3, hd - 0.3, z0)
+    sw, sd, ty = 1.95, 3.2, 8.0                     # stall width and depth; tack partition at y = ty
+    sx = hw - 0.3 - sd * 0.5
+    for k in range(10):
+        y = -hd + 0.3 + sw * (k + 0.5)
+        furnish("stall", sx, y, (-1, 0), room)
+        anchor_stall((sx + 0.15, y), (1.0, 0.0))                                           # head to the manger
+    # The tack room: plank partition (doorway on the aisle side), saddles, the saddler's bench.
+    for x in (-3.5, -0.7, 0.7, 2.1, 3.5):
+        furnish("plank_wall", x, ty, (0, -1), room)
+    furnish("saddle_rack", -2.6, hd - 0.6, (0, -1), room)
+    furnish("saddle_rack", -0.9, hd - 0.6, (0, -1), room)
+    furnish("workbench", hw - 0.75, ty + 1.9, (-1, 0), room)                               # saddler's bench
+    furnish("chest", 1.3, hd - 0.6, (0, -1), room)
+    # The aisle: oats in sacks and a bin, a water barrel between the doors.
+    furnish("sacks", -hw + 0.7, 0.0, (1, 0), room)
+    furnish("chest", -hw + 0.6, 2.4, (1, 0), room)
+    furnish("barrel", -hw + 0.75, -2.3, room=room)
+    # Hayloft over the middle (headroom under the ridge), up a ladder against the partition.
+    loft = anchor_room(-2.6, -hd + 0.3, 2.6, hd - 0.3, z1)
+    anchor_ladder(-0.4, ty - 0.075, (0, -1), room, loft)
+    for y in (-10.2, -7.6, -5.0, -2.4, 0.6, 3.6, 10.0):
+        furnish("hay", 1.5 if y < 8 else -1.2, y, (0, -1), loft)
+    furnish("hay", -1.5, -9.6, (0, -1), loft)
+    # Yard spots: grooms at the doors, the stablemaster's watch place, the hay boy at the
+    # hatch under the hoist, a groom mucking out to the dung heap behind the -Y end.
+    anchor_spot((-hw - 2.0, -6.0), (1.0, 0.0), tag="work")  # M5: groom
+    anchor_spot((-hw - 2.0, 6.0), (1.0, 0.0), tag="work")  # M5: groom
+    anchor_spot((-hw - 4.5, 0.0), (1.0, 0.0), tag="watch")
+    anchor_spot((0.9, -hd - 1.6), (-1.0, 0.0), tag="work")  # M5: forkhay
+    anchor_spot((STABLE_DUNG[0] - 2.1, STABLE_DUNG[1]), (1.0, 0.0), tag="work")  # M5: muck (at the dung heap)
     _ws_finish(bm, mat_list, "Mesh_StableLong", "StableLong", "stable_long")
 
 
 def build_carriage_house(mats):
-    """Open-fronted carriage house (10 x 7 m), open to -Y: plank back and side walls, shingle
-    saddle roof with its ridge front to back."""
+    """Open-fronted carriage house (10 x 7 m), open to -Y. Plank back and side walls on a
+    post-and-beam frame with braces, shingle saddle roof (ridge front to back, board gable
+    over the opening). The wagon's place in the left bay (anchor_stall tag "wagon", facing
+    out); in the right bay the harness hangs on pegs along the back wall (collars, hames,
+    traces), with a spare wheel, a grease cask and a bench."""
     clear_scene()
     bm = bmesh.new()
-    mat_list = [mats["timber_dark"], mats["timber_plank"], mats["roof_shingle"], mats["timber_weathered"]]
-    TIMBER, PLANK, SHINGLE, WEATHER = range(4)
+    mat_list = [mats["timber_dark"], mats["timber_plank"], mats["roof_shingle"], mats["timber_weathered"],
+                mats["hide_leather"], mats["iron_wrought"], mats["roof_thatch"]]
+    TIMBER, PLANK, SHINGLE, WEATHER, HIDE, IRON, STRAW = range(7)
     W, D, ze = 10.0, 7.0, 3.0
-    add_box(bm, 0.0, D * 0.5 - 0.06, ze * 0.5, W, 0.12, ze, mat_idx=PLANK)
-    for x in (-W * 0.5 + 0.06, W * 0.5 - 0.06):
+    hw, hd = W * 0.5, D * 0.5
+    add_box(bm, 0.0, hd - 0.06, ze * 0.5, W, 0.12, ze, mat_idx=PLANK)
+    for x in (-hw + 0.06, hw - 0.06):
         add_box(bm, x, 0.0, ze * 0.5, 0.12, D, ze, mat_idx=PLANK)
-    for x in (-W * 0.5, 0.0, W * 0.5):
-        add_timber_beam(bm, Vector((x, -D * 0.5, 0.0)), Vector((x, -D * 0.5, ze)), width=0.24, depth=0.24, mat_idx=TIMBER)
-    add_timber_beam(bm, Vector((-W * 0.5, -D * 0.5, ze)), Vector((W * 0.5, -D * 0.5, ze)), width=0.24, depth=0.24,
-                    mat_idx=TIMBER)
+    # Frame: front posts (two bays), corner posts at the back, plate, braces, a mid tie beam.
+    for x in (-hw, 0.0, hw):
+        add_timber_beam(bm, Vector((x, -hd, 0.0)), Vector((x, -hd, ze)), width=0.24, depth=0.24, mat_idx=TIMBER)
+        for s in (-1.0, 1.0):
+            if abs(x + s * 0.9) <= hw:
+                add_timber_beam(bm, Vector((x, -hd, ze - 0.9)), Vector((x + s * 0.9, -hd, ze)), width=0.14, depth=0.14,
+                                mat_idx=TIMBER)
+    for x in (-hw, hw):
+        add_timber_beam(bm, Vector((x, hd - 0.12, 0.0)), Vector((x, hd - 0.12, ze)), width=0.24, depth=0.24, mat_idx=TIMBER)
+    add_timber_beam(bm, Vector((-hw - 0.1, -hd, ze)), Vector((hw + 0.1, -hd, ze)), width=0.26, depth=0.26, mat_idx=TIMBER)
+    add_timber_beam(bm, Vector((0.0, -hd, ze)), Vector((0.0, hd, ze)), width=0.2, depth=0.2, mat_idx=TIMBER)
+    for y in (-1.2, 1.4):
+        for sx in (-1.0, 1.0):
+            add_box(bm, sx * (hw + 0.05), y, ze * 0.5, 0.16, 0.18, ze, mat_idx=TIMBER)
     add_gable_roof(bm, 0.0, 0.0, ze, W, D, 2.6, overhang=0.5, mat_roof=SHINGLE, mat_plaster=PLANK, mat_timber=PLANK,
                    frame=False, loft_windows=0)
-    anchor_spot((2.5, -D * 0.5 - 1.5), (0.0, 1.0), tag="work")  # M5: harness
-    anchor_spot((-3.5, -D * 0.5 - 1.2), (0.0, -1.0), tag="watch")
+    # The wagon's place: left bay, drawn out forward (-Y).
+    anchor_stall((-2.5, 0.2), (0.0, -1.0), tag="wagon")
+    # Harness on pegs along the back wall of the right bay: two collars with hames, traces.
+    py = hd - 0.18
+    add_box(bm, 2.5, py, 2.0, 4.2, 0.06, 0.14, mat_idx=TIMBER)                              # peg rail
+    for k, x in enumerate((0.9, 1.9, 3.1, 4.1)):
+        add_box(bm, x, py - 0.12, 2.0, 0.05, 0.22, 0.05, mat_idx=TIMBER)
+        if k in (0, 2):
+            _ws_cyl(bm, (x, py - 0.2, 1.65), (x, py - 0.05, 1.65), 0.34, segs=12, mat=HIDE)   # collar
+            _ws_cyl(bm, (x, py - 0.23, 1.65), (x, py - 0.21, 1.65), 0.2, segs=10, mat=STRAW)  # its stuffing
+            for s in (-1.0, 1.0):
+                add_timber_beam(bm, Vector((x + s * 0.3, py - 0.24, 1.3)), Vector((x + s * 0.22, py - 0.24, 2.0)),
+                                width=0.05, depth=0.05, mat_idx=WEATHER)                     # hames
+        else:
+            for s in (-0.06, 0.06):
+                add_box(bm, x + s, py - 0.14, 1.35, 0.06, 0.02, 1.25, mat_idx=HIDE)         # traces
+            add_box(bm, x, py - 0.14, 0.72, 0.24, 0.03, 0.06, mat_idx=IRON)
+    # Spare wheel leaning on the right wall, grease cask, a bench by the front post.
+    _ws_cyl(bm, (hw - 0.35, -1.8, 0.58), (hw - 0.25, -1.8, 0.58), 0.58, segs=14, mat=WEATHER)
+    _ws_cyl(bm, (hw - 0.4, -1.8, 0.58), (hw - 0.2, -1.8, 0.58), 0.14, segs=8, mat=TIMBER)
+    _ws_barrel(bm, hw - 0.6, 1.2, 0.0, r=0.32, h=0.8, mat_wood=PLANK, mat_hoop=IRON)
+    add_box(bm, 2.4, -hd + 0.6, 0.45, 1.8, 0.35, 0.06, mat_idx=PLANK)
+    for sx in (-0.75, 0.75):
+        add_box(bm, 2.4 + sx, -hd + 0.6, 0.21, 0.08, 0.3, 0.42, mat_idx=TIMBER)
+    anchor_spot((2.5, py - 0.9), (0.0, 1.0), tag="work")  # M5: harness
+    anchor_spot((-3.5, -hd - 1.2), (0.0, -1.0), tag="watch")
     _ws_finish(bm, mat_list, "Mesh_CarriageHouse", "CarriageHouse", "carriage_house")
 
 
@@ -5216,8 +5365,8 @@ def build_farrier_forge(mats):
     bm = bmesh.new()
     mat_list = [mats["timber_dark"], mats["timber_plank"], mats["roof_shingle"], mats["stone_limestone"],
                 mats["iron_steel"], mats["fire_orange"], mats["soot_black"], mats["coal_black"], mats["water_clean"],
-                mats["timber_weathered"]]
-    TIMBER, PLANK, SHINGLE, STONE, STEEL, FIRE, SOOT, COAL, WATER, WEATHER = range(10)
+                mats["timber_weathered"], mats["hide_leather"], mats["iron_wrought"]]
+    TIMBER, PLANK, SHINGLE, STONE, STEEL, FIRE, SOOT, COAL, WATER, WEATHER, HIDE, IRON = range(12)
     W, D, zf, zb = 6.0, 5.0, 2.6, 3.4
     add_box(bm, 0.0, D * 0.5 - 0.1, zb * 0.5, W, 0.2, zb, mat_idx=PLANK)
     for x in (-W * 0.5, W * 0.5):
@@ -5230,14 +5379,42 @@ def build_farrier_forge(mats):
     add_box(bm, fx, fy - 0.15, 0.9, 0.6, 0.4, 0.06, mat_idx=FIRE)
     add_ashlar_chimney(bm, fx, fy + 0.3, 0.8, w=0.8, d=0.8, h=3.6, mat_stone=STONE, mat_soot=SOOT)
     anchor_chimney(fx, fy + 0.3, 4.4)
+    # Clay hood over the hearth, bellows on its left with the nozzle into the fire.
+    add_box(bm, fx, fy + 0.15, 1.75, 1.6, 1.0, 0.5, mat_idx=STONE)
+    add_box(bm, fx - 1.4, fy, 0.4, 0.5, 0.8, 0.8, mat_idx=WEATHER)
+    add_box(bm, fx - 1.4, fy, 0.95, 0.75, 1.0, 0.28, mat_idx=HIDE)
+    add_timber_beam(bm, Vector((fx - 1.05, fy, 0.95)), Vector((fx - 0.8, fy - 0.1, 0.9)), width=0.07, depth=0.07, mat_idx=STEEL)
+    add_timber_beam(bm, Vector((fx - 1.4, fy - 0.5, 1.1)), Vector((fx - 1.4, fy - 1.0, 1.25)), width=0.05, depth=0.05,
+                    mat_idx=TIMBER)                                                        # bellows handle
     ax, ay = 1.0, 0.3
     _ws_cyl(bm, (ax, ay, 0.0), (ax, ay, 0.7), 0.38, segs=10, mat=WEATHER)
-    add_box(bm, ax, ay, 0.8, 0.36, 0.56, 0.2, mat_idx=STEEL)
+    add_box(bm, ax, ay, 0.78, 0.36, 0.56, 0.16, mat_idx=STEEL)
+    add_box(bm, ax, ay, 0.92, 0.22, 0.34, 0.14, mat_idx=STEEL)
+    add_box(bm, ax, ay + 0.05, 1.05, 0.28, 0.7, 0.12, mat_idx=STEEL)
+    add_timber_beam(bm, Vector((ax, ay - 0.3, 1.05)), Vector((ax, ay - 0.6, 1.08)), width=0.09, depth=0.09, mat_idx=STEEL)
     _ws_tub(bm, 2.3, -0.9, 0.0, 0.4, 0.55, PLANK, WATER, mat_hoop=STEEL)
-    _ws_cyl(bm, (0.0, -D * 0.5 - 2.2, 0.0), (0.0, -D * 0.5 - 2.2, 1.4), 0.12, segs=8, mat=TIMBER)   # tie post
+    # Horseshoes on pegs along the back wall, a bench with the shoeing box (nails, rasp, knife).
+    for k in range(8):
+        x = 0.2 + k * 0.32
+        add_box(bm, x, D * 0.5 - 0.24, 1.6, 0.04, 0.1, 0.04, mat_idx=TIMBER)
+        _ws_cyl(bm, (x, D * 0.5 - 0.26, 1.48), (x, D * 0.5 - 0.22, 1.48), 0.09, segs=8, mat=IRON)
+    add_box(bm, 2.0, D * 0.5 - 0.55, 0.7, 1.6, 0.5, 0.06, mat_idx=PLANK)
+    for sx in (-0.7, 0.7):
+        add_box(bm, 2.0 + sx, D * 0.5 - 0.55, 0.34, 0.08, 0.4, 0.68, mat_idx=TIMBER)
+    add_box(bm, 1.6, D * 0.5 - 0.55, 0.8, 0.5, 0.3, 0.14, mat_idx=WEATHER)
+    add_timber_beam(bm, Vector((1.55, D * 0.5 - 0.55, 0.95)), Vector((1.65, D * 0.5 - 0.55, 0.95)), width=0.3, depth=0.03,
+                    mat_idx=TIMBER)
+    # Coal bin, and the tie post in front with its iron ring: the horse being shod stands
+    # alongside the forge front, head to the post.
+    add_water_trough(bm, -2.4, -1.4, 0.0, w=0.9, d=0.9, h=0.6, mat_wood=PLANK, mat_water=COAL)
+    tx, ty = -0.6, -D * 0.5 - 2.0
+    _ws_cyl(bm, (tx, ty, 0.0), (tx, ty, 1.45), 0.12, segs=8, mat=TIMBER)
+    add_box(bm, tx, ty, 1.47, 0.3, 0.3, 0.06, mat_idx=TIMBER)
+    _ws_cyl(bm, (tx + 0.11, ty, 1.15), (tx + 0.15, ty, 1.15), 0.07, segs=8, mat=IRON)
+    anchor_tie((tx + 0.15, ty, 1.15), (tx + 1.45, ty), (-1.0, 0.0))
     anchor_spot((ax, ay - 0.9), (0.0, 1.0), tag="work")  # M5: anvil
     anchor_spot((fx, fy - 1.0), (0.0, 1.0))
-    anchor_spot((0.9, -D * 0.5 - 2.4), (-1.0, 0.0), tag="work")  # M5: shoe
+    anchor_spot((tx + 2.2, ty + 0.7), (0.0, -1.0), tag="work")  # M5: shoe (a hind hoof up)
     _ws_finish(bm, mat_list, "Mesh_FarrierForge", "FarrierForge", "farrier_forge")
 
 
@@ -5247,8 +5424,9 @@ def build_paddock(mats):
     inside."""
     clear_scene()
     bm = bmesh.new()
-    mat_list = [mats["timber_weathered"], mats["timber_plank"], mats["water_clean"], mats["timber_dark"]]
-    WEATHER, PLANK, WATER, TIMBER = range(4)
+    mat_list = [mats["timber_weathered"], mats["timber_plank"], mats["water_clean"], mats["timber_dark"],
+                mats["roof_thatch"]]
+    WEATHER, PLANK, WATER, TIMBER, STRAW = range(5)
     W, D, GATE = 30.0, 44.0, 3.2
     hw, hd = W * 0.5, D * 0.5
     sides = [((-hw, -hd), (hw, -hd)), ((hw, -hd), (hw, hd)), ((hw, hd), (-hw, hd)), ((-hw, hd), (-hw, -hd))]
@@ -5265,21 +5443,119 @@ def build_paddock(mats):
                 add_box(bm, px, py, 0.65, 0.14, 0.14, 1.3, mat_idx=WEATHER)
             for z in (0.62, 1.12):
                 add_timber_beam(bm, Vector((ax, ay, z)), Vector((bx, by, z)), width=0.08, depth=0.12, mat_idx=PLANK)
-    add_water_trough(bm, -hw + 2.0, -hd + 6.0, 0.0, w=0.8, d=2.4, h=0.55, mat_wood=PLANK, mat_water=WATER)
-    # Hay rack: a slatted V on legs.
+    # The gate: two hung leaves, swung open inward against the fence.
+    for s in (-1.0, 1.0):
+        gx = s * GATE * 0.5
+        add_box(bm, gx, -hd, 0.75, 0.18, 0.18, 1.5, mat_idx=TIMBER)
+        ex, ey = gx - s * 0.3, -hd + 1.5
+        for z in (0.4, 1.05):
+            add_timber_beam(bm, Vector((gx, -hd + 0.1, z)), Vector((ex, ey, z)), width=0.06, depth=0.1, mat_idx=PLANK)
+        add_timber_beam(bm, Vector((gx, -hd + 0.1, 0.4)), Vector((ex, ey, 1.05)), width=0.05, depth=0.08, mat_idx=PLANK)
+    _water_trough(bm, -hw + 2.0, -hd + 6.0, PLANK, WATER, TIMBER, along_y=True)
     rx, ry = hw - 3.0, 0.0
+    _hay_rack(bm, rx, ry, TIMBER, PLANK, STRAW)
+    anchor_spot((0.0, -hd - 1.6), (0.0, 1.0), tag="watch")      # at the gate
+    anchor_spot((rx - 1.4, ry), (1.0, 0.0), tag="work")  # M5: forkhay
+    _ws_finish(bm, mat_list, "Mesh_Paddock", "Paddock", "paddock")
+
+
+def _water_trough(bm, cx, cy, PLANK, WATER, TIMBER, along_y=False):
+    """Plank horse trough (2.4 x 0.8 m) on two trestles; its rim at 0.78 m, inside the nav
+    grid's obstacle slab (0.7-1.9 m), so walkers go round it."""
+    w, d = (0.8, 2.4) if along_y else (2.4, 0.8)
+    add_water_trough(bm, cx, cy, 0.28, w=w, d=d, h=0.5, mat_wood=PLANK, mat_water=WATER)
+    for s in (-0.85, 0.85):                                   # trestles across the long axis
+        if along_y:
+            add_box(bm, cx, cy + s, 0.14, w + 0.15, 0.12, 0.28, mat_idx=TIMBER)
+        else:
+            add_box(bm, cx + s, cy, 0.14, 0.12, d + 0.15, 0.28, mat_idx=TIMBER)
+
+
+def _hay_rack(bm, rx, ry, TIMBER, PLANK, STRAW):
+    """Slatted V hay rack on splayed legs (2.4 m long along Y), hay in it."""
     for y in (-1.2, 1.2):
         for sx in (-0.45, 0.45):
             add_timber_beam(bm, Vector((rx + sx, ry + y, 0.0)), Vector((rx + sx * 1.6, ry + y, 1.5)), width=0.1, depth=0.1,
                             mat_idx=TIMBER)
+    for sx in (-1.0, 1.0):
+        add_timber_beam(bm, Vector((rx + sx * 0.72, ry - 1.3, 1.5)), Vector((rx + sx * 0.72, ry + 1.3, 1.5)), width=0.07,
+                        depth=0.07, mat_idx=TIMBER)
     for i in range(7):
         y = -1.2 + i * 0.4
         for sx in (-1.0, 1.0):
             add_timber_beam(bm, Vector((rx, ry + y, 0.5)), Vector((rx + sx * 0.7, ry + y, 1.5)), width=0.05, depth=0.05,
                             mat_idx=PLANK)
-    anchor_spot((0.0, -hd - 1.6), (0.0, 1.0), tag="watch")      # at the gate
-    anchor_spot((rx - 1.2, ry), (1.0, 0.0), tag="work")  # M5: forkhay
-    _ws_finish(bm, mat_list, "Mesh_Paddock", "Paddock", "paddock")
+    add_box(bm, rx, ry, 1.15, 0.9, 2.3, 0.5, mat_idx=STRAW)
+    add_beehive_dome(bm, rx, ry, 1.38, 0.55, 0.3, segs_u=8, segs_v=2, mat_idx=STRAW)
+
+
+def build_hitching_post(mats):
+    """Hitching post: a squared oak post on a fieldstone footing with an iron tie ring on its
+    -Y face; the tied horse stands 1.5 m out in front (+glTF z), head to the post. Placed
+    from plan.props (town hall, Fara, both gates, two inns, the stable yard)."""
+    clear_scene()
+    bm = bmesh.new()
+    mat_list = [mats["timber_dark"], mats["stone_fieldstone"], mats["iron_wrought"]]
+    TIMBER, FIELD, IRON = range(3)
+    add_box(bm, 0.0, 0.0, 0.06, 0.5, 0.5, 0.12, mat_idx=FIELD)
+    add_box(bm, 0.0, 0.0, 0.7, 0.18, 0.18, 1.3, mat_idx=TIMBER)
+    add_beehive_dome(bm, 0.0, 0.0, 1.35, 0.11, 0.08, segs_u=6, segs_v=1, mat_idx=TIMBER)
+    _ws_cyl(bm, (0.0, -0.09, 1.05), (0.0, -0.13, 1.05), 0.08, segs=8, mat=IRON)
+    add_box(bm, 0.0, -0.1, 1.12, 0.04, 0.04, 0.06, mat_idx=IRON)
+    anchor_tie((0.0, -0.14, 1.05), (0.0, -1.5), (0.0, 1.0))
+    _ws_finish(bm, mat_list, "Mesh_HitchingPost", "HitchingPost", "hitching_post")
+
+
+def build_water_trough(mats):
+    """Horse trough for the stable yard (2.4 m along X)."""
+    clear_scene()
+    bm = bmesh.new()
+    mat_list = [mats["timber_plank"], mats["water_clean"], mats["timber_dark"]]
+    PLANK, WATER, TIMBER = range(3)
+    _water_trough(bm, 0.0, 0.0, PLANK, WATER, TIMBER)
+    _ws_finish(bm, mat_list, "Mesh_WaterTrough", "WaterTrough", "water_trough")
+
+
+def build_hay_rack(mats):
+    """Free-standing hay rack (2.4 m along Y) for the yard."""
+    clear_scene()
+    bm = bmesh.new()
+    mat_list = [mats["timber_dark"], mats["timber_plank"], mats["roof_thatch"]]
+    TIMBER, PLANK, STRAW = range(3)
+    _hay_rack(bm, 0.0, 0.0, TIMBER, PLANK, STRAW)
+    _ws_finish(bm, mat_list, "Mesh_HayRack", "HayRack", "hay_rack")
+
+
+def build_dung_heap(mats):
+    """The stable's dung heap (3 x 2.4 m): a plank-walled bay open to -Y, the heap of muck
+    and soiled straw in it, a dung fork stuck in the top and a barrow beside it."""
+    clear_scene()
+    bm = bmesh.new()
+    mat_list = [mats["timber_weathered"], mats["dung"], mats["roof_thatch"], mats["timber_dark"],
+                mats["iron_wrought"]]
+    WEATHER, MUD, STRAW, TIMBER, IRON = range(5)
+    W, D, h = 3.0, 2.4, 0.7
+    add_box(bm, 0.0, D * 0.5, h * 0.5, W, 0.08, h, mat_idx=WEATHER)
+    for sx in (-1.0, 1.0):
+        add_box(bm, sx * W * 0.5, 0.0, h * 0.5, 0.08, D, h, mat_idx=WEATHER)
+        for y in (-D * 0.5, D * 0.5):
+            add_box(bm, sx * W * 0.5, y, h * 0.55, 0.12, 0.12, h * 1.1, mat_idx=TIMBER)
+    add_beehive_dome(bm, 0.0, 0.15, 0.0, 1.35, 1.0, segs_u=12, segs_v=4, mat_idx=MUD)
+    for (px, py, r) in ((-0.5, -0.4, 0.5), (0.6, -0.2, 0.45), (0.1, 0.5, 0.55)):
+        add_beehive_dome(bm, px, py, 0.35, r, 0.35, segs_u=8, segs_v=2, mat_idx=STRAW)
+    add_timber_beam(bm, Vector((0.3, 0.2, 0.9)), Vector((0.75, -0.25, 2.0)), width=0.045, depth=0.045, mat_idx=TIMBER)
+    for k in (-1, 0, 1):
+        add_timber_beam(bm, Vector((0.3 + k * 0.06, 0.2, 0.9)), Vector((0.24 + k * 0.08, 0.27, 0.55)), width=0.02,
+                        depth=0.02, mat_idx=IRON)
+    # Wheelbarrow: a plank box on one wheel, two handles.
+    bx, by = W * 0.5 + 0.8, -0.3
+    add_box(bm, bx, by, 0.5, 0.6, 0.8, 0.3, mat_idx=WEATHER)
+    _ws_cyl(bm, (bx - 0.05, by - 0.55, 0.22), (bx + 0.05, by - 0.55, 0.22), 0.22, segs=10, mat=TIMBER)
+    for sx in (-0.25, 0.25):
+        add_timber_beam(bm, Vector((bx + sx, by - 0.5, 0.3)), Vector((bx + sx, by + 0.95, 0.55)), width=0.05, depth=0.05,
+                        mat_idx=TIMBER)
+        add_box(bm, bx + sx, by + 0.6, 0.15, 0.05, 0.05, 0.3, mat_idx=TIMBER)
+    _ws_finish(bm, mat_list, "Mesh_DungHeap", "DungHeap", "dung_heap")
 
 # -------------------------------------------------------------
 # 21. Logging Camp & Pit Sawmill (Trak Ciesielski)
@@ -5869,6 +6145,60 @@ def build_interior_props(mats):
     def sacks(bm):
         add_prop_flour_sacks(bm, [(-0.33, 0.0, 0.0, 0), (0.33, 0.02, 0.0, 0)], mat_sack=3)
 
+    def stall(bm):
+        # 1.95 x 3.2, open front at -Y. Partition boards on the +X side (high at the manger,
+        # stepping down toward the aisle), a post at its front end, manger and hay rack at the
+        # back, straw bedding, a tie ring in the back wall.
+        hw, hd = 0.975, 1.6
+        add_box(bm, 0.0, 0.05, 0.03, 1.9, 3.05, 0.06, mat_idx=2)                    # straw bed
+        add_box(bm, hw, 0.35, 0.8, 0.06, 2.5, 1.6, mat_idx=1)                       # partition
+        add_box(bm, hw, -1.2, 0.6, 0.06, 0.3, 1.2, mat_idx=1)                       # its low front end
+        add_box(bm, hw, -1.45, 0.75, 0.14, 0.14, 1.5, mat_idx=0)                    # front post
+        add_box(bm, hw, 0.35, 1.62, 0.1, 2.5, 0.06, mat_idx=0)                      # top rail
+        add_box(bm, hw, 1.55, 1.1, 0.14, 0.14, 2.2, mat_idx=0)                      # back post
+        # Manger: plank trough on two legs, hay in it, a slatted rack above.
+        add_box(bm, 0.0, 1.35, 0.72, 1.3, 0.45, 0.06, mat_idx=1)
+        for sy, d in ((1.13, 0.06), (1.57, 0.06)):
+            add_box(bm, 0.0, sy, 0.85, 1.3, d, 0.3, mat_idx=1)
+        for sx in (-0.6, 0.6):
+            add_box(bm, sx, 1.35, 0.36, 0.08, 0.4, 0.72, mat_idx=0)
+        add_box(bm, 0.0, 1.35, 0.9, 1.18, 0.36, 0.08, mat_idx=2)
+        for i in range(7):
+            sx = -0.54 + i * 0.18
+            add_timber_beam(bm, V((sx, 1.55, 1.05)), V((sx, 1.2, 1.75)), width=0.035, depth=0.035, mat_idx=0)
+        add_box(bm, 0.0, 1.2, 1.75, 1.2, 0.06, 0.06, mat_idx=0)
+        add_box(bm, 0.0, 1.45, 1.4, 1.1, 0.2, 0.3, mat_idx=2)                       # hay in the rack
+        _ws_cyl(bm, (0.5, 1.58, 1.25), (0.5, 1.5, 1.25), 0.06, segs=8, mat=8)        # tie ring
+
+    def saddle_rack(bm):
+        # Wall rack: two posts, a pole with two saddles astride it, bridles on pegs above.
+        for sx in (-0.65, 0.65):
+            add_box(bm, sx, 0.15, 0.6, 0.08, 0.08, 1.2, mat_idx=0)
+        add_timber_beam(bm, V((-0.65, -0.05, 1.05)), V((0.65, -0.05, 1.05)), width=0.08, depth=0.08, mat_idx=0)
+        for sx in (-0.35, 0.35):
+            add_beehive_dome(bm, sx, -0.05, 1.04, 0.24, 0.12, segs_u=8, segs_v=2, mat_idx=13)       # seat
+            add_box(bm, sx, -0.05, 0.9, 0.5, 0.42, 0.2, mat_idx=13)                                  # skirts
+            add_box(bm, sx, -0.05, 0.86, 0.56, 0.5, 0.04, mat_idx=4)                                 # cloth
+            add_box(bm, sx - 0.2, -0.05, 0.6, 0.03, 0.03, 0.5, mat_idx=13)                           # stirrup leathers
+            add_box(bm, sx - 0.2, -0.05, 0.36, 0.1, 0.05, 0.06, mat_idx=8)                           # stirrup
+        add_box(bm, 0.0, 0.22, 1.7, 1.4, 0.04, 0.12, mat_idx=1)                                      # peg board
+        for sx in (-0.45, 0.0, 0.45):
+            add_box(bm, sx, 0.15, 1.7, 0.04, 0.12, 0.04, mat_idx=0)
+            add_box(bm, sx, 0.18, 1.45, 0.05, 0.03, 0.45, mat_idx=13)                                # bridle
+            add_box(bm, sx, 0.18, 1.22, 0.12, 0.03, 0.03, mat_idx=8)                                 # bit
+
+    def hay(bm):
+        # A heap of loose hay 1.6 x 1.2, a fork stuck in it.
+        add_box(bm, 0.0, 0.0, 0.25, 1.5, 1.1, 0.5, mat_idx=2)
+        add_beehive_dome(bm, 0.0, 0.0, 0.5, 0.65, 0.45, segs_u=10, segs_v=3, mat_idx=2)
+        add_timber_beam(bm, V((0.3, -0.2, 0.6)), V((0.55, -0.45, 1.7)), width=0.04, depth=0.04, mat_idx=0)
+
+    def plank_wall(bm):
+        # 1.4 m of plank partition up to the loft floor (2.75 m): boards and a head beam.
+        add_box(bm, 0.0, 0.0, 1.35, 1.4, 0.06, 2.7, mat_idx=1)
+        add_box(bm, 0.0, 0.0, 2.68, 1.4, 0.14, 0.14, mat_idx=0)
+        add_box(bm, 0.0, 0.0, 0.08, 1.4, 0.12, 0.16, mat_idx=0)
+
     def ladder(bm):
         # One metre of ladder; the runtime stacks as many as a storey needs.
         for sx in (-0.27, 0.27):
@@ -5880,7 +6210,8 @@ def build_interior_props(mats):
     for name, make in (("bed", bed), ("pallet", pallet), ("table", table), ("hearth", hearth),
                        ("workbench", workbench), ("kneading", kneading), ("loom", loom), ("wheel", wheel),
                        ("vat", vat), ("mash_tun", mash_tun), ("chest", chest), ("shelf", shelf),
-                       ("barrel", barrel), ("sacks", sacks), ("ladder", ladder)):
+                       ("barrel", barrel), ("sacks", sacks), ("ladder", ladder), ("stall", stall),
+                       ("saddle_rack", saddle_rack), ("hay", hay), ("plank_wall", plank_wall)):
         bm = bmesh.new()
         make(bm)
         bm.normal_update()
@@ -5949,6 +6280,10 @@ def main():
         "carriage_house": build_carriage_house,
         "farrier_forge": build_farrier_forge,
         "paddock": build_paddock,
+        "hitching_post": build_hitching_post,
+        "water_trough": build_water_trough,
+        "hay_rack": build_hay_rack,
+        "dung_heap": build_dung_heap,
         "logging_camp": build_logging_camp,
         "river_harbor": build_river_harbor,
         "blacksmith_workshop": build_blacksmith_workshop,

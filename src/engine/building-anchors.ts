@@ -9,6 +9,8 @@ import type { PlacedModel } from './static-batches';
  *   doors: { p: sill centre on the outer wall face, n: outward normal, w: width, h: height,
  *            stair?: points from the stair foot (outside, on the ground) up to the landing }
  *   spots: { p, yaw (facing, atan2(dx, dz)), tag: work | sell | stand | guard }
+ *   stalls: { p, yaw, tag: horse | wagon } where a horse / the wagon stands at rest
+ *   ties: { p: tie ring, a: where the tied horse stands, yaw: its facing }
  *   rooms, furniture, slots, ladders: the interior (houses and workshops; format in
  *            build_assets.py above PROPS). Slots and ladders go to the world here; rooms and
  *            furniture stay in model space (interiors.ts grids and draws them).
@@ -50,6 +52,13 @@ export interface Door {
 export interface Spot { x: number; y: number; z: number; yaw: number; tag: string; anim?: string; taken: number }
 const SPOT_TAGS = new Set(['work', 'stand', 'sell', 'guard']);
 
+/** Where a horse (tag 'horse') or the wagon (tag 'wagon') stands at rest, facing yaw:
+ *  anchor_stall. A stall holds one; `taken` = holder id + 1, 0 when free (horses.ts, M3). */
+export interface Stall { x: number; y: number; z: number; yaw: number; tag: string; taken: number }
+/** Where a horse is tied (anchor_tie): the ring (x, y, z) and the horse's own standing place
+ *  (ax, az) and facing yaw, beside the post. */
+export interface Tie { x: number; y: number; z: number; ax: number; az: number; yaw: number; taken: number }
+
 /** One storey's floor. r and holes are model-space rectangles [minx, minz, maxx, maxz]. */
 export interface Room { y: number; r: number[]; holes: number[][] }
 /** A piece of furniture: model-space centre of its footprint, yaw, footprint w x d. */
@@ -82,6 +91,10 @@ export interface Building {
   x: number; y: number; z: number;
   doors: Door[];
   spots: Spot[];
+  /** Horse stalls and the wagon's place (stable buildings). */
+  stalls: Stall[];
+  /** Tie rings (hitching posts, the farrier's post). */
+  ties: Tie[];
   /** Rooms, furniture and slots (houses and workshops, M6). */
   interior?: Interior;
   /** World tops of its flues (smoke while the hearth burns); houses without a chimney get
@@ -100,6 +113,8 @@ export const FLUE_STYLE = new WeakMap<THREE.Vector3, FlueStyle>();
 interface RawAnchors {
   doors?: { p: number[]; n: number[]; w: number; h?: number; stair?: number[][] }[];
   spots?: { p: number[]; yaw: number; tag: string }[];
+  stalls?: { p: number[]; yaw: number; tag: string }[];
+  ties?: { p: number[]; a: number[]; yaw: number }[];
   rooms?: Room[];
   furniture?: { prop: string; p: number[]; yaw: number; room: number; s: number[]; h?: number }[];
   slots?: { k: Slot['kind']; pose: Slot['pose']; p: number[]; yaw: number; a: number[]; room: number }[];
@@ -159,7 +174,7 @@ export class BuildingIndex {
       };
       v.setFromMatrixPosition(pm.matrix);
       const b: Building = { name: pm.template.name, index, parcelId: pm.parcelId, x: v.x, y: v.y, z: v.z, doors: [], spots: [],
-        chimneys: [], vents: [] };
+        stalls: [], ties: [], chimneys: [], vents: [] };
       for (const c of raw.chimneys ?? []) {
         const f = new THREE.Vector3().fromArray(c).applyMatrix4(pm.matrix);
         const style = FLUE_STYLES[c[3] ?? 0] ?? 'chimney';
@@ -191,8 +206,19 @@ export class BuildingIndex {
         b.spots.push({ x: v.x, y: v.y, z: v.z, yaw: Math.atan2(fx, fz), tag: loop ? 'work' : s.tag,
           anim: loop ? s.tag : undefined, taken: 0 });
       }
+      for (const s of raw.stalls ?? []) {
+        v.fromArray(s.p).applyMatrix4(pm.matrix);
+        const [fx, fz] = dir(Math.sin(s.yaw), Math.cos(s.yaw));
+        b.stalls.push({ x: v.x, y: v.y, z: v.z, yaw: Math.atan2(fx, fz), tag: s.tag, taken: 0 });
+      }
+      for (const t of raw.ties ?? []) {
+        const a = new THREE.Vector3().fromArray(t.a).applyMatrix4(pm.matrix);
+        v.fromArray(t.p).applyMatrix4(pm.matrix);
+        const [fx, fz] = dir(Math.sin(t.yaw), Math.cos(t.yaw));
+        b.ties.push({ x: v.x, y: v.y, z: v.z, ax: a.x, az: a.z, yaw: Math.atan2(fx, fz), taken: 0 });
+      }
       if (raw.rooms?.length) {
-        const w = (p: number[]) => new THREE.Vector3().fromArray(p).applyMatrix4(pm.matrix);
+        const w =(p: number[]) => new THREE.Vector3().fromArray(p).applyMatrix4(pm.matrix);
         const slots: Slot[] = (raw.slots ?? []).map((s) => {
           v.fromArray(s.p).applyMatrix4(pm.matrix);
           const [fx, fz] = dir(Math.sin(s.yaw), Math.cos(s.yaw));

@@ -582,6 +582,7 @@ export class ThreeIsometricRenderer {
       'quarry_face', 'quarry_yard', 'masons_lodge', 'crane_wheel', 'crane_rope', 'crane_block',
       'bog_works', 'charcoal_clamp', 'bloomery', 'bloomery_bellows', 'forge_shed', 'smithy_hut',
       'stable_long', 'carriage_house', 'farrier_forge', 'paddock',
+      'hitching_post', 'water_trough', 'hay_rack', 'dung_heap',
       'logging_camp',
       'river_harbor',
       'gate_krakow',
@@ -887,6 +888,9 @@ export class ThreeIsometricRenderer {
     for (const c of plan.river?.crossings ?? []) {
       this.put(m(c.model), c.x, 0, c.z, (-c.angle * Math.PI) / 180);
     }
+    // 8c. Small props outside the parcels (generate_city_plan.py add_props): hitching posts in
+    // town and at the stable (their anchor_tie is where a horse is tied), troughs, dung heap.
+    for (const pr of plan.props ?? []) this.put(m(pr.model), pr.x, 0, pr.z, (pr.rot * Math.PI) / 180);
     // Quarry cranes' wheels, ropes and blocks (industry.ts), from the site models' anchors.
     this.industry = new IndustryMachines(this.scene, (n) => this.models.get(n), this.statics.placed);
     // The ironworks bog's standing pools: the river's water, still (walkers are kept out in main.ts).

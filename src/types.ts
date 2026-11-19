@@ -249,6 +249,8 @@ export interface River {
   mills?: RiverMill[];
 }
 
+export interface PlanProp { id: string; model: string; x: number; z: number; rot: number; near?: string }
+
 export interface CityPlan {
   metadata: {
     city: string;
@@ -273,6 +275,9 @@ export interface CityPlan {
   /** Footpaths and forest rides (ground paint only). */
   paths?: GroundPath[];
   grounds?: GroundPatch[];
+  /** Small placed models outside any parcel (hitching posts, troughs, the stable's dung heap):
+   *  generate_city_plan.py add_props; rot = degrees about +Y, as parcels' orientation. */
+  props?: PlanProp[];
   industrySites?: Record<string, IndustrySite>;
   citizens: Citizen[];
   bellHours: Record<string, BellHourInfo>;

@@ -45662,6 +45662,96 @@
       ]
     }
   ],
+  "props": [
+    {
+      "id": "prop_stable_0",
+      "model": "dung_heap",
+      "x": -260.0,
+      "z": 110.0,
+      "rot": 180.0,
+      "near": "p_stable_stable"
+    },
+    {
+      "id": "prop_stable_1",
+      "model": "water_trough",
+      "x": -250.0,
+      "z": 126.0,
+      "rot": 90.0,
+      "near": "p_stable_stable"
+    },
+    {
+      "id": "prop_stable_2",
+      "model": "hitching_post",
+      "x": -249.5,
+      "z": 116.5,
+      "rot": 90.0,
+      "near": "p_stable_stable"
+    },
+    {
+      "id": "prop_stable_3",
+      "model": "hitching_post",
+      "x": -249.5,
+      "z": 135.5,
+      "rot": 90.0,
+      "near": "p_stable_stable"
+    },
+    {
+      "id": "prop_stable_4",
+      "model": "hay_rack",
+      "x": -245.5,
+      "z": 107.0,
+      "rot": 0.0,
+      "near": "p_stable_carriage"
+    },
+    {
+      "id": "prop_hitch_town_hall",
+      "model": "hitching_post",
+      "x": 0.0,
+      "z": 7.5,
+      "rot": 0.0,
+      "near": "town_hall"
+    },
+    {
+      "id": "prop_hitch_parish_fara",
+      "model": "hitching_post",
+      "x": 132.07,
+      "z": 12.27,
+      "rot": 165.0,
+      "near": "parish_fara"
+    },
+    {
+      "id": "prop_hitch_gate_krakow",
+      "model": "hitching_post",
+      "x": -158.06,
+      "z": -87.24,
+      "rot": 165.0,
+      "near": "gate_krakow"
+    },
+    {
+      "id": "prop_hitch_gate_grodzka",
+      "model": "hitching_post",
+      "x": 190.0,
+      "z": 26.5,
+      "rot": 0.0,
+      "near": "gate_grodzka"
+    },
+    {
+      "id": "prop_hitch_p_035",
+      "model": "hitching_post",
+      "x": -36.2,
+      "z": -15.5,
+      "rot": 60.0,
+      "near": "p_035"
+    },
+    {
+      "id": "prop_hitch_p_067",
+      "model": "hitching_post",
+      "x": -90.68,
+      "z": 2.0,
+      "rot": 82.5,
+      "near": "p_067"
+    }
+  ],
   "industrySites": {
     "quarry": {
       "x": 230.0,
