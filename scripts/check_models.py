@@ -127,7 +127,9 @@ MODEL_TRIS = [("tree_", 1300), ("bush_", 320), ("fern_", 220), ("reed_", 220), (
               # wildlife (build_animals.py): a few dozen instances, but every one animated in view
               ("animal_deer_", 1500), ("animal_duck_", 900),
               # the stable's horses (with every tack part; ten of them)
-              ("animal_horse", 3800)]
+              ("animal_horse", 3800),
+              # the stable's travelling wagon (build_animals.py; one of it)
+              ("vehicle_", 4000)]
 
 
 def check_animal(name, gltf):

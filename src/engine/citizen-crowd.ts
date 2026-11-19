@@ -744,6 +744,14 @@ export class CitizenCrowd {
         armL = -0.45 + armL * 0.3; armR = -0.4 + armR * 0.3;
         lean = 0.04;
         rise = SEAT_H - arch.pivots[4][0] * look.height;
+      } else if (pose === 'ride') {
+        // Astride (y = the saddle): the one-piece legs forward and down along the horse's
+        // flanks, hands forward on the reins, rising a little to the trot (stepBob).
+        legL = legR = -1.05;
+        armL = -0.7 + armL * 0.2; armR = -0.6 + armR * 0.2;
+        headPitch *= 0.5;
+        lean = 0.06;
+        rise = -arch.pivots[4][0] * look.height;
       }
       _e.set(pitch, m.yaw, pose ? 0 : s * 0.03, 'YXZ');
       _q.setFromEuler(_e);

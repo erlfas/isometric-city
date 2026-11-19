@@ -16,6 +16,10 @@ import { freePoint, roomAt, roomCentre, routeInside } from './interiors';
  * the well) and chats between acquaintances (TALK) live here too; the phases below add
  *   TALK      stopped to chat, facing the other (gossip loop), then back to the route
  *   SERVE     in a service line, or at the window / well being served
+ *   CARRIED   on the stable's wagon (wagon.ts: carry / setCarried / release): the postilion
+ *             astride a horse, travellers inside (hidden); out of the schedule meanwhile
+ * The wagon is also an obstacle (vehicles: a capsule walkers avoid by time to collision) and
+ * asks people standing in its way to step aside (vehicleSweep).
  *
  * Movement runs at a fixed STEP (20 Hz) on its own seeded RNG, so a run is reproducible for
  * a given start time; positions handed to the renderer are interpolated between steps.
@@ -98,8 +102,8 @@ const QUEUE_STEP = 0.75;        // m between people queueing at a door
 const STAIR_STRIDE = 0.55;      // stride on steps, fraction of the walking stride
 const INDOOR = 0.6;             // walking pace indoors, fraction of the street pace
 
-const Phase = { IDLE: 0, ROUTE: 1, WALK: 2, SCRIPT: 3, INSIDE: 4, SPOT: 5, QUEUE: 6, TALK: 7, SERVE: 8 } as const;
-const PHASE_NAMES = ['IDLE', 'ROUTE', 'WALK', 'SCRIPT', 'INSIDE', 'SPOT', 'QUEUE', 'TALK', 'SERVE'];
+const Phase = { IDLE: 0, ROUTE: 1, WALK: 2, SCRIPT: 3, INSIDE: 4, SPOT: 5, QUEUE: 6, TALK: 7, SERVE: 8, CARRIED: 9 } as const;
+const PHASE_NAMES = ['IDLE', 'ROUTE', 'WALK', 'SCRIPT', 'INSIDE', 'SPOT', 'QUEUE', 'TALK', 'SERVE', 'CARRIED'];
 
 // Life (M7).
 const TALK_R = 1.8;             // m: acquaintances this close may stop for a chat
@@ -187,8 +191,14 @@ export interface NavStats {
   doorsOpen: number; queueing: number; waitingInside: number; doorOpenings: number;
 }
 
+/** A vehicle (the stable's wagon) as walkers see it: a capsule, segment a-b with radius r,
+ *  moving at (vx, vz) m/s. */
+export interface Vehicle { ax: number; az: number; bx: number; bz: number; r: number; vx: number; vz: number }
+
 export class SimulationEngine {
   public plan: CityPlan;
+  /** Moving vehicles, set by their owner each frame (wagon.ts). */
+  public vehicles: Vehicle[] = [];
   public spatialGrid: SpatialHashGrid;
   readonly nav: NavGrid;
   readonly buildings: BuildingIndex;
@@ -250,6 +260,8 @@ export class SimulationEngine {
   private nbUsed: number[] = [];
   private household = new Map<string, number[]>();
   private force = { x: 0, z: 0 };
+  /** Called to the wagon (summon): their 'travel' activity stands until unsummoned or carried. */
+  private summoned = new Set<number>();
 
   /** Footbridges over the river: walkers on a deck are lifted to it (groundAt). */
   private crossings: RiverCrossing[] = [];
@@ -429,6 +441,8 @@ export class SimulationEngine {
       this.px[i] = this.citizens[i].currentX ?? 0;
       this.pz[i] = this.citizens[i].currentZ ?? 0;
     }
+    for (const i of this.summoned) this.agents[i].act = null;
+    this.summoned.clear();
     for (const b of this.buildings.all) {
       for (const s of b.spots) s.taken = 0;
       for (const s of b.interior?.slots ?? []) s.taken = 0;
@@ -440,6 +454,8 @@ export class SimulationEngine {
     this.activeDoors.length = 0;
     for (let i = 0; i < this.agents.length; i++) {
       const ag = this.agents[i];
+      // On the wagon: stays there (wagon.ts re-places it for the hour and lets it down).
+      if (ag.phase === Phase.CARRIED) continue;
       ag.queued = false;
       ag.gate = null; ag.qDoor = null;
       ag.heldSpot = null;
@@ -485,8 +501,9 @@ export class SimulationEngine {
   private evaluate(i: number): void {
     const ag = this.agents[i];
     const life = this.life;
+    if (ag.phase === Phase.CARRIED) return;
     life.tick(i, this.clock, this.simTimeHours, ag.act, ag.there && ag.phase !== Phase.TALK, ag.c);
-    if (ag.phase === Phase.TALK) return;
+    if (ag.phase === Phase.TALK || this.summoned.has(i)) return;
     if (ag.phase === Phase.IDLE || ag.phase === Phase.WALK) this.maybeTalk(i, ag);
     if ((ag.phase as Phase) === Phase.TALK) return;
     const cur = ag.act;
@@ -514,6 +531,7 @@ export class SimulationEngine {
     else if (loc === 'market_square') { tx = 0; tz = 0; }
     else if (loc.startsWith('svc:')) { const s = this.life.services[+loc.slice(4)]; tx = s.x; tz = s.z; }
     else if (loc.startsWith('wall:')) { const p = this.life.checkpoint(+loc.slice(5)); tx = p.x; tz = p.z; }
+    else if (loc.startsWith('pt:')) { [tx, tz] = loc.slice(3).split(',').map(Number); }
     else return 0.15;
     const metres = Math.hypot(tx - this.px[i], tz - this.pz[i]) * 1.35 + 6;
     return (metres / (this.walkSpeed * ag.pace)) * this.hoursPerSec + 0.05;
@@ -638,6 +656,10 @@ export class SimulationEngine {
       const px = cell >= 0 ? this.nav.cx(cell) : x, pz = cell >= 0 ? this.nav.cz(cell) : z;
       return { b: null, door: null, spot: null, x: px, z: pz, wander, cx: px, cz: pz };
     };
+    if (loc.startsWith('pt:')) {
+      const [x, z] = loc.slice(3).split(',').map(Number);
+      return point(x, z, 0);
+    }
     const takeSpot = (spots: Spot[], tags: string[]): Spot | null => {
       const free = spots.filter((s) => tags.includes(s.tag) && s.taken === 0);
       if (!free.length) return null;
@@ -695,7 +717,7 @@ export class SimulationEngine {
   private setPhase(ag: Agent, p: Phase): void {
     ag.phase = p;
     const c = ag.c;
-    c.hidden = p === Phase.INSIDE;
+    c.hidden = p === Phase.INSIDE || p === Phase.CARRIED;
     c.isMoving = p === Phase.WALK || p === Phase.SCRIPT;
     c.gait = ag.running && c.isMoving ? 1 : 0;
     c.strideScale = Math.sqrt(this.walkSpeed / WALK);
@@ -1219,7 +1241,7 @@ export class SimulationEngine {
     this.nbUsed.length = 0;
     const x0 = this.nav.minX, z0 = this.nav.minZ;
     for (let i = 0; i < this.agents.length; i++) {
-      if (this.agents[i].phase === Phase.INSIDE) continue;
+      if (this.agents[i].phase === Phase.INSIDE || this.agents[i].phase === Phase.CARRIED) continue;
       const gx = Math.floor((this.px[i] - x0) / NB), gz = Math.floor((this.pz[i] - z0) / NB);
       if (gx < 0 || gz < 0 || gx >= this.nbW || gz >= this.nbH) continue;
       const k = gz * this.nbW + gx;
@@ -1283,6 +1305,33 @@ export class SimulationEngine {
           }
         }
       }
+    }
+    // Vehicles: the same time-to-collision law against the capsule's nearest point (a larger
+    // body, so a wider berth), and a firm push out of it.
+    for (const v of this.vehicles) {
+      const ex = v.bx - v.ax, ez = v.bz - v.az, l2 = ex * ex + ez * ez;
+      let t = l2 > 0 ? ((x - v.ax) * ex + (z - v.az) * ez) / l2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const wx = x - (v.ax + ex * t), wz = z - (v.az + ez * t);
+      const d2 = wx * wx + wz * wz, R = v.r + RADIUS2 * 0.5;
+      if (d2 > (R + 6) * (R + 6)) continue;
+      const c = d2 - R * R;
+      if (c < 0) {
+        const d = Math.sqrt(d2) || 0.01;
+        const push = 10 + ((R - d) / R) * 30;
+        fx += (wx / d) * push; fz += (wz / d) * push;
+        continue;
+      }
+      const rvx = vxi - v.vx, rvz = vzi - v.vz;
+      const a = rvx * rvx + rvz * rvz, b = wx * rvx + wz * rvz;
+      if (b >= 0 || a < 1e-6) continue;
+      const disc = b * b - a * c;
+      if (disc <= 0) continue;
+      const tau = Math.max(0.05, (-b - Math.sqrt(disc)) / a);
+      if (tau > TTC_MAX) continue;
+      const mag = Math.min(F_MAX, (TTC_K * 2 * Math.exp(-tau / TTC_T0) * (2 / tau + 1 / TTC_T0)) / tau);
+      fx += ((wx + rvx * tau) / R) * mag;
+      fz += ((wz + rvz * tau) / R) * mag;
     }
     // Walls within 1 m: push down the distance field's slope.
     const cl = this.nav.clearance(x, z);
@@ -1676,6 +1725,151 @@ export class SimulationEngine {
     }
     const p = this.spatialGrid.findParcelAt(x, z);
     return p ? p.elevation * 0.3 : 0;
+  }
+
+  // ---------------------------------------------------------------- the wagon (wagon.ts)
+
+  /** Take citizen i out of the schedule onto the wagon (CARRIED; hidden until setCarried shows it). */
+  public carry(i: number): void {
+    const ag = this.agents[i];
+    if (ag.phase === Phase.CARRIED) return;
+    this.summoned.delete(i);
+    this.endChat(i);
+    if (ag.heldSpot) { ag.heldSpot.taken--; ag.heldSpot = null; }
+    if (ag.slot) { ag.slot.taken--; ag.slot = null; }
+    this.releaseDoor(i);
+    this.leaveService(i);
+    if (ag.act && (ag.act.kind === 'bread' || ag.act.kind === 'water') && !this.life.minds[i].carrying) this.life.release(i);
+    this.dropPair(i);
+    ag.inB = null; ag.inDoor = null; ag.inPts = null; ag.inExit = false; ag.pts = null;
+    ag.running = false; ag.stuck = 0; ag.ghost = 0;
+    this.vx[i] = 0; this.vz[i] = 0;
+    this.clearPose(ag.c);
+    this.setPhase(ag, Phase.CARRIED);
+  }
+
+  public isCarried(i: number): boolean { return this.agents[i].phase === Phase.CARRIED; }
+
+  /** Sim hours since start, unwrapped (the clock activities' until / due are in). */
+  public get simClock(): number { return this.clock; }
+
+  /** A carried citizen this frame: feet (or hips, riding) at y, facing yaw, drawn or not; bob = extra rise. */
+  public setCarried(i: number, x: number, y: number, z: number, yaw: number, pose: Citizen['pose'], shown: boolean, bob = 0): void {
+    if (this.agents[i].phase !== Phase.CARRIED) return;
+    this.px[i] = this.ox[i] = x; this.pz[i] = this.oz[i] = z; this.py[i] = this.oy[i] = y;
+    const c = this.citizens[i];
+    c.currentX = x; c.currentZ = z; c.y = y; c.targetX = x; c.targetZ = z; c.vx = 0; c.vz = 0;
+    c.faceYaw = yaw; c.pose = pose; c.hidden = !shown; c.stepBob = bob; c.isMoving = false;
+  }
+
+  /** Let a carried citizen down at (x, z) (nearest free cell): it stands there and plans its next activity. */
+  public release(i: number, x: number, z: number): void {
+    const ag = this.agents[i];
+    if (ag.phase !== Phase.CARRIED) return;
+    const cell = this.nav.nearestFree(x, z, 8);
+    if (cell >= 0) { x = this.nav.cx(cell); z = this.nav.cz(cell); }
+    this.place(i, x, this.groundAt(x, z), z);
+    this.clearPose(ag.c);
+    ag.c.stepBob = undefined;
+    ag.dest = { b: null, door: null, spot: null, x, z, wander: 0, cx: x, cz: z };
+    this.setPhase(ag, Phase.IDLE);
+    ag.c.activityAnim = 'idle';
+    // No activity: the next evaluate plans afresh (decide would keep a stale one).
+    ag.act = null;
+    ag.there = true;
+    ag.nextThink = this.clock;
+    this.life.minds[i].lastTick = this.clock;
+  }
+
+  /** Call citizen i to walk to (x, z) for the wagon (activity 'travel', there by clock `due`); it
+   *  waits there until carried or unsummoned. False if it is carried or called already. */
+  public summon(i: number, x: number, z: number, due: number, task: string): boolean {
+    const ag = this.agents[i];
+    if (ag.phase === Phase.CARRIED || this.summoned.has(i)) return false;
+    this.endChat(i);
+    if (ag.act && (ag.act.kind === 'bread' || ag.act.kind === 'water') && !this.life.minds[i].carrying) this.life.release(i);
+    const act: Activity = { kind: 'travel', state: 'TRAVELING', location: `pt:${x.toFixed(1)},${z.toFixed(1)}`, task,
+      until: this.clock + 6, due, fixed: true };
+    this.summoned.add(i);
+    ag.act = act;
+    this.begin(i, act);
+    return true;
+  }
+
+  /** Not travelling after all (the wagon left without them): back to their day. */
+  public unsummon(i: number): void {
+    if (!this.summoned.delete(i)) return;
+    const ag = this.agents[i];
+    ag.act = null;
+    ag.nextThink = this.clock;
+  }
+
+  /** A summoned citizen standing at its point, ready to board. */
+  public waiting(i: number): boolean {
+    const ag = this.agents[i];
+    return this.summoned.has(i) && ag.phase === Phase.IDLE && ag.there;
+  }
+
+  /** Where a citizen is now (simulation position). */
+  public posOf(i: number): [number, number] { return [this.px[i], this.pz[i]]; }
+
+  /** Phase name of citizen i (debug). */
+  public phaseOf(i: number): string { return PHASE_NAMES[this.agents[i].phase]; }
+
+  /**
+   * People in a vehicle's way: those standing, walking or chatting in the corridor from (ax, az)
+   * along the unit direction (dx, dz), len m long and half wide on each side. Chats there end and
+   * people standing shuffle out sideways. Returns how many are in it (the vehicle waits for them).
+   */
+  public vehicleSweep(ax: number, az: number, dx: number, dz: number, len: number, half: number): number {
+    let n = 0;
+    const cx = ax + dx * len * 0.5, cz = az + dz * len * 0.5, r = len * 0.5 + half;
+    const g0x = Math.floor((cx - r - this.nav.minX) / NB), g1x = Math.floor((cx + r - this.nav.minX) / NB);
+    const g0z = Math.floor((cz - r - this.nav.minZ) / NB), g1z = Math.floor((cz + r - this.nav.minZ) / NB);
+    for (let gz = Math.max(0, g0z); gz <= Math.min(this.nbH - 1, g1z); gz++) {
+      for (let gx = Math.max(0, g0x); gx <= Math.min(this.nbW - 1, g1x); gx++) {
+        for (let j = this.nbHead[gz * this.nbW + gx]; j >= 0; j = this.nbNext[j]) {
+          const ag = this.agents[j], ph = ag.phase;
+          if (ph !== Phase.IDLE && ph !== Phase.WALK && ph !== Phase.TALK && ph !== Phase.ROUTE) continue;
+          const wx = this.px[j] - ax, wz = this.pz[j] - az;
+          const f = wx * dx + wz * dz, l = wx * dz - wz * dx;
+          if (f < 0 || f > len || Math.abs(l) > half) continue;
+          n++;
+          if (ph === Phase.TALK) this.endChat(j);
+          else if (ph === Phase.IDLE) this.makeWay(j, ax + dx * f, az + dz * f, dx, dz, half, l);
+        }
+      }
+    }
+    return n;
+  }
+
+  /** Out of a vehicle's corridor: sideways to half + 0.7 m from its line, own side first. */
+  private makeWay(j: number, fx: number, fz: number, dx: number, dz: number, half: number, l: number): void {
+    const ag = this.agents[j];
+    const s0 = l >= 0 ? 1 : -1;
+    for (const s of [s0, -s0]) {
+      const t = s * (half + 0.7);
+      const tx = fx + dz * t, tz = fz - dx * t;
+      if (!this.nav.isFree(tx, tz) || this.nav.clearance(tx, tz) < 0.5) continue;
+      ag.pts = new Float32Array([this.px[j], this.pz[j], tx, tz]);
+      ag.wp = 1;
+      ag.running = false;
+      ag.gaitPace = BRISK;
+      ag.stuck = 0;
+      this.setPhase(ag, Phase.WALK);
+      ag.dest = { ...(ag.dest ?? { b: null, door: null, spot: null, wander: 0, cx: tx, cz: tz }), x: tx, z: tz };
+      this.stat.asides++;
+      return;
+    }
+  }
+
+  /** End citizen i's chat (and the other's) at the next step. */
+  private endChat(i: number): void {
+    const ag = this.agents[i];
+    if (ag.phase !== Phase.TALK) return;
+    ag.talkT = 0;
+    const j = ag.talkWith;
+    if (j >= 0 && this.agents[j].phase === Phase.TALK && this.agents[j].talkWith === i) this.agents[j].talkT = 0;
   }
 
   // ---------------------------------------------------------------- stats

@@ -103,8 +103,9 @@ export interface Citizen {
   gait?: number;
   /** Stride length factor: travel is shown sped up, so steps lengthen with it. */
   strideScale?: number;
-  /** Lying in a bed (feet at the position, head away from faceYaw) or sitting; unset = standing. */
-  pose?: 'lie' | 'sit';
+  /** Lying in a bed (feet at the position, head away from faceYaw) or sitting; riding (hips at
+   *  y, astride a horse: the stable's postilion); unset = standing. */
+  pose?: 'lie' | 'sit' | 'ride';
   /** Carrying home: loaves in the crook of the left arm, or a full bucket in the right hand. */
   carrying?: 'bread' | 'water';
 }

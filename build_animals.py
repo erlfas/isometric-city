@@ -73,6 +73,27 @@ class Model:
         rx, ry, rz = r
         bc.add_ellipsoid(self.bm(part), V(c, s), (rx * s, rz * s, ry * s), segs=segs, rings=rings, mat_idx=mat)
 
+    def box(self, part, c, size, mat):
+        """Axis-aligned box: centre c, size (x width, y height, z length)."""
+        s = self.s
+        sx, sy, sz = size
+        bc.add_box(self.bm(part), *V(c, s), sx * s, sz * s, sy * s, mat_idx=mat)
+
+    def sheet(self, part, rings, mat, mat_in=None, closed=False):
+        """Surface through rings of points (same count each), quads between neighbours; mat_in
+        adds the inside (reversed faces) in its own material. closed: last ring point joins the first."""
+        bm = self.bm(part)
+        vs = [[bm.verts.new(Vector(V(p, self.s))) for p in r] for r in rings]
+        n = len(rings[0])
+        for a, b in zip(vs, vs[1:]):
+            for k in range(n if closed else n - 1):
+                q = (a[k], a[(k + 1) % n], b[(k + 1) % n], b[k])
+                f = bm.faces.new(q)
+                f.material_index = mat
+                if mat_in is not None:
+                    g = bm.faces.new(tuple(reversed([bm.verts.new(v.co) for v in q])))
+                    g.material_index = mat_in
+
 
 def mirror(fn):
     for sx, side in ((1, "L"), (-1, "R")):
@@ -461,6 +482,103 @@ def build_horse(name, cfg):
     return m
 
 
+# ------------------------------------------------------------------ travelling wagon
+
+# Body origin = on the ground midway between the axles; the pole tip (where the team's collars
+# hold it) leads. Keep in sync with src/engine/wagon.ts (WAGON).
+WAGON = dict(axle_b=-1.35, axle_f=1.35, r_b=0.62, r_f=0.48, track=0.79, pole_tip=4.2)
+
+
+def build_wagon(name):
+    """The stable's travelling wagon: a painted bed under a hooped linen hood, luggage chest on
+    the back, perch and rear axle on the body; the front axle with its bolster, hounds, pole and
+    splinter bar turns as one part (fore, about the king pin); four spoked wheels spin about
+    their hubs (front ones ride on fore)."""
+    import math
+    W = WAGON
+    m = Model(name)
+    paint = m.mat("paint", "#7e3324")
+    trim = m.mat("trim", "#b8862e")
+    wood = m.mat("wood", "#6b4a2c")
+    dark = m.mat("dark", "#43301f")
+    canvas = m.mat("canvas", "#ddd2b6")
+    canvas_in = m.mat("canvas_in", "#a39577")
+    iron = m.mat("iron", "#3a3836")
+    chest = m.mat("chest", "#5a3a22")
+    zb, zf = W["axle_b"], W["axle_f"]
+
+    # bed, side and end boards, rails
+    m.box("body", (0, 0.88, -0.05), (1.3, 0.08, 3.9), wood)
+    for sx in (1, -1):
+        m.box("body", (sx * 0.63, 1.06, -0.05), (0.05, 0.36, 3.9), paint)
+        m.box("body", (sx * 0.655, 1.25, -0.05), (0.08, 0.05, 3.96), trim)
+        m.box("body", (sx * 0.655, 0.9, -0.05), (0.07, 0.05, 3.94), dark)
+    for z in (1.88, -1.98):
+        m.box("body", (0, 1.06, z), (1.3, 0.36, 0.05), paint)
+        m.box("body", (0, 1.25, z), (1.36, 0.05, 0.08), trim)
+    # undercarriage on the body: perch, rear axle and bolster
+    m.box("body", (0, 0.7, 0.0), (0.12, 0.1, 3.0), dark)
+    m.box("body", (0, W["r_b"], zb), (1.72, 0.1, 0.12), dark)
+    m.box("body", (0, 0.76, zb), (1.3, 0.14, 0.14), dark)
+    # luggage chest on a rack at the back, iron bands
+    m.box("body", (0, 0.86, -2.22), (1.1, 0.05, 0.5), dark)
+    m.box("body", (0, 1.1, -2.24), (0.92, 0.42, 0.42), chest)
+    for x in (-0.3, 0.3):
+        m.box("body", (x, 1.1, -2.24), (0.05, 0.44, 0.44), iron)
+
+    # hood: linen over five hoops, sagging a little between them; puckered at both ends, the
+    # back drawn nearly shut
+    def arch(z, k=1.0, lift=0.0, n=11):
+        """Hood section: sides at y 1.25, crown at 2.25; k shrinks it toward (0, 1.55)."""
+        cy = 1.55
+        return [(0.67 * k * math.cos(math.pi * i / (n - 1)), cy + (1.25 - cy + math.sin(math.pi * i / (n - 1))) * k + lift, z)
+                for i in range(n)]
+    hoops = [-1.85, -0.95, -0.05, 0.85, 1.75]
+    rings = [arch(-2.02, 0.12), arch(-2.0, 0.5)]
+    for a, b in zip(hoops, hoops[1:]):
+        rings += [arch(a), arch((a + b) / 2, 0.985, -0.03)]
+    rings += [arch(hoops[-1]), arch(1.98, 0.82)]
+    m.sheet("body", rings, canvas, canvas_in)
+    for z in hoops:  # hoops showing through as ribs
+        m.tube("body", [(p, 0.022, 0.022) for p in arch(z, 1.012)], trim, segs=3, cap0=False, cap1=False)
+
+    # fore carriage: front axle, bolster, hounds, pole, splinter bar and the traces' ends
+    m.pivot("fore", (0, W["r_f"], zf))
+    m.box("fore", (0, W["r_f"], zf), (1.52, 0.1, 0.12), dark)
+    m.box("fore", (0, 0.65, zf), (1.1, 0.12, 0.14), dark)
+    for sx in (1, -1):
+        m.tube("fore", [((sx * 0.42, 0.5, zf), 0.035, 0.035), ((sx * 0.05, 0.56, zf + 0.95), 0.03, 0.03)], dark, segs=4)
+    m.tube("fore", [((0, 0.5, zf - 0.1), 0.05, 0.05), ((0, 0.6, zf + 1.0), 0.05, 0.05), ((0, 1.0, W["pole_tip"]), 0.035, 0.035)],
+           wood, segs=6)
+    m.box("fore", (0, 0.58, zf + 0.6), (1.6, 0.07, 0.08), wood)
+    for sx in (1, -1):
+        for dx in (0.4, 1.1):
+            m.tube("fore", [((sx * dx, 0.6, zf + 0.6), 0.015, 0.015), ((sx * dx, 0.98, zf + 1.25), 0.015, 0.015)], dark, segs=3)
+
+    def wheel(part, x, y, z, R, spokes):
+        m.pivot(part, (x, y, z))
+        n = 22
+        rim = [((x, y + R * math.cos(math.tau * i / n), z + R * math.sin(math.tau * i / n)), 0.045, 0.045) for i in range(n + 1)]
+        m.tube(part, rim, wood, segs=4, cap0=False, cap1=False)
+        tyre = [((x, y + (R + 0.035) * math.cos(math.tau * i / n), z + (R + 0.035) * math.sin(math.tau * i / n)), 0.012, 0.05)
+                for i in range(n + 1)]
+        m.tube(part, tyre, iron, segs=4, cap0=False, cap1=False)
+        side = 1 if x > 0 else -1
+        m.tube(part, [((x - side * 0.14, y, z), 0.05, 0.05), ((x - side * 0.06, y, z), 0.1, 0.1),
+                      ((x + side * 0.06, y, z), 0.1, 0.1), ((x + side * 0.12, y, z), 0.05, 0.05)], dark, segs=8)
+        for k in range(spokes):
+            a = math.tau * (k + 0.5) / spokes
+            m.tube(part, [((x, y + 0.09 * math.cos(a), z + 0.09 * math.sin(a)), 0.022, 0.022),
+                          ((x, y + (R - 0.03) * math.cos(a), z + (R - 0.03) * math.sin(a)), 0.018, 0.018)],
+                   wood, segs=4, cap0=False, cap1=False)
+    t = W["track"]
+    wheel("wheel_FL", t, W["r_f"], zf, W["r_f"], 8)
+    wheel("wheel_FR", -t, W["r_f"], zf, W["r_f"], 8)
+    wheel("wheel_BL", t + 0.02, W["r_b"], zb, W["r_b"], 10)
+    wheel("wheel_BR", -t - 0.02, W["r_b"], zb, W["r_b"], 10)
+    return m
+
+
 # ------------------------------------------------------------------ export
 
 def export(model):
@@ -501,6 +619,7 @@ def main():
     builders += [(f"animal_duck_{k}", lambda n, k=k, c=c: build_duck(n, k, c["scale"])) for k, c in DUCKS.items()]
     builders.append(("animal_duck_ling", build_duckling))
     builders += [(f"animal_{k}", lambda n, c=c: build_horse(n, c)) for k, c in HORSES.items()]
+    builders.append(("vehicle_wagon", build_wagon))
     for name, fn in builders:
         if wanted and name not in wanted:
             continue

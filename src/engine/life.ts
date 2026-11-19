@@ -22,13 +22,16 @@ import type { Citizen, Parcel } from '../types';
  */
 
 export type Kind = 'sleep' | 'wake' | 'home' | 'eat_home' | 'work' | 'patrol' | 'errand'
-  | 'bread' | 'water' | 'church' | 'tavern' | 'market' | 'eat_out' | 'drop';
+  | 'bread' | 'water' | 'church' | 'tavern' | 'market' | 'eat_out' | 'drop'
+  /** Set by the simulation, not decide(): a merchant walking to the posting wagon (wagon.ts). */
+  | 'travel';
 
 export interface Activity {
   kind: Kind;
   /** Shown state; it also picks the slot indoors (SLEEPING bed, EATING / RESTING seat ...). */
   state: string;
-  /** Parcel id, landmark id, 'market_square', 'wall:k' (wall checkpoint), 'svc:k' (service). */
+  /** Parcel id, landmark id, 'market_square', 'wall:k' (wall checkpoint), 'svc:k' (service),
+   *  'pt:x,z' (a point: the wagon's step). */
   location: string;
   task: string;
   /** Sim clock (hours since start, unwrapped) when to decide again. */

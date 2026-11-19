@@ -27,6 +27,11 @@ import { BlobShadows, commitRig, makeRigMesh, writeCoat, writePose, type RigDef,
  * the day in their stalls (Building.stalls of stable_long), dozing and eating. Changing place
  * happens at once, for now. Motion runs on real time, like the wildlife.
  *
+ * In harness (the travelling wagon, wagon.ts): hitch() takes a pair out of their day, drive()
+ * places them every frame with a signed speed (backing = the walk run backwards) and the
+ * travel speed-up (gait from v / travel, stride quickened by its square root), unhitch() puts
+ * them back for the hour.
+ *
  * Debug: __lublin.horses (.stats(), .lineup), hash `horses=lineup[,walk|trot|canter|graze|
  * drink|eat|doze|stand[,zoom]]` (six horses side by side off the paddock gate, every tack),
  * `horses=paddock[,,zoom]`, `horses=stable` and `horses=off` (perf before/after; installHorseDebug).
@@ -113,7 +118,7 @@ const VIEW_MARGIN = 10;
 
 type Act = 'stand' | 'doze' | 'graze' | 'drink' | 'eat';
 
-interface Horse {
+export interface Horse {
   name: string; kind: Kind; coat: THREE.Color; pts: THREE.Color;
   x: number; z: number; y: number; yaw: number; pitch: number; roll: number; scale: number;
   ch: Float32Array; tack: number; vis: boolean; seed: number;
@@ -128,6 +133,11 @@ interface Horse {
   earT: [number, number]; swishT: number; stepT: number;
   /** Debug lineup: run in place at this gait / act. */
   fixed: { gait: GaitName; act: Act } | null;
+  /** In harness (the wagon, wagon.ts): placed by drive() every frame, its own day paused. */
+  held: boolean;
+  /** Shown speed-up of its travel (the wagon goes at TRAVEL_SCALE like the citizens): the gait
+   *  is chosen from v / travel and the stride quickened by its square root. */
+  travel: number;
 }
 
 interface Draw { rig: RigDraw; list: Horse[] }
@@ -214,6 +224,7 @@ export class Horses {
         go: false, tx: 0, tz: 0, goV: 0, tyaw: null, then: 'graze',
         stall: stalls[i] ?? null, inStall: false, rest: -1, restW: 0,
         earT: [this.rnd() * 4, this.rnd() * 4], swishT: this.rnd() * 5, stepT: 0, fixed: null,
+        held: false, travel: 1,
       };
       if (h.stall) h.stall.taken++;
       this.horses.push(h);
@@ -262,6 +273,7 @@ export class Horses {
   }
 
   private place(h: Horse, night: boolean): void {
+    if (h.held) return;
     h.go = false; h.v = 0; h.tyaw = null;
     if ((night || !this.paddock) && h.stall) {
       h.inStall = true; h.x = h.stall.x; h.z = h.stall.z; h.yaw = h.stall.yaw;
@@ -299,9 +311,11 @@ export class Horses {
       if (jump) this.placeAll(hour);
       else if (night !== wasNight) for (const h of this.horses) { h.fixed = null; this.place(h, night); }
       for (const h of this.horses) {
-        if (h.inStall) this.stallLife(h, dt);
-        else this.paddockLife(h, dt);
-        this.move(h, dt);
+        if (!h.held) {
+          if (h.inStall) this.stallLife(h, dt);
+          else this.paddockLife(h, dt);
+          this.move(h, dt);
+        }
         this.animate(h, dt);
       }
     }
@@ -387,7 +401,7 @@ export class Horses {
     if (h.inStall) return;
     // keep a little apart from the others in the paddock, and inside the fence
     for (const o of this.horses) {
-      if (o === h || o.inStall) continue;
+      if (o === h || o.inStall || o.held) continue;
       const ox = h.x - o.x, oz = h.z - o.z, l = Math.hypot(ox, oz), min = 1.7;
       if (l > 1e-3 && l < min) { const k = (min - l) * 0.5 * Math.min(1, dt * 3); h.x += (ox / l) * k; h.z += (oz / l) * k; }
     }
@@ -410,15 +424,18 @@ export class Horses {
     h.vis = h.fixed !== null || this.inView(h.x, h.z);
     const sc = h.scale * (h.kind === 'horse_draught' ? 1.07 : 1);
     const w = h.w;
-    gaitWeights(h.v / sc, this.wTmp);
+    // backing (the wagon into its place): the walk run backwards
+    const av = Math.abs(h.v) / h.travel;
+    gaitWeights(av / sc, this.wTmp);
     for (let g = 0; g < 3; g++) w[g] = smooth(w[g], this.wTmp[g], 6, dt);
     const moving = w[0] + w[1] + w[2];
     let f = 0;
     for (let g = 0; g < 3; g++) f += w[g] * GAITS[g].f;
     // stride frequency follows the speed (a slow walk is a slower walk, not a shuffle)
     const vg = w[0] * GAITS[0].v + w[1] * GAITS[1].v + w[2] * GAITS[2].v;
-    if (moving > 0.01 && vg > 0.01) f *= clamp(h.v / sc / vg, 0.5, 1.4);
-    h.u = (h.u + f * dt) % 1;
+    if (moving > 0.01 && vg > 0.01) f *= clamp(av / sc / vg, 0.5, 1.4);
+    f *= Math.sqrt(h.travel);
+    h.u = (h.u + (h.v < 0 ? -f : f) * dt + 1) % 1;
     if (!h.vis) return;
     const ch = h.ch, u = h.u, T = this.time;
 
@@ -554,6 +571,32 @@ export class Horses {
       commitRig(dr.rig, n);
     }
     this.blobs.end();
+  }
+
+  // ---------------------------------------------------------------- harness (wagon.ts)
+
+  /** Take these horses out of their day into harness (draught tack); null if one is missing. */
+  hitch(names: string[]): Horse[] | null {
+    const team = names.map((n) => this.horses.find((h) => h.name === n));
+    if (team.some((h) => !h)) return null;
+    for (const h of team as Horse[]) {
+      h.held = true; h.go = false; h.inStall = false; h.tyaw = null; h.fixed = null;
+      h.act = 'stand'; h.rest = -1; h.tack = TACK_DRAUGHT;
+    }
+    return team as Horse[];
+  }
+
+  /** A horse in harness this frame: where, heading, signed speed (m/s shown; < 0 backing) and travel scale. */
+  drive(h: Horse, x: number, z: number, yaw: number, v: number, travel: number): void {
+    h.x = x; h.z = z; h.yaw = yaw; h.v = v; h.travel = travel;
+  }
+
+  /** Out of harness, back to its day (put in its stall or the paddock for the hour). */
+  unhitch(team: Horse[], hour: number): void {
+    for (const h of team) {
+      h.held = false; h.travel = 1;
+      this.place(h, !inWin(hour, PADDOCK_DAY));
+    }
   }
 
   // ---------------------------------------------------------------- debug

@@ -13,6 +13,7 @@ import { Soundscape, type Listener } from './engine/audio';
 import { Birds, installBirdDebug, treeSizes } from './engine/birds';
 import { Wildlife, installWildlifeDebug } from './engine/wildlife';
 import { Horses, installHorseDebug } from './engine/horses';
+import { Wagon, installWagonDebug } from './engine/wagon';
 import { UIController } from './ui/inspector';
 import { IsometricCamera } from './engine/camera';
 import { TouchGestureManager } from './engine/touch';
@@ -74,6 +75,8 @@ async function bootstrap() {
   const wildlife = new Wildlife(threeRenderer.scene, plan, threeRenderer.river);
   // The stable's horses: paddock by day, stalls at night (horses.ts).
   const horses = new Horses(threeRenderer.scene, plan, buildings);
+  // The travelling wagon: the stable to the Kraków Gate and back twice a day (wagon.ts).
+  const wagon = new Wagon(threeRenderer.scene, plan, buildings, sim, horses);
   const listener: Listener = {
     x: 0, z: 0, zoom: 40,
     pan: (x, z) => (threeRenderer.worldToScreen(x, 0, z).x / webglCanvas.clientWidth) * 2 - 1,
@@ -360,6 +363,8 @@ async function bootstrap() {
     // Full steering only in view (plus a margin); everyone else glides (M8). Used next frame.
     threeRenderer.groundView(view);
     sim.setView(view[0], view[1], view[2], view[3]);
+    // The wagon places its riders (carried citizens) and harnessed horses for this frame.
+    wagon.update(sim.simTimeHours);
     threeRenderer.updateDayNightLighting(sim.simTimeHours);
     // Cutaway: the followed citizen's building (or the peeked one) opens up, and the people
     // inside it - hidden while indoors - are drawn for this frame.
@@ -504,6 +509,10 @@ async function bootstrap() {
     installBirdDebug(birds, threeRenderer.camera, (x, z, zoom) => threeRenderer.snapTo(x, z, zoom));
     installWildlifeDebug(wildlife, (x, z, zoom) => threeRenderer.snapTo(x, z, zoom));
     installHorseDebug(horses, (x, z, zoom) => threeRenderer.snapTo(x, z, zoom));
+    installWagonDebug(wagon, sim, (c, x, z, zoom) => {
+      threeRenderer.snapTo(c?.currentX ?? x, c?.currentZ ?? z, zoom);
+      if (c) threeRenderer.followingCitizen = c;
+    });
   }
   requestAnimationFrame(animate);
   console.log('[Lublin 1392] High-fidelity simulation running with Blender 3D assets & soft shadows!');
