@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { CityPlan, Citizen } from '../types';
+import { BlobShadows, commitRig, makeRigMesh, writePose, type RigDef, type RigDraw, type RigOptions } from './rigid-rig';
 import { riverFrames, type RiverFrame } from './river-course';
 import { flowSpeed, type RiverWater } from './river';
 import { nightFactor } from './door-leaves';
@@ -23,10 +23,10 @@ import { nightFactor } from './door-leaves';
  * stretch now and then; at night they sit on the bank. A V-wake decal follows each duck on the
  * water (own instanced draw, so the river's 16 ripple rings are kept for dabbles and muzzles).
  *
- * Drawing: models from build_animals.py (one mesh per rigid part, pivots in the GLB). Each
- * animal is one geometry with a part id per vertex; one InstancedMesh per animal kind, and
- * the vertex shader swings the parts about their pivots from 16 pose channels per instance
- * (part hierarchy in RIGS). No shadow-map shadows (moving casters would redraw the map): a soft
+ * Drawing: models from build_animals.py (one mesh per rigid part, pivots in the GLB), drawn by
+ * rigid-rig.ts: one InstancedMesh per animal kind, and the vertex shader swings the parts about
+ * their pivots from 16 pose channels per instance (part hierarchy in DEER_RIG / DUCK_RIG). No
+ * shadow-map shadows (moving casters would redraw the map): a soft
  * blob under each animal on land. Motion runs on real time (also while the sim is paused, like
  * the water); the schedule on sim hours. Out of view (+ margin) nothing is drawn or posed.
  *
@@ -57,7 +57,7 @@ const NECK = 0, NECK_YAW = 1, HEAD = 2, HEAD_YAW = 3, LEG_U = 4, LEG_L = 8, EAR_
 const D_HEAD = 0, D_HEAD_YAW = 1, WING_L = 2, WING_R = 3;
 
 /** Per part: [pitch channel, yaw channel, roll channel, parent part] (-1 = none). Legs F/B L/R. */
-const DEER_RIG: Record<string, [number, number, number, string]> = {
+const DEER_RIG: RigDef = {
   body: [-1, -1, -1, ''], neck: [NECK, NECK_YAW, -1, ''], head: [HEAD, HEAD_YAW, -1, 'neck'],
   ear_L: [EAR_L, -1, -1, 'head'], ear_R: [EAR_R, -1, -1, 'head'],
   legU_FL: [LEG_U, -1, -1, ''], legU_FR: [LEG_U + 1, -1, -1, ''], legU_BL: [LEG_U + 2, -1, -1, ''], legU_BR: [LEG_U + 3, -1, -1, ''],
@@ -65,60 +65,11 @@ const DEER_RIG: Record<string, [number, number, number, string]> = {
   legL_BL: [LEG_L + 2, -1, -1, 'legU_BL'], legL_BR: [LEG_L + 3, -1, -1, 'legU_BR'],
   tail: [TAIL, -1, -1, ''],
 };
-const DUCK_RIG: Record<string, [number, number, number, string]> = {
+const DUCK_RIG: RigDef = {
   body: [-1, -1, -1, ''], head: [D_HEAD, D_HEAD_YAW, -1, ''], wing_L: [-1, -1, WING_L, ''], wing_R: [-1, -1, WING_R, ''],
 };
-
-const VERT_PARS = /* glsl */`
-#define NPART 14
-attribute float aPart;
-attribute vec4 iP0; attribute vec4 iP1; attribute vec4 iP2; attribute vec4 iP3;
-uniform vec3 uPiv[NPART];
-uniform vec4 uCfg[NPART];
-vec3 wRX(vec3 v, float a) { float c = cos(a), s = sin(a); return vec3(v.x, v.y * c - v.z * s, v.y * s + v.z * c); }
-vec3 wRY(vec3 v, float a) { float c = cos(a), s = sin(a); return vec3(v.x * c + v.z * s, v.y, -v.x * s + v.z * c); }
-vec3 wRZ(vec3 v, float a) { float c = cos(a), s = sin(a); return vec3(v.x * c - v.y * s, v.x * s + v.y * c, v.z); }
-float wChan(float fi) {
-  int i = int(fi + 0.5);
-  vec4 q = i < 4 ? iP0 : i < 8 ? iP1 : i < 12 ? iP2 : iP3;
-  int j = i - (i / 4) * 4;
-  return j == 0 ? q.x : j == 1 ? q.y : j == 2 ? q.z : q.w;
-}
-void wPose(inout vec3 p, inout vec3 n) {
-  int k = int(aPart + 0.5);
-  for (int lv = 0; lv < 4; lv++) {
-    if (k < 0) break;
-    vec4 c = uCfg[k];
-    vec3 o = uPiv[k];
-    float a = c.x >= 0.0 ? wChan(c.x) : 0.0;
-    float b = c.y >= 0.0 ? wChan(c.y) : 0.0;
-    float r = c.z >= 0.0 ? wChan(c.z) : 0.0;
-    p = wRY(wRX(wRZ(p - o, r), a), b) + o;
-    n = wRY(wRX(wRZ(n, r), a), b);
-    k = int(c.w + (c.w < 0.0 ? -0.5 : 0.5));
-  }
-}
-`;
-
-const BLOB_VERT = /* glsl */`
-attribute vec4 iBlob;  // x, z, radius, alpha
-attribute vec2 iDir;   // heading (cos, sin) in x-z
-varying vec2 vUv; varying float vA;
-void main() {
-  vUv = position.xz; vA = iBlob.w;
-  vec2 q = vec2(position.x * 0.62, position.z * 1.0) * iBlob.z * 2.0;
-  vec2 w = vec2(q.x * iDir.y + q.y * iDir.x, -q.x * iDir.x + q.y * iDir.y);
-  vec3 wp = vec3(iBlob.x + w.x, 0.04, iBlob.y + w.y);
-  gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
-}`;
-const BLOB_FRAG = /* glsl */`
-varying vec2 vUv; varying float vA;
-void main() {
-  float r = length(vUv) * 2.0;
-  float a = smoothstep(1.0, 0.15, r) * vA;
-  if (a < 0.004) discard;
-  gl_FragColor = vec4(0.04, 0.05, 0.03, a);
-}`;
+/** Deer and ducks share one program. */
+const RIG_OPTS: RigOptions = { key: 'wildlife-v1', nPart: 14, nChan: 16 };
 
 /** Wake decal: quad in duck space, x across, z = metres behind the duck (scaled). */
 const WAKE_VERT = /* glsl */`
@@ -200,9 +151,7 @@ interface Duck extends Animal {
 }
 interface DuckGroup { ducks: Duck[]; leader: Duck; s0: number; s1: number; restS: number; restSide: number; name: string; night: boolean }
 
-interface Draw {
-  mesh: THREE.InstancedMesh; p: THREE.InstancedBufferAttribute[]; cap: number; list: Animal[];
-}
+interface Draw { rig: RigDraw; list: Animal[] }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const wrapPi = (a: number) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
@@ -235,10 +184,7 @@ export class Wildlife {
   private deer: Deer[] = [];
   private ducks: Duck[] = [];
   private draws = new Map<Kind, Draw>();
-  private blobGeo = new THREE.InstancedBufferGeometry();
-  private blobMesh: THREE.Mesh;
-  private blobAttr: THREE.InstancedBufferAttribute;
-  private blobDir: THREE.InstancedBufferAttribute;
+  private blobs: BlobShadows;
   private wakeGeo = new THREE.InstancedBufferGeometry();
   private wakeMesh: THREE.Mesh;
   private wakeAttr: THREE.InstancedBufferAttribute;
@@ -272,23 +218,7 @@ export class Wildlife {
       this.placeHerds(plan);
       this.placeDucks(plan);
     }
-    const quad = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
-    const n = Math.max(1, this.deer.length + this.ducks.length);
-    this.blobGeo.index = quad.index;
-    this.blobGeo.setAttribute('position', quad.getAttribute('position'));
-    this.blobAttr = new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4).setUsage(THREE.DynamicDrawUsage);
-    this.blobDir = new THREE.InstancedBufferAttribute(new Float32Array(n * 2), 2).setUsage(THREE.DynamicDrawUsage);
-    this.blobGeo.setAttribute('iBlob', this.blobAttr);
-    this.blobGeo.setAttribute('iDir', this.blobDir);
-    this.blobGeo.instanceCount = 0;
-    this.blobMesh = new THREE.Mesh(this.blobGeo, new THREE.ShaderMaterial({
-      vertexShader: BLOB_VERT, fragmentShader: BLOB_FRAG, transparent: true, depthWrite: false,
-    }));
-    this.blobMesh.frustumCulled = false;
-    this.blobMesh.renderOrder = 1;
-    this.blobMesh.visible = false;
-    this.blobMesh.name = 'wildlife_blobs';
-    scene.add(this.blobMesh);
+    this.blobs = new BlobShadows(scene, this.deer.length + this.ducks.length, 'wildlife_blobs');
 
     // Wake: quad x -1.3..1.3 across, z -0.4..3.6 behind (duck sizes).
     const wq = new THREE.PlaneGeometry(2.6, 4, 1, 1).rotateX(-Math.PI / 2).translate(0, 0, 1.6);
@@ -330,62 +260,9 @@ export class Wildlife {
   }
 
   private makeDraw(kind: Kind, gltf: { scene: THREE.Object3D }, list: Animal[]): Draw {
-    const meta = JSON.parse((gltf.scene.userData as { animal?: string }).animal ?? '{"pivots":{}}') as { pivots: Record<string, number[]> };
-    const rig = kind.startsWith('deer') ? DEER_RIG : DUCK_RIG;
-    const names = Object.keys(rig);
-    const geos: THREE.BufferGeometry[] = [];
-    gltf.scene.updateMatrixWorld(true);
-    gltf.scene.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      let part: string | undefined;
-      for (let p: THREE.Object3D | null = o; p && !part; p = p.parent) part = (p.userData as { part?: string }).part;
-      const k = names.indexOf(part ?? 'body');
-      const g = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
-      const mat = mesh.material as THREE.MeshStandardMaterial;
-      const n = g.getAttribute('position').count;
-      const col = new Float32Array(n * 3), id = new Float32Array(n);
-      for (let v = 0; v < n; v++) { col[v * 3] = mat.color.r; col[v * 3 + 1] = mat.color.g; col[v * 3 + 2] = mat.color.b; id[v] = Math.max(0, k); }
-      for (const a of Object.keys(g.attributes)) if (a !== 'position' && a !== 'normal') g.deleteAttribute(a);
-      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      g.setAttribute('aPart', new THREE.BufferAttribute(id, 1));
-      geos.push(g.index ? g.toNonIndexed() : g);
-    });
-    const geo = mergeGeometries(geos)!;
-    const piv = names.map((nm) => new THREE.Vector3(...((meta.pivots[nm] ?? [0, 0, 0]) as [number, number, number])));
-    const cfg = names.map((nm) => {
-      const [a, b, r, par] = rig[nm];
-      return new THREE.Vector4(a, b, r, par ? names.indexOf(par) : -1);
-    });
-    while (piv.length < 14) { piv.push(new THREE.Vector3()); cfg.push(new THREE.Vector4(-1, -1, -1, -1)); }
-    const cap = list.length;
-    const p: THREE.InstancedBufferAttribute[] = [];
-    for (let k = 0; k < 4; k++) {
-      const at = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4).setUsage(THREE.DynamicDrawUsage);
-      geo.setAttribute(`iP${k}`, at);
-      p.push(at);
-    }
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 });
-    mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uPiv = { value: piv };
-      sh.uniforms.uCfg = { value: cfg };
-      sh.vertexShader = VERT_PARS + sh.vertexShader
-        .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = vec3(normal);\nvec3 wP = position;\nwPose(wP, objectNormal);')
-        .replace('#include <begin_vertex>', 'vec3 transformed = wP;');
-    };
-    // Same shader for every kind (the rig is in the uniforms): one program, compiled once,
-    // not a stall per kind the first time deer or ducks come into view.
-    mat.customProgramCacheKey = () => 'wildlife-v1';
-    const mesh = new THREE.InstancedMesh(geo, mat, cap);
-    mesh.name = `wildlife_${kind}`;
-    mesh.frustumCulled = false;
-    mesh.castShadow = false;
-    mesh.receiveShadow = true;
-    mesh.count = 0;
-    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    mesh.setColorAt(0, new THREE.Color(1, 1, 1));
-    this.scene.add(mesh);
-    return { mesh, p, cap, list };
+    const rig = makeRigMesh(gltf, kind.startsWith('deer') ? DEER_RIG : DUCK_RIG, RIG_OPTS, list.length, `wildlife_${kind}`);
+    this.scene.add(rig.mesh);
+    return { rig, list };
   }
 
   // ---------------------------------------------------------------- river helpers
@@ -673,8 +550,9 @@ export class Wildlife {
     this.uTime.value = now % 1000;
     for (let k = 0; k < 4; k++) this.view[k] = view[k];
     if (!this.enabled) {
-      for (const d of this.draws.values()) d.mesh.visible = false;
-      this.blobMesh.visible = this.wakeMesh.visible = false;
+      for (const d of this.draws.values()) d.rig.mesh.visible = false;
+      this.blobs.hide();
+      this.wakeMesh.visible = false;
       return;
     }
     if (!this.frames.length) return;
@@ -1180,27 +1058,23 @@ export class Wildlife {
 
   private pack(hour: number): void {
     const night = nightFactor(hour);
-    let nb = 0, nw = 0;
-    const blob = this.blobAttr.array as Float32Array, bdir = this.blobDir.array as Float32Array;
+    let nw = 0;
     const wake = this.wakeAttr.array as Float32Array, wdir = this.wakeDir.array as Float32Array;
+    this.blobs.begin();
     for (const dr of this.draws.values()) {
       let n = 0;
-      const arr = dr.p.map((a) => a.array as Float32Array);
+      const mesh = dr.rig.mesh;
       for (const a of dr.list) {
         if (!a.vis) continue;
         this.e.set(a.pitch, a.yaw, a.roll, 'YXZ');
         this.q.setFromEuler(this.e);
         this.p.set(a.x, a.y, a.z);
         this.sc.setScalar(a.scale);
-        dr.mesh.setMatrixAt(n, this.m4.compose(this.p, this.q, this.sc));
-        dr.mesh.setColorAt(n, a.tint);
-        for (let c = 0; c < 16; c++) arr[c >> 2][n * 4 + (c & 3)] = a.ch[c];
+        mesh.setMatrixAt(n, this.m4.compose(this.p, this.q, this.sc));
+        mesh.setColorAt(n, a.tint);
+        writePose(dr.rig, n, a.ch);
         n++;
-        if (a.blob > 0 && nb < blob.length / 4) {
-          blob[nb * 4] = a.x; blob[nb * 4 + 1] = a.z; blob[nb * 4 + 2] = a.blob; blob[nb * 4 + 3] = 0.42 * (1 - 0.75 * night);
-          bdir[nb * 2] = Math.cos(a.yaw); bdir[nb * 2 + 1] = Math.sin(a.yaw);
-          nb++;
-        }
+        if (a.blob > 0) this.blobs.add(a.x, a.z, a.blob, 0.42 * (1 - 0.75 * night), a.yaw);
         if (a.wake > 0.02 && nw < wake.length / 4) {
           const ling = a.kind === 'duck_ling', sz = ling ? 0.38 : 1;
           wake[nw * 4] = a.x; wake[nw * 4 + 1] = a.z; wake[nw * 4 + 2] = a.wake * (ling ? 0.55 : 1) * (1 - 0.7 * night); wake[nw * 4 + 3] = sz * a.scale / DUCK_BOOST;
@@ -1208,17 +1082,9 @@ export class Wildlife {
           nw++;
         }
       }
-      dr.mesh.count = n;
-      dr.mesh.visible = n > 0;
-      if (n) {
-        dr.mesh.instanceMatrix.needsUpdate = true;
-        if (dr.mesh.instanceColor) dr.mesh.instanceColor.needsUpdate = true;
-        for (const at of dr.p) at.needsUpdate = true;
-      }
+      commitRig(dr.rig, n);
     }
-    this.blobGeo.instanceCount = nb;
-    this.blobMesh.visible = nb > 0;
-    if (nb) { this.blobAttr.needsUpdate = true; this.blobDir.needsUpdate = true; }
+    this.blobs.end();
     this.wakeGeo.instanceCount = nw;
     this.wakeMesh.visible = nw > 0;
     if (nw) { this.wakeAttr.needsUpdate = true; this.wakeDir.needsUpdate = true; }
@@ -1244,10 +1110,10 @@ export class Wildlife {
 
   stats() {
     let drawn = 0, calls = 0;
-    for (const d of this.draws.values()) { drawn += d.mesh.count; if (d.mesh.visible) calls++; }
+    for (const d of this.draws.values()) { drawn += d.rig.mesh.count; if (d.rig.mesh.visible) calls++; }
     return {
       deer: this.deer.length, ducks: this.ducks.length, drawn,
-      drawCalls: calls + (this.blobMesh.visible ? 1 : 0) + (this.wakeMesh.visible ? 1 : 0),
+      drawCalls: calls + (this.blobs.mesh.visible ? 1 : 0) + (this.wakeMesh.visible ? 1 : 0),
       updateMs: +this.updateMs.toFixed(3), hold: this.hold, ...this.stat,
       herds: this.herds.map((h) => ({ state: h.state, n: h.deer.length, bank: [Math.round(h.spot.bank.x), Math.round(h.spot.bank.z)],
         edge: [Math.round(h.spot.edge.x), Math.round(h.spot.edge.z)], cover: [Math.round(h.spot.cover.x), Math.round(h.spot.cover.z)],

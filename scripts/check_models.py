@@ -125,7 +125,9 @@ KIT_MAX_SLOTS = 31        # colour slots per kit: columns of the crowd's slot te
 # budgets per model, by name prefix (first match wins).
 MODEL_TRIS = [("tree_", 1300), ("bush_", 320), ("fern_", 220), ("reed_", 220), ("rock_", 500), ("log_", 200),
               # wildlife (build_animals.py): a few dozen instances, but every one animated in view
-              ("animal_deer_", 1500), ("animal_duck_", 900)]
+              ("animal_deer_", 1500), ("animal_duck_", 900),
+              # the stable's horses (with every tack part; ten of them)
+              ("animal_horse", 3800)]
 
 
 def check_animal(name, gltf):
