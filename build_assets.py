@@ -5152,6 +5152,135 @@ def build_smithy_hut(mats):
     print(f"  smithy_hut: {got} sleepers")
     _ws_finish(bm, mat_list, "Mesh_SmithyHut", "SmithyHut", "smithy_hut")
 
+
+# -------------------------------------------------------------
+# 20c. The town stable and posting yard (generate_city_plan.py add_stable). M1 blockouts:
+# right size, doors, spots and flues, so the site can be walked and routed; the detailed
+# models (stalls, hayloft, tack room, interiors) replace them in M2.
+# -------------------------------------------------------------
+def build_stable_long(mats):
+    """Stable (9 x 24 m): log walls, shingle saddle roof (ridge along Y), two wide doors in
+    the -X wall (the yard side; the parcel turns them toward world +x)."""
+    clear_scene()
+    bm = bmesh.new()
+    mat_list = [mats["timber_log"], mats["timber_plank"], mats["roof_shingle"], mats["stone_fieldstone"],
+                mats["timber_dark"]]
+    LOG, PLANK, SHINGLE, FIELD, TIMBER = range(5)
+    W, D, z0, z1 = 9.0, 24.0, 0.15, 3.0
+    add_box(bm, 0.0, 0.0, z0 * 0.5, W + 0.3, D + 0.3, z0, mat_idx=FIELD)
+    add_box(bm, 0.0, 0.0, (z0 + z1) * 0.5, W, D, z1 - z0, mat_idx=LOG)
+    add_log_corner_crossings(bm, 0.0, 0.0, W, D, z0, z1, course=0.25, mat_idx=LOG)
+    for y in (-6.0, 6.0):
+        add_box(bm, -W * 0.5 - 0.05, y, z0 + 1.3, 0.12, 2.4, 2.6, mat_idx=PLANK)
+        anchor_door((-W * 0.5, y, z0), (-1, 0), 2.4, h=2.6)
+    add_gable_roof(bm, 0.0, 0.0, z1, W, D, 3.4, overhang=0.6, mat_roof=SHINGLE, mat_plaster=PLANK, mat_timber=PLANK,
+                   frame=False, loft_windows=0)
+    # Loft hatch in the -Y gable (hay goes up here).
+    add_box(bm, 0.0, -D * 0.5 - 0.05, z1 + 1.0, 1.4, 0.12, 1.2, mat_idx=TIMBER)
+    anchor_room(-W * 0.5 + 0.3, -D * 0.5 + 0.3, W * 0.5 - 0.3, D * 0.5 - 0.3, z0)
+    # Yard spots (M1): grooms at the doors, the stablemaster, the saddler's bench by the wall.
+    anchor_spot((-W * 0.5 - 2.0, -6.0), (1.0, 0.0), tag="work")  # M5: groom
+    anchor_spot((-W * 0.5 - 2.0, 6.0), (1.0, 0.0), tag="work")  # M5: groom
+    anchor_spot((-W * 0.5 - 4.5, 0.0), (1.0, 0.0), tag="watch")
+    anchor_spot((-W * 0.5 - 1.2, 2.0), (-1.0, 0.0), tag="work")  # M5: stitch
+    anchor_spot((-W * 0.5 - 3.0, -10.0), (0.0, -1.0), tag="work")  # M5: forkhay
+    _ws_finish(bm, mat_list, "Mesh_StableLong", "StableLong", "stable_long")
+
+
+def build_carriage_house(mats):
+    """Open-fronted carriage house (10 x 7 m), open to -Y: plank back and side walls, shingle
+    saddle roof with its ridge front to back."""
+    clear_scene()
+    bm = bmesh.new()
+    mat_list = [mats["timber_dark"], mats["timber_plank"], mats["roof_shingle"], mats["timber_weathered"]]
+    TIMBER, PLANK, SHINGLE, WEATHER = range(4)
+    W, D, ze = 10.0, 7.0, 3.0
+    add_box(bm, 0.0, D * 0.5 - 0.06, ze * 0.5, W, 0.12, ze, mat_idx=PLANK)
+    for x in (-W * 0.5 + 0.06, W * 0.5 - 0.06):
+        add_box(bm, x, 0.0, ze * 0.5, 0.12, D, ze, mat_idx=PLANK)
+    for x in (-W * 0.5, 0.0, W * 0.5):
+        add_timber_beam(bm, Vector((x, -D * 0.5, 0.0)), Vector((x, -D * 0.5, ze)), width=0.24, depth=0.24, mat_idx=TIMBER)
+    add_timber_beam(bm, Vector((-W * 0.5, -D * 0.5, ze)), Vector((W * 0.5, -D * 0.5, ze)), width=0.24, depth=0.24,
+                    mat_idx=TIMBER)
+    add_gable_roof(bm, 0.0, 0.0, ze, W, D, 2.6, overhang=0.5, mat_roof=SHINGLE, mat_plaster=PLANK, mat_timber=PLANK,
+                   frame=False, loft_windows=0)
+    anchor_spot((2.5, -D * 0.5 - 1.5), (0.0, 1.0), tag="work")  # M5: harness
+    anchor_spot((-3.5, -D * 0.5 - 1.2), (0.0, -1.0), tag="watch")
+    _ws_finish(bm, mat_list, "Mesh_CarriageHouse", "CarriageHouse", "carriage_house")
+
+
+def build_farrier_forge(mats):
+    """Farrier's lean-to forge (6 x 5 m), open to -Y: stone hearth with a chimney at the back,
+    anvil on a stump, quench tub, a tie ring post in front for the horse being shod."""
+    clear_scene()
+    bm = bmesh.new()
+    mat_list = [mats["timber_dark"], mats["timber_plank"], mats["roof_shingle"], mats["stone_limestone"],
+                mats["iron_steel"], mats["fire_orange"], mats["soot_black"], mats["coal_black"], mats["water_clean"],
+                mats["timber_weathered"]]
+    TIMBER, PLANK, SHINGLE, STONE, STEEL, FIRE, SOOT, COAL, WATER, WEATHER = range(10)
+    W, D, zf, zb = 6.0, 5.0, 2.6, 3.4
+    add_box(bm, 0.0, D * 0.5 - 0.1, zb * 0.5, W, 0.2, zb, mat_idx=PLANK)
+    for x in (-W * 0.5, W * 0.5):
+        add_timber_beam(bm, Vector((x, -D * 0.5, 0.0)), Vector((x, -D * 0.5, zf)), width=0.22, depth=0.22, mat_idx=TIMBER)
+    _ws_prism(bm, [(-W * 0.5 - 0.3, -D * 0.5 - 0.4, zf), (W * 0.5 + 0.3, -D * 0.5 - 0.4, zf),
+                   (W * 0.5 + 0.3, D * 0.5 + 0.3, zb), (-W * 0.5 - 0.3, D * 0.5 + 0.3, zb)], 0.12, SHINGLE)
+    fx, fy = -1.4, 1.5
+    add_box(bm, fx, fy, 0.4, 1.8, 1.4, 0.8, mat_idx=STONE)
+    add_box(bm, fx, fy - 0.1, 0.84, 1.1, 0.8, 0.08, mat_idx=COAL)
+    add_box(bm, fx, fy - 0.15, 0.9, 0.6, 0.4, 0.06, mat_idx=FIRE)
+    add_ashlar_chimney(bm, fx, fy + 0.3, 0.8, w=0.8, d=0.8, h=3.6, mat_stone=STONE, mat_soot=SOOT)
+    anchor_chimney(fx, fy + 0.3, 4.4)
+    ax, ay = 1.0, 0.3
+    _ws_cyl(bm, (ax, ay, 0.0), (ax, ay, 0.7), 0.38, segs=10, mat=WEATHER)
+    add_box(bm, ax, ay, 0.8, 0.36, 0.56, 0.2, mat_idx=STEEL)
+    _ws_tub(bm, 2.3, -0.9, 0.0, 0.4, 0.55, PLANK, WATER, mat_hoop=STEEL)
+    _ws_cyl(bm, (0.0, -D * 0.5 - 2.2, 0.0), (0.0, -D * 0.5 - 2.2, 1.4), 0.12, segs=8, mat=TIMBER)   # tie post
+    anchor_spot((ax, ay - 0.9), (0.0, 1.0), tag="work")  # M5: anvil
+    anchor_spot((fx, fy - 1.0), (0.0, 1.0))
+    anchor_spot((0.9, -D * 0.5 - 2.4), (-1.0, 0.0), tag="work")  # M5: shoe
+    _ws_finish(bm, mat_list, "Mesh_FarrierForge", "FarrierForge", "farrier_forge")
+
+
+def build_paddock(mats):
+    """Paddock (30 x 44 m) behind a post-and-two-rail fence (top rail inside the nav slab, so
+    it is a wall) with a 3.2 m gate gap in the middle of the -Y side; a trough and a hay rack
+    inside."""
+    clear_scene()
+    bm = bmesh.new()
+    mat_list = [mats["timber_weathered"], mats["timber_plank"], mats["water_clean"], mats["timber_dark"]]
+    WEATHER, PLANK, WATER, TIMBER = range(4)
+    W, D, GATE = 30.0, 44.0, 3.2
+    hw, hd = W * 0.5, D * 0.5
+    sides = [((-hw, -hd), (hw, -hd)), ((hw, -hd), (hw, hd)), ((hw, hd), (-hw, hd)), ((-hw, hd), (-hw, -hd))]
+    for k, (a, b) in enumerate(sides):
+        runs = [(a, b)]
+        if k == 0:                                     # the gate gap
+            runs = [(a, (-GATE * 0.5, -hd)), ((GATE * 0.5, -hd), b)]
+        for (ax, ay), (bx, by) in runs:
+            L = math.hypot(bx - ax, by - ay)
+            n = max(1, round(L / 2.6))
+            for i in range(n + 1):
+                t = i / n
+                px, py = ax + (bx - ax) * t, ay + (by - ay) * t
+                add_box(bm, px, py, 0.65, 0.14, 0.14, 1.3, mat_idx=WEATHER)
+            for z in (0.62, 1.12):
+                add_timber_beam(bm, Vector((ax, ay, z)), Vector((bx, by, z)), width=0.08, depth=0.12, mat_idx=PLANK)
+    add_water_trough(bm, -hw + 2.0, -hd + 6.0, 0.0, w=0.8, d=2.4, h=0.55, mat_wood=PLANK, mat_water=WATER)
+    # Hay rack: a slatted V on legs.
+    rx, ry = hw - 3.0, 0.0
+    for y in (-1.2, 1.2):
+        for sx in (-0.45, 0.45):
+            add_timber_beam(bm, Vector((rx + sx, ry + y, 0.0)), Vector((rx + sx * 1.6, ry + y, 1.5)), width=0.1, depth=0.1,
+                            mat_idx=TIMBER)
+    for i in range(7):
+        y = -1.2 + i * 0.4
+        for sx in (-1.0, 1.0):
+            add_timber_beam(bm, Vector((rx, ry + y, 0.5)), Vector((rx + sx * 0.7, ry + y, 1.5)), width=0.05, depth=0.05,
+                            mat_idx=PLANK)
+    anchor_spot((0.0, -hd - 1.6), (0.0, 1.0), tag="watch")      # at the gate
+    anchor_spot((rx - 1.2, ry), (1.0, 0.0), tag="work")  # M5: forkhay
+    _ws_finish(bm, mat_list, "Mesh_Paddock", "Paddock", "paddock")
+
 # -------------------------------------------------------------
 # 21. Logging Camp & Pit Sawmill (Trak Ciesielski)
 # -------------------------------------------------------------
@@ -5816,6 +5945,10 @@ def main():
         "bloomery_bellows": build_bloomery_bellows,
         "forge_shed": build_forge_shed,
         "smithy_hut": build_smithy_hut,
+        "stable_long": build_stable_long,
+        "carriage_house": build_carriage_house,
+        "farrier_forge": build_farrier_forge,
+        "paddock": build_paddock,
         "logging_camp": build_logging_camp,
         "river_harbor": build_river_harbor,
         "blacksmith_workshop": build_blacksmith_workshop,

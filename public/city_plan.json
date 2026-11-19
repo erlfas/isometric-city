@@ -1184,7 +1184,6 @@
       ],
       "workplaceFor": [
         "cit_0080",
-        "cit_0229",
         "cit_0326",
         "cit_0861",
         "cit_1012"
@@ -3816,7 +3815,6 @@
         "cit_0058",
         "cit_0235",
         "cit_0349",
-        "cit_0681",
         "cit_0698",
         "cit_1123"
       ],
@@ -8999,7 +8997,6 @@
         "cit_1286"
       ],
       "workplaceFor": [
-        "cit_0026",
         "cit_0143",
         "cit_0594",
         "cit_0704",
@@ -9613,7 +9610,6 @@
         "cit_0236",
         "cit_0781",
         "cit_0859",
-        "cit_0913",
         "cit_1192",
         "cit_1242",
         "cit_1275"
@@ -10214,8 +10210,7 @@
         "cit_0329",
         "cit_0577",
         "cit_0626",
-        "cit_0677",
-        "cit_1083"
+        "cit_0677"
       ],
       "commodities": {
         "rye_sacks": 0,
@@ -10699,7 +10694,6 @@
         "cit_0582",
         "cit_0609",
         "cit_0753",
-        "cit_0869",
         "cit_0893",
         "cit_1003",
         "cit_1011",
@@ -12496,14 +12490,7 @@
       ],
       "scaffolding": false,
       "wealthClass": "plebeian",
-      "residents": [
-        "cit_0207",
-        "cit_0229",
-        "cit_0348",
-        "cit_0660",
-        "cit_0681",
-        "cit_0968"
-      ],
+      "residents": [],
       "workplaceFor": [],
       "commodities": {
         "rye_sacks": 9,
@@ -12660,7 +12647,6 @@
         "cit_0449",
         "cit_0473",
         "cit_0691",
-        "cit_0779",
         "cit_0818",
         "cit_1151"
       ],
@@ -13990,7 +13976,6 @@
       "workplaceFor": [
         "cit_0029",
         "cit_0063",
-        "cit_0187",
         "cit_0366",
         "cit_0463",
         "cit_0548",
@@ -16226,7 +16211,6 @@
       ],
       "workplaceFor": [
         "cit_0057",
-        "cit_0230",
         "cit_0276",
         "cit_0347",
         "cit_0374",
@@ -16800,6 +16784,203 @@
       "workplaceFor": [],
       "commodities": {},
       "name": "Chata hutnika (Ironworker's Hut)"
+    },
+    {
+      "id": "p_stable_stable",
+      "district": "krakow_suburb",
+      "streetName": "Stajnie pod Krakowską",
+      "x": -256.0,
+      "z": 126.0,
+      "width": 9.0,
+      "depth": 24.0,
+      "orientation": 180.0,
+      "elevation": 0.0,
+      "buildingType": "stable_long_timber",
+      "site": "stable",
+      "isShed": false,
+      "craft": {
+        "id": "groom",
+        "name": "Groom",
+        "sign": "Horse's Head & Curry Comb",
+        "guild": "Carters & Grooms Confraternity",
+        "wealth": "plebeian"
+      },
+      "aging": {
+        "ageYears": 25,
+        "ridgeSag": 0.06,
+        "wallLeanAngle": 0.2,
+        "woodGraying": 0.5,
+        "mossFoundation": 0.5,
+        "maintenanceState": "kept"
+      },
+      "clutter": [],
+      "scaffolding": false,
+      "wealthClass": "plebeian",
+      "residents": [],
+      "workplaceFor": [
+        "cit_0229",
+        "cit_1083",
+        "cit_0681",
+        "cit_0230",
+        "cit_0026",
+        "cit_0869",
+        "cit_0779"
+      ],
+      "commodities": {},
+      "name": "Stajnia miejska (Town Stable)",
+      "model": "stable_long"
+    },
+    {
+      "id": "p_stable_carriage",
+      "district": "krakow_suburb",
+      "streetName": "Stajnie pod Krakowską",
+      "x": -238.0,
+      "z": 106.0,
+      "width": 10.0,
+      "depth": 7.0,
+      "orientation": 0.0,
+      "elevation": 0.0,
+      "buildingType": "stable_carriage_house",
+      "site": "stable",
+      "isShed": false,
+      "craft": {
+        "id": "postilion",
+        "name": "Postilion",
+        "sign": "Whip & Riding Boot",
+        "guild": "Carters & Grooms Confraternity",
+        "wealth": "plebeian"
+      },
+      "aging": {
+        "ageYears": 25,
+        "ridgeSag": 0.06,
+        "wallLeanAngle": 0.2,
+        "woodGraying": 0.5,
+        "mossFoundation": 0.5,
+        "maintenanceState": "kept"
+      },
+      "clutter": [],
+      "scaffolding": false,
+      "wealthClass": "plebeian",
+      "residents": [],
+      "workplaceFor": [
+        "cit_0913"
+      ],
+      "commodities": {},
+      "name": "Wozownia (Carriage House)",
+      "model": "carriage_house"
+    },
+    {
+      "id": "p_stable_farrier",
+      "district": "krakow_suburb",
+      "streetName": "Stajnie pod Krakowską",
+      "x": -222.0,
+      "z": 104.0,
+      "width": 6.0,
+      "depth": 5.0,
+      "orientation": 0.0,
+      "elevation": 0.0,
+      "buildingType": "stable_farrier_forge",
+      "site": "stable",
+      "isShed": false,
+      "craft": {
+        "id": "farrier",
+        "name": "Farrier",
+        "sign": "Horseshoe & Rasp",
+        "guild": "Smiths & Armorers Guild",
+        "wealth": "artisan"
+      },
+      "aging": {
+        "ageYears": 25,
+        "ridgeSag": 0.06,
+        "wallLeanAngle": 0.2,
+        "woodGraying": 0.5,
+        "mossFoundation": 0.5,
+        "maintenanceState": "kept"
+      },
+      "clutter": [],
+      "scaffolding": false,
+      "wealthClass": "plebeian",
+      "residents": [],
+      "workplaceFor": [
+        "cit_0187"
+      ],
+      "commodities": {},
+      "name": "Kuźnia podkuwacza (Farrier's Forge)",
+      "model": "farrier_forge"
+    },
+    {
+      "id": "p_stable_paddock",
+      "district": "krakow_suburb",
+      "streetName": "Stajnie pod Krakowską",
+      "x": -193.0,
+      "z": 130.0,
+      "width": 30.0,
+      "depth": 44.0,
+      "orientation": -90.0,
+      "elevation": 0.0,
+      "buildingType": "stable_paddock",
+      "site": "stable",
+      "isShed": false,
+      "craft": {
+        "id": "groom",
+        "name": "Groom",
+        "sign": "Horse's Head & Curry Comb",
+        "guild": "Carters & Grooms Confraternity",
+        "wealth": "plebeian"
+      },
+      "aging": {
+        "ageYears": 25,
+        "ridgeSag": 0.06,
+        "wallLeanAngle": 0.2,
+        "woodGraying": 0.5,
+        "mossFoundation": 0.5,
+        "maintenanceState": "kept"
+      },
+      "clutter": [],
+      "scaffolding": false,
+      "wealthClass": "plebeian",
+      "residents": [],
+      "workplaceFor": [],
+      "commodities": {},
+      "name": "Wybieg (Paddock)",
+      "model": "paddock"
+    },
+    {
+      "id": "p_stable_house",
+      "district": "krakow_suburb",
+      "streetName": "Stajnie pod Krakowską",
+      "x": -262.0,
+      "z": 148.0,
+      "width": 8.5,
+      "depth": 12.0,
+      "orientation": 90.0,
+      "elevation": 0.0,
+      "buildingType": "timber_shingle_cottage_large",
+      "site": "stable",
+      "isShed": false,
+      "craft": null,
+      "aging": {
+        "ageYears": 25,
+        "ridgeSag": 0.06,
+        "wallLeanAngle": 0.2,
+        "woodGraying": 0.5,
+        "mossFoundation": 0.5,
+        "maintenanceState": "kept"
+      },
+      "clutter": [],
+      "scaffolding": false,
+      "wealthClass": "plebeian",
+      "residents": [
+        "cit_0207",
+        "cit_0229",
+        "cit_0348",
+        "cit_0660",
+        "cit_0681",
+        "cit_0968"
+      ],
+      "workplaceFor": [],
+      "commodities": {},
+      "name": "Dom koniuszego (Stablemaster's House)"
     }
   ],
   "vegetation": [
@@ -17461,15 +17642,6 @@
       "zone": "suburban_gardens"
     },
     {
-      "id": "tree_076",
-      "type": "tree_birch",
-      "x": -319.21,
-      "z": 4.32,
-      "scale": 1.23,
-      "rotation": 161.4,
-      "zone": "suburban_gardens"
-    },
-    {
       "id": "tree_077",
       "type": "tree_birch",
       "x": -306.82,
@@ -17494,15 +17666,6 @@
       "z": -26.82,
       "scale": 0.85,
       "rotation": 317.7,
-      "zone": "suburban_gardens"
-    },
-    {
-      "id": "tree_080",
-      "type": "tree_oak",
-      "x": -322.24,
-      "z": -44.51,
-      "scale": 1.18,
-      "rotation": 306.2,
       "zone": "suburban_gardens"
     },
     {
@@ -17695,15 +17858,6 @@
       "zone": "outer_verge"
     },
     {
-      "id": "tree_105",
-      "type": "tree_oak",
-      "x": -188.59,
-      "z": 151.17,
-      "scale": 1.18,
-      "rotation": 295.3,
-      "zone": "outer_verge"
-    },
-    {
       "id": "tree_106",
       "type": "tree_lime",
       "x": -118.62,
@@ -17773,15 +17927,6 @@
       "z": -226.05,
       "scale": 0.87,
       "rotation": 328.9,
-      "zone": "outer_verge"
-    },
-    {
-      "id": "tree_119",
-      "type": "tree_hornbeam",
-      "x": -201.43,
-      "z": 94.67,
-      "scale": 1.13,
-      "rotation": 235.3,
       "zone": "outer_verge"
     },
     {
@@ -44500,6 +44645,805 @@
           "z": -112.0
         }
       ]
+    },
+    {
+      "id": "road_stable",
+      "kind": "road",
+      "width": 4.0,
+      "points": [
+        {
+          "x": -160.0,
+          "z": -80.0
+        },
+        {
+          "x": -161.98,
+          "z": -80.31
+        },
+        {
+          "x": -163.95,
+          "z": -80.62
+        },
+        {
+          "x": -165.93,
+          "z": -80.94
+        },
+        {
+          "x": -167.92,
+          "z": -81.09
+        },
+        {
+          "x": -169.91,
+          "z": -80.92
+        },
+        {
+          "x": -171.73,
+          "z": -80.18
+        },
+        {
+          "x": -173.69,
+          "z": -79.83
+        },
+        {
+          "x": -175.69,
+          "z": -79.66
+        },
+        {
+          "x": -177.68,
+          "z": -79.57
+        },
+        {
+          "x": -179.68,
+          "z": -79.51
+        },
+        {
+          "x": -181.68,
+          "z": -79.5
+        },
+        {
+          "x": -183.68,
+          "z": -79.5
+        },
+        {
+          "x": -185.68,
+          "z": -79.49
+        },
+        {
+          "x": -187.68,
+          "z": -79.46
+        },
+        {
+          "x": -189.68,
+          "z": -79.4
+        },
+        {
+          "x": -191.68,
+          "z": -79.28
+        },
+        {
+          "x": -193.56,
+          "z": -78.86
+        },
+        {
+          "x": -195.56,
+          "z": -78.79
+        },
+        {
+          "x": -197.56,
+          "z": -78.75
+        },
+        {
+          "x": -199.56,
+          "z": -78.75
+        },
+        {
+          "x": -201.56,
+          "z": -78.75
+        },
+        {
+          "x": -203.56,
+          "z": -78.75
+        },
+        {
+          "x": -205.56,
+          "z": -78.77
+        },
+        {
+          "x": -207.56,
+          "z": -78.8
+        },
+        {
+          "x": -209.56,
+          "z": -78.82
+        },
+        {
+          "x": -211.56,
+          "z": -78.84
+        },
+        {
+          "x": -213.56,
+          "z": -78.87
+        },
+        {
+          "x": -215.56,
+          "z": -78.9
+        },
+        {
+          "x": -217.56,
+          "z": -78.94
+        },
+        {
+          "x": -219.56,
+          "z": -78.97
+        },
+        {
+          "x": -221.56,
+          "z": -79.01
+        },
+        {
+          "x": -223.56,
+          "z": -79.05
+        },
+        {
+          "x": -225.56,
+          "z": -79.08
+        },
+        {
+          "x": -227.56,
+          "z": -79.12
+        },
+        {
+          "x": -229.56,
+          "z": -79.17
+        },
+        {
+          "x": -231.56,
+          "z": -79.21
+        },
+        {
+          "x": -233.56,
+          "z": -79.26
+        },
+        {
+          "x": -235.56,
+          "z": -79.31
+        },
+        {
+          "x": -237.56,
+          "z": -79.36
+        },
+        {
+          "x": -239.55,
+          "z": -79.42
+        },
+        {
+          "x": -241.55,
+          "z": -79.49
+        },
+        {
+          "x": -243.55,
+          "z": -79.56
+        },
+        {
+          "x": -245.55,
+          "z": -79.65
+        },
+        {
+          "x": -247.55,
+          "z": -79.78
+        },
+        {
+          "x": -249.44,
+          "z": -80.15
+        },
+        {
+          "x": -251.43,
+          "z": -80.25
+        },
+        {
+          "x": -253.43,
+          "z": -80.25
+        },
+        {
+          "x": -255.43,
+          "z": -80.22
+        },
+        {
+          "x": -257.43,
+          "z": -80.16
+        },
+        {
+          "x": -259.43,
+          "z": -80.1
+        },
+        {
+          "x": -261.43,
+          "z": -80.02
+        },
+        {
+          "x": -263.43,
+          "z": -79.94
+        },
+        {
+          "x": -265.43,
+          "z": -79.87
+        },
+        {
+          "x": -267.43,
+          "z": -79.85
+        },
+        {
+          "x": -269.43,
+          "z": -79.82
+        },
+        {
+          "x": -271.43,
+          "z": -79.86
+        },
+        {
+          "x": -273.43,
+          "z": -79.92
+        },
+        {
+          "x": -275.41,
+          "z": -80.13
+        },
+        {
+          "x": -277.33,
+          "z": -80.63
+        },
+        {
+          "x": -279.29,
+          "z": -80.97
+        },
+        {
+          "x": -281.28,
+          "z": -81.17
+        },
+        {
+          "x": -283.28,
+          "z": -81.29
+        },
+        {
+          "x": -285.28,
+          "z": -81.38
+        },
+        {
+          "x": -287.28,
+          "z": -81.43
+        },
+        {
+          "x": -289.28,
+          "z": -81.47
+        },
+        {
+          "x": -291.28,
+          "z": -81.5
+        },
+        {
+          "x": -293.28,
+          "z": -81.5
+        },
+        {
+          "x": -295.28,
+          "z": -81.5
+        },
+        {
+          "x": -297.28,
+          "z": -81.5
+        },
+        {
+          "x": -299.28,
+          "z": -81.51
+        },
+        {
+          "x": -301.28,
+          "z": -81.53
+        },
+        {
+          "x": -303.28,
+          "z": -81.56
+        },
+        {
+          "x": -305.27,
+          "z": -81.61
+        },
+        {
+          "x": -307.27,
+          "z": -81.67
+        },
+        {
+          "x": -309.27,
+          "z": -81.82
+        },
+        {
+          "x": -311.13,
+          "z": -82.36
+        },
+        {
+          "x": -313.12,
+          "z": -82.5
+        },
+        {
+          "x": -315.12,
+          "z": -82.48
+        },
+        {
+          "x": -317.1,
+          "z": -82.2
+        },
+        {
+          "x": -318.75,
+          "z": -81.2
+        },
+        {
+          "x": -318.93,
+          "z": -79.21
+        },
+        {
+          "x": -319.11,
+          "z": -77.21
+        },
+        {
+          "x": -319.23,
+          "z": -75.22
+        },
+        {
+          "x": -319.31,
+          "z": -73.22
+        },
+        {
+          "x": -319.39,
+          "z": -71.22
+        },
+        {
+          "x": -319.47,
+          "z": -69.22
+        },
+        {
+          "x": -319.55,
+          "z": -67.22
+        },
+        {
+          "x": -319.6,
+          "z": -65.22
+        },
+        {
+          "x": -319.65,
+          "z": -63.23
+        },
+        {
+          "x": -319.69,
+          "z": -61.23
+        },
+        {
+          "x": -319.74,
+          "z": -59.23
+        },
+        {
+          "x": -319.78,
+          "z": -57.23
+        },
+        {
+          "x": -319.83,
+          "z": -55.23
+        },
+        {
+          "x": -319.87,
+          "z": -53.23
+        },
+        {
+          "x": -319.9,
+          "z": -51.23
+        },
+        {
+          "x": -319.93,
+          "z": -49.23
+        },
+        {
+          "x": -319.96,
+          "z": -47.23
+        },
+        {
+          "x": -319.98,
+          "z": -45.23
+        },
+        {
+          "x": -320.01,
+          "z": -43.23
+        },
+        {
+          "x": -320.04,
+          "z": -41.23
+        },
+        {
+          "x": -320.07,
+          "z": -39.23
+        },
+        {
+          "x": -320.09,
+          "z": -37.23
+        },
+        {
+          "x": -320.12,
+          "z": -35.23
+        },
+        {
+          "x": -320.12,
+          "z": -33.23
+        },
+        {
+          "x": -320.12,
+          "z": -31.23
+        },
+        {
+          "x": -320.12,
+          "z": -29.23
+        },
+        {
+          "x": -320.12,
+          "z": -27.23
+        },
+        {
+          "x": -320.12,
+          "z": -25.23
+        },
+        {
+          "x": -320.12,
+          "z": -23.23
+        },
+        {
+          "x": -320.12,
+          "z": -21.23
+        },
+        {
+          "x": -320.09,
+          "z": -19.23
+        },
+        {
+          "x": -320.04,
+          "z": -17.23
+        },
+        {
+          "x": -319.99,
+          "z": -15.23
+        },
+        {
+          "x": -319.94,
+          "z": -13.23
+        },
+        {
+          "x": -319.9,
+          "z": -11.23
+        },
+        {
+          "x": -319.78,
+          "z": -9.24
+        },
+        {
+          "x": -319.62,
+          "z": -7.24
+        },
+        {
+          "x": -319.46,
+          "z": -5.25
+        },
+        {
+          "x": -319.1,
+          "z": -3.3
+        },
+        {
+          "x": -318.54,
+          "z": -1.38
+        },
+        {
+          "x": -318.21,
+          "z": 0.59
+        },
+        {
+          "x": -317.97,
+          "z": 2.57
+        },
+        {
+          "x": -317.79,
+          "z": 4.57
+        },
+        {
+          "x": -317.66,
+          "z": 6.56
+        },
+        {
+          "x": -317.59,
+          "z": 8.56
+        },
+        {
+          "x": -317.52,
+          "z": 10.56
+        },
+        {
+          "x": -317.5,
+          "z": 12.56
+        },
+        {
+          "x": -317.5,
+          "z": 14.56
+        },
+        {
+          "x": -317.5,
+          "z": 16.56
+        },
+        {
+          "x": -317.47,
+          "z": 18.56
+        },
+        {
+          "x": -317.41,
+          "z": 20.56
+        },
+        {
+          "x": -317.34,
+          "z": 22.56
+        },
+        {
+          "x": -317.23,
+          "z": 24.55
+        },
+        {
+          "x": -317.08,
+          "z": 26.55
+        },
+        {
+          "x": -316.93,
+          "z": 28.54
+        },
+        {
+          "x": -316.67,
+          "z": 30.52
+        },
+        {
+          "x": -316.41,
+          "z": 32.51
+        },
+        {
+          "x": -316.01,
+          "z": 34.47
+        },
+        {
+          "x": -315.59,
+          "z": 36.42
+        },
+        {
+          "x": -315.24,
+          "z": 38.39
+        },
+        {
+          "x": -314.9,
+          "z": 40.36
+        },
+        {
+          "x": -314.61,
+          "z": 42.34
+        },
+        {
+          "x": -314.36,
+          "z": 44.32
+        },
+        {
+          "x": -314.13,
+          "z": 46.31
+        },
+        {
+          "x": -313.98,
+          "z": 48.31
+        },
+        {
+          "x": -313.53,
+          "z": 50.21
+        },
+        {
+          "x": -312.5,
+          "z": 51.92
+        },
+        {
+          "x": -311.47,
+          "z": 53.64
+        },
+        {
+          "x": -310.43,
+          "z": 55.34
+        },
+        {
+          "x": -309.17,
+          "z": 56.89
+        },
+        {
+          "x": -307.9,
+          "z": 58.44
+        },
+        {
+          "x": -306.64,
+          "z": 60.0
+        },
+        {
+          "x": -305.38,
+          "z": 61.55
+        },
+        {
+          "x": -304.12,
+          "z": 63.1
+        },
+        {
+          "x": -302.77,
+          "z": 64.58
+        },
+        {
+          "x": -301.41,
+          "z": 66.04
+        },
+        {
+          "x": -300.05,
+          "z": 67.51
+        },
+        {
+          "x": -298.69,
+          "z": 68.97
+        },
+        {
+          "x": -297.33,
+          "z": 70.44
+        },
+        {
+          "x": -295.97,
+          "z": 71.91
+        },
+        {
+          "x": -294.61,
+          "z": 73.37
+        },
+        {
+          "x": -293.2,
+          "z": 74.8
+        },
+        {
+          "x": -291.79,
+          "z": 76.21
+        },
+        {
+          "x": -290.38,
+          "z": 77.62
+        },
+        {
+          "x": -288.96,
+          "z": 79.04
+        },
+        {
+          "x": -287.55,
+          "z": 80.45
+        },
+        {
+          "x": -286.13,
+          "z": 81.87
+        },
+        {
+          "x": -284.72,
+          "z": 83.28
+        },
+        {
+          "x": -283.3,
+          "z": 84.7
+        },
+        {
+          "x": -281.89,
+          "z": 86.11
+        },
+        {
+          "x": -280.43,
+          "z": 87.48
+        },
+        {
+          "x": -278.96,
+          "z": 88.83
+        },
+        {
+          "x": -277.49,
+          "z": 90.19
+        },
+        {
+          "x": -276.02,
+          "z": 91.54
+        },
+        {
+          "x": -274.55,
+          "z": 92.9
+        },
+        {
+          "x": -273.08,
+          "z": 94.25
+        },
+        {
+          "x": -271.6,
+          "z": 95.61
+        },
+        {
+          "x": -270.11,
+          "z": 96.94
+        },
+        {
+          "x": -268.56,
+          "z": 98.2
+        },
+        {
+          "x": -267.01,
+          "z": 99.47
+        },
+        {
+          "x": -265.46,
+          "z": 100.73
+        },
+        {
+          "x": -263.91,
+          "z": 102.0
+        },
+        {
+          "x": -262.37,
+          "z": 103.26
+        },
+        {
+          "x": -260.8,
+          "z": 104.51
+        },
+        {
+          "x": -259.14,
+          "z": 105.62
+        },
+        {
+          "x": -257.47,
+          "z": 106.73
+        },
+        {
+          "x": -255.81,
+          "z": 107.84
+        },
+        {
+          "x": -254.15,
+          "z": 108.94
+        },
+        {
+          "x": -252.42,
+          "z": 109.94
+        },
+        {
+          "x": -250.59,
+          "z": 110.74
+        },
+        {
+          "x": -248.76,
+          "z": 111.55
+        },
+        {
+          "x": -246.92,
+          "z": 112.35
+        },
+        {
+          "x": -245.09,
+          "z": 113.16
+        },
+        {
+          "x": -243.26,
+          "z": 113.96
+        },
+        {
+          "x": -241.43,
+          "z": 114.77
+        },
+        {
+          "x": -239.6,
+          "z": 115.57
+        },
+        {
+          "x": -237.77,
+          "z": 116.38
+        }
+      ]
     }
   ],
   "grounds": [
@@ -44678,6 +45622,44 @@
           "z": -141.0
         }
       ]
+    },
+    {
+      "id": "stable_yard",
+      "kind": "yard",
+      "points": [
+        {
+          "x": -262.0,
+          "z": 104.0
+        },
+        {
+          "x": -246.0,
+          "z": 98.0
+        },
+        {
+          "x": -216.0,
+          "z": 98.0
+        },
+        {
+          "x": -212.0,
+          "z": 112.0
+        },
+        {
+          "x": -216.0,
+          "z": 140.0
+        },
+        {
+          "x": -236.0,
+          "z": 148.0
+        },
+        {
+          "x": -252.0,
+          "z": 142.0
+        },
+        {
+          "x": -262.0,
+          "z": 134.0
+        }
+      ]
     }
   ],
   "industrySites": {
@@ -44702,6 +45684,17 @@
         "p_ironworks_forge",
         "p_ironworks_hut_1",
         "p_ironworks_hut_2"
+      ]
+    },
+    "stable": {
+      "x": -240.0,
+      "z": 125.0,
+      "parcels": [
+        "p_stable_stable",
+        "p_stable_carriage",
+        "p_stable_farrier",
+        "p_stable_paddock",
+        "p_stable_house"
       ]
     }
   },
@@ -46285,14 +47278,14 @@
       "id": "cit_0026",
       "name": "Tomasz Kmieć",
       "gender": "male",
-      "trade": "Cooper",
+      "trade": "Groom",
       "guildRank": "laborer",
       "wealthClass": "plebeian",
       "homeParcelId": "p_279",
       "bedNumber": 1,
-      "workParcelId": "p_176",
+      "workParcelId": "p_stable_stable",
       "walletGroschen": 267,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Curry Comb & Lead Rope",
       "schedule": [
         {
           "hour": 5,
@@ -46303,14 +47296,14 @@
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_176",
+          "location": "p_stable_stable",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_176",
-          "task": "Guild trade / fair business (Cooper)"
+          "location": "p_stable_stable",
+          "task": "Guild trade / fair business (Groom)"
         },
         {
           "hour": 12,
@@ -46321,7 +47314,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_176",
+          "location": "p_stable_stable",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -56356,43 +57349,43 @@
       "id": "cit_0187",
       "name": "Lutko Miecznik",
       "gender": "male",
-      "trade": "Brewer",
+      "trade": "Farrier",
       "guildRank": "master",
       "wealthClass": "artisan",
       "homeParcelId": "p_276",
       "bedNumber": 3,
-      "workParcelId": "p_276",
+      "workParcelId": "p_stable_farrier",
       "walletGroschen": 99,
-      "carriedItem": "Craft Tools of Brewer",
+      "carriedItem": "Shoeing Hammer & Rasp",
       "schedule": [
         {
           "hour": 5,
           "state": "WAKING",
-          "location": "p_276",
+          "location": "p_stable_farrier",
           "task": "Kindling morning peat hearth and praying"
         },
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_276",
+          "location": "p_stable_farrier",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_276",
-          "task": "Guild trade / fair business (Brewer)"
+          "location": "p_stable_farrier",
+          "task": "Guild trade / fair business (Farrier)"
         },
         {
           "hour": 12,
           "state": "EATING",
-          "location": "p_276",
+          "location": "p_stable_farrier",
           "task": "Midday bread, roast pork & small beer"
         },
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_276",
+          "location": "p_stable_farrier",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -56404,13 +57397,13 @@
         {
           "hour": 21,
           "state": "RETURNING",
-          "location": "p_276",
+          "location": "p_stable_farrier",
           "task": "Returning home before gate portcullis drops"
         },
         {
           "hour": 22,
           "state": "SLEEPING",
-          "location": "p_276",
+          "location": "p_stable_farrier",
           "task": "Sound asleep in straw pallet bed"
         }
       ]
@@ -57607,7 +58600,7 @@
       "trade": "Candlemaker",
       "guildRank": "journeyman",
       "wealthClass": "plebeian",
-      "homeParcelId": "p_246",
+      "homeParcelId": "p_stable_house",
       "bedNumber": 1,
       "workParcelId": "p_194",
       "walletGroschen": 50,
@@ -57616,7 +58609,7 @@
         {
           "hour": 5,
           "state": "WAKING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Kindling morning peat hearth and praying"
         },
         {
@@ -57652,13 +58645,13 @@
         {
           "hour": 21,
           "state": "RETURNING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Returning home before gate portcullis drops"
         },
         {
           "hour": 22,
           "state": "SLEEPING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Sound asleep in straw pallet bed"
         }
       ]
@@ -58978,32 +59971,32 @@
       "id": "cit_0229",
       "name": "Dobiesław Ruś",
       "gender": "male",
-      "trade": "Tailor",
+      "trade": "Stablemaster",
       "guildRank": "journeyman",
       "wealthClass": "plebeian",
-      "homeParcelId": "p_246",
+      "homeParcelId": "p_stable_house",
       "bedNumber": 2,
-      "workParcelId": "p_016",
+      "workParcelId": "p_stable_stable",
       "walletGroschen": 191,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Ring of Stable Keys & Ledger",
       "schedule": [
         {
           "hour": 5,
           "state": "WAKING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Kindling morning peat hearth and praying"
         },
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_016",
+          "location": "p_stable_stable",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_016",
-          "task": "Guild trade / fair business (Tailor)"
+          "location": "p_stable_stable",
+          "task": "Guild trade / fair business (Stablemaster)"
         },
         {
           "hour": 12,
@@ -59014,7 +60007,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_016",
+          "location": "p_stable_stable",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -59026,13 +60019,13 @@
         {
           "hour": 21,
           "state": "RETURNING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Returning home before gate portcullis drops"
         },
         {
           "hour": 22,
           "state": "SLEEPING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Sound asleep in straw pallet bed"
         }
       ]
@@ -59041,14 +60034,14 @@
       "id": "cit_0230",
       "name": "Lutko Wójtowicz",
       "gender": "male",
-      "trade": "Wheelwright",
+      "trade": "Groom",
       "guildRank": "journeyman",
       "wealthClass": "plebeian",
       "homeParcelId": "p_259",
       "bedNumber": 2,
-      "workParcelId": "p_319",
+      "workParcelId": "p_stable_stable",
       "walletGroschen": 24,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Curry Comb & Lead Rope",
       "schedule": [
         {
           "hour": 5,
@@ -59059,14 +60052,14 @@
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_319",
+          "location": "p_stable_stable",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_319",
-          "task": "Guild trade / fair business (Wheelwright)"
+          "location": "p_stable_stable",
+          "task": "Guild trade / fair business (Groom)"
         },
         {
           "hour": 12,
@@ -59077,7 +60070,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_319",
+          "location": "p_stable_stable",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -66430,7 +67423,7 @@
       "trade": "Tailor",
       "guildRank": "journeyman",
       "wealthClass": "plebeian",
-      "homeParcelId": "p_246",
+      "homeParcelId": "p_stable_house",
       "bedNumber": 3,
       "workParcelId": "p_168",
       "walletGroschen": 120,
@@ -66439,7 +67432,7 @@
         {
           "hour": 5,
           "state": "WAKING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Kindling morning peat hearth and praying"
         },
         {
@@ -66457,7 +67450,7 @@
         {
           "hour": 12,
           "state": "EATING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Midday bread, roast pork & small beer"
         },
         {
@@ -66475,13 +67468,13 @@
         {
           "hour": 21,
           "state": "RETURNING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Returning home before gate portcullis drops"
         },
         {
           "hour": 22,
           "state": "SLEEPING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Sound asleep in straw pallet bed"
         }
       ]
@@ -85954,7 +86947,7 @@
       "trade": "Potter",
       "guildRank": "laborer",
       "wealthClass": "plebeian",
-      "homeParcelId": "p_246",
+      "homeParcelId": "p_stable_house",
       "bedNumber": 4,
       "workParcelId": "p_236",
       "walletGroschen": 347,
@@ -85963,7 +86956,7 @@
         {
           "hour": 5,
           "state": "WAKING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Kindling morning peat hearth and praying"
         },
         {
@@ -85999,13 +86992,13 @@
         {
           "hour": 21,
           "state": "RETURNING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Returning home before gate portcullis drops"
         },
         {
           "hour": 22,
           "state": "SLEEPING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Sound asleep in straw pallet bed"
         }
       ]
@@ -87262,32 +88255,32 @@
       "id": "cit_0681",
       "name": "Jan Złotnik",
       "gender": "male",
-      "trade": "Carpenter",
+      "trade": "Groom",
       "guildRank": "laborer",
       "wealthClass": "plebeian",
-      "homeParcelId": "p_246",
+      "homeParcelId": "p_stable_house",
       "bedNumber": 5,
-      "workParcelId": "p_071",
+      "workParcelId": "p_stable_stable",
       "walletGroschen": 263,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Curry Comb & Lead Rope",
       "schedule": [
         {
           "hour": 5,
           "state": "WAKING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Kindling morning peat hearth and praying"
         },
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_071",
+          "location": "p_stable_stable",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_071",
-          "task": "Guild trade / fair business (Carpenter)"
+          "location": "p_stable_stable",
+          "task": "Guild trade / fair business (Groom)"
         },
         {
           "hour": 12,
@@ -87298,7 +88291,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_071",
+          "location": "p_stable_stable",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -87310,13 +88303,13 @@
         {
           "hour": 21,
           "state": "RETURNING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Returning home before gate portcullis drops"
         },
         {
           "hour": 22,
           "state": "SLEEPING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Sound asleep in straw pallet bed"
         }
       ]
@@ -93400,43 +94393,43 @@
       "id": "cit_0779",
       "name": "Tomasz Mularz",
       "gender": "male",
-      "trade": "Goldsmith",
+      "trade": "Hay Boy",
       "guildRank": "apprentice",
       "wealthClass": "artisan",
       "homeParcelId": "p_249",
       "bedNumber": 8,
-      "workParcelId": "p_249",
+      "workParcelId": "p_stable_stable",
       "walletGroschen": 68,
-      "carriedItem": "Craft Tools of Goldsmith",
+      "carriedItem": "Hay Fork & Bucket",
       "schedule": [
         {
           "hour": 5,
           "state": "WAKING",
-          "location": "p_249",
+          "location": "p_stable_stable",
           "task": "Kindling morning peat hearth and praying"
         },
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_249",
+          "location": "p_stable_stable",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_249",
-          "task": "Guild trade / fair business (Goldsmith)"
+          "location": "p_stable_stable",
+          "task": "Guild trade / fair business (Hay Boy)"
         },
         {
           "hour": 12,
           "state": "EATING",
-          "location": "p_249",
+          "location": "p_stable_stable",
           "task": "Midday bread, roast pork & small beer"
         },
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_249",
+          "location": "p_stable_stable",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -93448,13 +94441,13 @@
         {
           "hour": 21,
           "state": "RETURNING",
-          "location": "p_249",
+          "location": "p_stable_stable",
           "task": "Returning home before gate portcullis drops"
         },
         {
           "hour": 22,
           "state": "SLEEPING",
-          "location": "p_249",
+          "location": "p_stable_stable",
           "task": "Sound asleep in straw pallet bed"
         }
       ]
@@ -99022,14 +100015,14 @@
       "id": "cit_0869",
       "name": "Biernacik Kramarz",
       "gender": "male",
-      "trade": "Cooper",
+      "trade": "Saddler",
       "guildRank": "journeyman",
       "wealthClass": "plebeian",
       "homeParcelId": "p_281",
       "bedNumber": 3,
-      "workParcelId": "p_211",
+      "workParcelId": "p_stable_stable",
       "walletGroschen": 231,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Awl, Waxed Thread & Half-Moon Knife",
       "schedule": [
         {
           "hour": 5,
@@ -99040,14 +100033,14 @@
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_211",
+          "location": "p_stable_stable",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_211",
-          "task": "Guild trade / fair business (Cooper)"
+          "location": "p_stable_stable",
+          "task": "Guild trade / fair business (Saddler)"
         },
         {
           "hour": 12,
@@ -99058,7 +100051,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_211",
+          "location": "p_stable_stable",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -101782,43 +102775,43 @@
       "id": "cit_0913",
       "name": "Klemens Grodzki",
       "gender": "male",
-      "trade": "Wheelwright",
+      "trade": "Postilion",
       "guildRank": "journeyman",
       "wealthClass": "artisan",
       "homeParcelId": "p_188",
       "bedNumber": 4,
-      "workParcelId": "p_188",
+      "workParcelId": "p_stable_carriage",
       "walletGroschen": 283,
-      "carriedItem": "Craft Tools of Wheelwright",
+      "carriedItem": "Riding Whip & Spurs",
       "schedule": [
         {
           "hour": 5,
           "state": "WAKING",
-          "location": "p_188",
+          "location": "p_stable_carriage",
           "task": "Kindling morning peat hearth and praying"
         },
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_188",
+          "location": "p_stable_carriage",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_188",
-          "task": "Guild trade / fair business (Wheelwright)"
+          "location": "p_stable_carriage",
+          "task": "Guild trade / fair business (Postilion)"
         },
         {
           "hour": 12,
           "state": "EATING",
-          "location": "p_188",
+          "location": "p_stable_carriage",
           "task": "Midday bread, roast pork & small beer"
         },
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_188",
+          "location": "p_stable_carriage",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -101830,13 +102823,13 @@
         {
           "hour": 21,
           "state": "RETURNING",
-          "location": "p_188",
+          "location": "p_stable_carriage",
           "task": "Returning home before gate portcullis drops"
         },
         {
           "hour": 22,
           "state": "SLEEPING",
-          "location": "p_188",
+          "location": "p_stable_carriage",
           "task": "Sound asleep in straw pallet bed"
         }
       ]
@@ -105226,7 +106219,7 @@
       "trade": "Baker",
       "guildRank": "laborer",
       "wealthClass": "plebeian",
-      "homeParcelId": "p_246",
+      "homeParcelId": "p_stable_house",
       "bedNumber": 6,
       "workParcelId": "p_097",
       "walletGroschen": 26,
@@ -105235,7 +106228,7 @@
         {
           "hour": 5,
           "state": "WAKING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Kindling morning peat hearth and praying"
         },
         {
@@ -105271,13 +106264,13 @@
         {
           "hour": 21,
           "state": "RETURNING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Returning home before gate portcullis drops"
         },
         {
           "hour": 22,
           "state": "SLEEPING",
-          "location": "p_246",
+          "location": "p_stable_house",
           "task": "Sound asleep in straw pallet bed"
         }
       ]
@@ -112420,14 +113413,14 @@
       "id": "cit_1083",
       "name": "Michał Kmieć",
       "gender": "male",
-      "trade": "Baker",
+      "trade": "Groom",
       "guildRank": "journeyman",
       "wealthClass": "plebeian",
       "homeParcelId": "p_284",
       "bedNumber": 9,
-      "workParcelId": "p_201",
+      "workParcelId": "p_stable_stable",
       "walletGroschen": 247,
-      "carriedItem": "Burlap Sack & Whetstone",
+      "carriedItem": "Curry Comb & Lead Rope",
       "schedule": [
         {
           "hour": 5,
@@ -112438,14 +113431,14 @@
         {
           "hour": 7,
           "state": "COMMUTING",
-          "location": "p_201",
+          "location": "p_stable_stable",
           "task": "Walking through morning mist to workplace"
         },
         {
           "hour": 9,
           "state": "WORKING",
-          "location": "p_201",
-          "task": "Guild trade / fair business (Baker)"
+          "location": "p_stable_stable",
+          "task": "Guild trade / fair business (Groom)"
         },
         {
           "hour": 12,
@@ -112456,7 +113449,7 @@
         {
           "hour": 14,
           "state": "WORKING",
-          "location": "p_201",
+          "location": "p_stable_stable",
           "task": "Afternoon transactions & guild apprentice training"
         },
         {
@@ -138897,6 +139890,27 @@
       "name": "Bloomery Smelter",
       "sign": "Bellows & Bloom",
       "guild": "Smiths & Armorers Guild",
+      "wealth": "plebeian"
+    },
+    {
+      "id": "groom",
+      "name": "Groom",
+      "sign": "Horse's Head & Curry Comb",
+      "guild": "Carters & Grooms Confraternity",
+      "wealth": "plebeian"
+    },
+    {
+      "id": "farrier",
+      "name": "Farrier",
+      "sign": "Horseshoe & Rasp",
+      "guild": "Smiths & Armorers Guild",
+      "wealth": "artisan"
+    },
+    {
+      "id": "postilion",
+      "name": "Postilion",
+      "sign": "Whip & Riding Boot",
+      "guild": "Carters & Grooms Confraternity",
       "wealth": "plebeian"
     }
   ]

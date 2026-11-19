@@ -581,6 +581,7 @@ export class ThreeIsometricRenderer {
       'stone_quarry',
       'quarry_face', 'quarry_yard', 'masons_lodge', 'crane_wheel', 'crane_rope', 'crane_block',
       'bog_works', 'charcoal_clamp', 'bloomery', 'bloomery_bellows', 'forge_shed', 'smithy_hut',
+      'stable_long', 'carriage_house', 'farrier_forge', 'paddock',
       'logging_camp',
       'river_harbor',
       'gate_krakow',

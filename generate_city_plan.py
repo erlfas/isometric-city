@@ -1147,6 +1147,276 @@ def add_industry(parcels, citizens, vegetation, paths, river):
 
 
 # ------------------------------------------------------------------------------------------
+# The town stable and posting yard (stage 6) on the open meadow north-west of the Kraków
+# suburb: a stable with ten stalls, a carriage house for the travelling wagon, a farrier's
+# forge, a fenced paddock and the stablemaster's house. Own RNG (STABLE_SEED) and run after
+# the industry, so everything generated before keeps its ids and content. The wagon road to
+# the Kraków Gate is routed after the clash pass (route_stable_road), when no house moves
+# any more. Layout faces the default camera (+x+z): buildings at the back, yard open to it.
+# ------------------------------------------------------------------------------------------
+STABLE_SEED = 1392_22
+
+STABLE_CRAFT = {"id": "groom", "name": "Groom", "sign": "Horse's Head & Curry Comb",
+                "guild": "Carters & Grooms Confraternity", "wealth": "plebeian"}
+FARRIER_CRAFT = {"id": "farrier", "name": "Farrier", "sign": "Horseshoe & Rasp", "guild": "Smiths & Armorers Guild",
+                 "wealth": "artisan"}
+POSTILION_CRAFT = {"id": "postilion", "name": "Postilion", "sign": "Whip & Riding Boot",
+                   "guild": "Carters & Grooms Confraternity", "wealth": "plebeian"}
+
+STABLE_SITE = {"x": -240.0, "z": 125.0}
+
+# id suffix, model, x, z, width, depth, orientation, buildingType, name, craft
+# Orientation: the model's front (Blender -Y, doors) faces world (sin, cos) of it.
+STABLE_PARCELS = [
+    # Long axis along the model's Y (ridge), doors in its -X wall: orientation 180 turns the
+    # doors toward world +x (the yard) and the long axis along world z.
+    ("stable", "stable_long", -256.0, 126.0, 9.0, 24.0, 180.0, "stable_long_timber",
+     "Stajnia miejska (Town Stable)", STABLE_CRAFT),
+    ("carriage", "carriage_house", -238.0, 106.0, 10.0, 7.0, 0.0, "stable_carriage_house",
+     "Wozownia (Carriage House)", POSTILION_CRAFT),
+    ("farrier", "farrier_forge", -222.0, 104.0, 6.0, 5.0, 0.0, "stable_farrier_forge",
+     "Kuźnia podkuwacza (Farrier's Forge)", FARRIER_CRAFT),
+    # Paddock east of the yard, its gate toward the yard (-X): local X runs along world +z.
+    ("paddock", "paddock", -193.0, 130.0, 30.0, 44.0, -90.0, "stable_paddock",
+     "Wybieg (Paddock)", STABLE_CRAFT),
+]
+# The stablemaster's house: an ordinary parcel (drawn by building type), left front of the yard.
+STABLE_HOUSE = ("house", -262.0, 148.0, 8.5, 12.0, 90.0, "timber_shingle_cottage_large",
+                "Dom koniuszego (Stablemaster's House)")
+
+STABLE_CLEARING = (-272.0, 92.0, -168.0, 158.0)
+STABLE_GROUNDS = [
+    ("stable_yard", "yard", [(-262, 104), (-246, 98), (-216, 98), (-212, 112), (-216, 140), (-236, 148),
+                             (-252, 142), (-262, 134)]),
+]
+
+# (parcel suffix, trade, count, carried item, guild ranks drawn from)
+STABLE_CREWS = [
+    ("stable", "Stablemaster", 1, "Ring of Stable Keys & Ledger", ("master", "journeyman")),
+    ("stable", "Groom", 4, "Curry Comb & Lead Rope", ("journeyman", "laborer")),
+    ("carriage", "Postilion", 1, "Riding Whip & Spurs", ("journeyman", "laborer")),
+    ("farrier", "Farrier", 1, "Shoeing Hammer & Rasp", ("journeyman", "master")),
+    ("stable", "Saddler", 1, "Awl, Waxed Thread & Half-Moon Knife", ("journeyman", "master")),
+    ("stable", "Hay Boy", 1, "Hay Fork & Bucket", ("apprentice",)),
+]
+# Trades the earlier stages gave out: their men stay where they are.
+_PLACED_TRADES = {"Woodcutter", "Miller", "Quarryman", "Carter", "Stone Mason", "Bog-Ore Digger", "Collier",
+                  "Bloomery Smelter"}
+
+ROAD_WIDTH = 4.0        # painted width of the wagon road (m)
+ROAD_HARD = 1.8         # the road's centreline stays this far from every house footprint
+ROAD_SOFT = 4.0         # ...and prefers this far (the middle of the street)
+
+
+def _stable_parcel(spec, model=True):
+    if model:
+        suffix, model_name, x, z, w, d, rot, btype, name, craft = spec
+    else:
+        suffix, x, z, w, d, rot, btype, name = spec
+        model_name, craft = None, None
+    p = {
+        "id": f"p_stable_{suffix}", "district": "krakow_suburb", "streetName": "Stajnie pod Krakowską",
+        "x": x, "z": z, "width": w, "depth": d, "orientation": rot, "elevation": 0.0,
+        "buildingType": btype, "site": "stable", "isShed": False, "craft": craft,
+        "aging": {"ageYears": 25, "ridgeSag": 0.06, "wallLeanAngle": 0.2, "woodGraying": 0.5,
+                  "mossFoundation": 0.5, "maintenanceState": "kept"},
+        "clutter": [], "scaffolding": False, "wealthClass": "plebeian",
+        "residents": [], "workplaceFor": [], "commodities": {}, "name": name,
+    }
+    if model_name:
+        p["model"] = model_name
+    return p
+
+
+def add_stable(parcels, citizens, vegetation):
+    """Stable site: parcels, the crew (moved like the quarry crews), the stablemaster's
+    household in the house on the site, the cleared meadow and the yard ground. Returns
+    (grounds, site)."""
+    rng = random.Random(STABLE_SEED)
+    by_id = {p["id"]: p for p in parcels}
+    new = {}
+    for spec in STABLE_PARCELS:
+        p = _stable_parcel(spec)
+        new[p["id"]] = p
+    house = _stable_parcel(STABLE_HOUSE, model=False)
+    new[house["id"]] = house
+
+    moved = set()
+    sx, sz = STABLE_SITE["x"], STABLE_SITE["z"]
+    for suffix, trade, count, item, ranks in STABLE_CREWS:
+        dest = new[f"p_stable_{suffix}"]
+        pool = [c for c in citizens if c["id"] not in moved and c["gender"] == "male"
+                and c["guildRank"] in ranks and c["trade"] not in _PLACED_TRADES
+                and c["workParcelId"] in by_id and c["homeParcelId"] in by_id
+                and not by_id[c["workParcelId"]].get("model")]
+        if trade != "Stablemaster":
+            pool = [c for c in pool if c["wealthClass"] in ("plebeian", "artisan")]
+        pool.sort(key=lambda c: math.hypot(by_id[c["homeParcelId"]]["x"] - sx, by_id[c["homeParcelId"]]["z"] - sz))
+        for c in rng.sample(pool[:max(30, count * 3)], count):
+            old = by_id.get(c["workParcelId"])
+            if old and c["id"] in old["workplaceFor"]:
+                old["workplaceFor"].remove(c["id"])
+            dest["workplaceFor"].append(c["id"])
+            for s in c["schedule"]:
+                if s["location"] == c["workParcelId"]:
+                    s["location"] = dest["id"]
+                s["task"] = s["task"].replace(f"({c['trade']})", f"({trade})")
+            c["trade"] = trade
+            c["workParcelId"] = dest["id"]
+            c["carriedItem"] = item
+            moved.add(c["id"])
+
+    # The stablemaster's whole household moves into the house on the site.
+    cit_by_id = {c["id"]: c for c in citizens}
+    head = next(c for c in citizens if c["trade"] == "Stablemaster")
+    old = by_id[head["homeParcelId"]]
+    for k, rid in enumerate(list(old["residents"])):
+        c = cit_by_id[rid]
+        for s in c["schedule"]:
+            if s["location"] == old["id"]:
+                s["location"] = house["id"]
+        c["homeParcelId"] = house["id"]
+        c["bedNumber"] = k + 1
+        house["residents"].append(rid)
+    old["residents"] = []
+
+    parcels.extend(new.values())
+
+    before = len(vegetation)
+    vegetation[:] = [v for v in vegetation if not _in_box(v["x"], v["z"], STABLE_CLEARING)]
+    grounds = [{"id": gid, "kind": kind, "points": [{"x": float(x), "z": float(z)} for x, z in pts]}
+               for gid, kind, pts in STABLE_GROUNDS]
+    site = {**STABLE_SITE, "parcels": list(new)}
+    print(f"[CityPlanGenerator] Stable: {len(new)} parcels, {len(moved)} workers moved, "
+          f"{len(house['residents'])} in the stablemaster's house (from {old['id']}); "
+          f"cleared {before - len(vegetation)} plants.")
+    return grounds, site
+
+
+def _parcel_polys(parcels):
+    """Ground footprint of every parcel as the renderer draws it (world corners)."""
+    out = []
+    for i, p in enumerate(parcels):
+        model, (sx, sz) = parcel_model(p, i)
+        fp = MODEL_FOOTPRINT.get(model)
+        if fp is None:
+            fp, sx, sz = (-p["width"] * 0.5, -p["depth"] * 0.5, p["width"] * 0.5, p["depth"] * 0.5), 1.0, 1.0
+        a = math.radians(p["orientation"])
+        c, s = math.cos(a), math.sin(a)
+        out.append((p["id"], [(p["x"] + lx * sx * c + lz * sz * s, p["z"] - lx * sx * s + lz * sz * c)
+                              for lx, lz in ((fp[0], fp[1]), (fp[2], fp[1]), (fp[2], fp[3]), (fp[0], fp[3]))]))
+    return out
+
+
+def _poly_dist(x, z, poly):
+    """Distance from a point to a convex polygon (0 inside)."""
+    n = len(poly)
+    sign = 0
+    inside = True
+    for k in range(n):
+        (ax, az), (bx, bz) = poly[k], poly[(k + 1) % n]
+        cr = (bx - ax) * (z - az) - (bz - az) * (x - ax)
+        if cr != 0:
+            if sign == 0:
+                sign = 1 if cr > 0 else -1
+            elif (cr > 0) != (sign > 0):
+                inside = False
+    if inside:
+        return 0.0
+    return min(_seg_dist(x, z, *poly[k], *poly[(k + 1) % n]) for k in range(n))
+
+
+def _rdp(pts, tol):
+    """Ramer-Douglas-Peucker simplification."""
+    if len(pts) < 3:
+        return list(pts)
+    (ax, az), (bx, bz) = pts[0], pts[-1]
+    best, idx = -1.0, 0
+    for k in range(1, len(pts) - 1):
+        d = _seg_dist(pts[k][0], pts[k][1], ax, az, bx, bz)
+        if d > best:
+            best, idx = d, k
+    if best <= tol:
+        return [pts[0], pts[-1]]
+    return _rdp(pts[:idx + 1], tol)[:-1] + _rdp(pts[idx:], tol)
+
+
+def route_stable_road(parcels, wall_points, vegetation, paths):
+    """The wagon road from outside the Kraków Gate to the stable yard: A* on a 1 m grid
+    that keeps the centreline ROAD_HARD m from every house and prefers ROAD_SOFT m, outside
+    the wall. It runs west along the suburb's main street and turns north round its west
+    end (the house rows leave no wider gap). Trees on the road are dropped."""
+    import heapq
+    X0, Z0, X1, Z1, C = -345.0, -100.0, -140.0, 160.0, 1.0
+    W, H = int((X1 - X0) / C), int((Z1 - Z0) / C)
+    cost = [0.0] * (W * H)          # extra cost per cell; inf = blocked
+    INF = float("inf")
+    site_ids = {f"p_stable_{s[0]}" for s in STABLE_PARCELS}
+
+    def mark(poly, hard, soft):
+        xs, zs = [c[0] for c in poly], [c[1] for c in poly]
+        for j in range(max(0, int((min(zs) - soft - Z0) / C)), min(H, int((max(zs) + soft - Z0) / C) + 1)):
+            for i in range(max(0, int((min(xs) - soft - X0) / C)), min(W, int((max(xs) + soft - X0) / C) + 1)):
+                d = _poly_dist(X0 + (i + 0.5) * C, Z0 + (j + 0.5) * C, poly)
+                if d < hard:
+                    cost[j * W + i] = INF
+                elif d < soft and cost[j * W + i] != INF:
+                    cost[j * W + i] = max(cost[j * W + i], 2.0 * (soft - d) / (soft - hard))
+    polys = [(pid, poly) for pid, poly in _parcel_polys(parcels) if pid not in site_ids]
+    for _, poly in polys:
+        mark(poly, ROAD_HARD, ROAD_SOFT)
+    n = len(wall_points)
+    for k in range(n):
+        a, b = wall_points[k], wall_points[(k + 1) % n]
+        mark([(a["x"], a["z"]), (b["x"], b["z"])], 6.0, 6.0)
+
+    start, goal = (-170.0, -82.0), (-238.0, 116.0)
+    cell = lambda x, z: (int((x - X0) / C), int((z - Z0) / C))
+    s, g = cell(*start), cell(*goal)
+    dist, prev, pq = {s: 0.0}, {}, [(0.0, 0.0, s)]
+    while pq:
+        _, d, u = heapq.heappop(pq)
+        if u == g:
+            break
+        if d > dist[u]:
+            continue
+        for dx in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                if not dx and not dz:
+                    continue
+                v = (u[0] + dx, u[1] + dz)
+                if not (0 <= v[0] < W and 0 <= v[1] < H):
+                    continue
+                extra = cost[v[1] * W + v[0]]
+                if extra == INF:
+                    continue
+                nd = d + math.hypot(dx, dz) * (1.0 + extra)
+                if nd < dist.get(v, INF):
+                    dist[v], prev[v] = nd, u
+                    heapq.heappush(pq, (nd + math.hypot(g[0] - v[0], g[1] - v[1]), nd, v))
+    if g not in prev:
+        raise SystemExit("[CityPlanGenerator] Stable road: no route from the Kraków Gate to the yard")
+    cells = [g]
+    while cells[-1] != s:
+        cells.append(prev[cells[-1]])
+    cells.reverse()
+    pts = [(-160.0, -80.0)] + [(X0 + (i + 0.5) * C, Z0 + (j + 0.5) * C) for i, j in cells]
+    pts = _rdp(pts, 0.8)
+    pts = _resample(_chaikin(pts, 2), 2.0)
+    clear = min(min((_poly_dist(x, z, poly) for _, poly in polys
+                     if abs(poly[0][0] - x) < 30 and abs(poly[0][1] - z) < 30), default=99.0)
+                for x, z in pts[3:])
+    length = sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(pts, pts[1:]))
+    paths.append({"id": "road_stable", "kind": "road", "width": ROAD_WIDTH,
+                  "points": [{"x": round(x, 2), "z": round(z, 2)} for x, z in pts]})
+    before = len(vegetation)
+    vegetation[:] = [v for v in vegetation
+                     if _polyline_dist(v["x"], v["z"], pts) >= (3.2 if v["type"].startswith("tree_") else 2.4)]
+    print(f"[CityPlanGenerator] Stable road: {length:.0f} m, {len(pts)} points, nearest house {clear:.1f} m from "
+          f"the centreline; dropped {before - len(vegetation)} plants on it.")
+
+
+# ------------------------------------------------------------------------------------------
 # Clash pass (after everything else, no RNG): houses that the parcel generator let into the
 # town wall, its towers and gates, or deep into each other, are pushed clear. The generator's
 # own overlap test (get_obb_corners) rotates by +orientation while the renderer turns a model
@@ -2223,7 +2493,10 @@ def generate_lublin_city_plan():
     assign_woodcutters(parcels, citizens)
     add_watermill(parcels, citizens, mill_site)
     grounds, industry_sites = add_industry(parcels, citizens, vegetation, paths, river)
+    stable_grounds, industry_sites["stable"] = add_stable(parcels, citizens, vegetation)
+    grounds += stable_grounds
     resolve_clashes(parcels, wall_points, civic_landmarks, castle_elements, vegetation)
+    route_stable_road(parcels, wall_points, vegetation, paths)
     print(f"[CityPlanGenerator] Simulated {len(citizens)} persistent citizens across {len(home_parcels)} households.")
 
     # 4. Royal Fair Systemic Events Specification
@@ -2290,7 +2563,8 @@ def generate_lublin_city_plan():
         "houseTypesCatalog": HOUSE_TYPES,
         "shedTypesCatalog": SHED_TYPES,
         "craftsCatalog": CRAFTS + [WOODCUTTER_CRAFT, MILLER_CRAFT, QUARRY_CRAFT, CARTER_CRAFT,
-                                   ORE_DIGGER_CRAFT, COLLIER_CRAFT, SMELTER_CRAFT]
+                                   ORE_DIGGER_CRAFT, COLLIER_CRAFT, SMELTER_CRAFT, STABLE_CRAFT,
+                                   FARRIER_CRAFT, POSTILION_CRAFT]
     }
 
     # Save to public/city_plan.json and root city_plan.json
