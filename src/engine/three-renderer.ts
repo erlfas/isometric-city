@@ -601,6 +601,7 @@ export class ThreeIsometricRenderer {
       'char_woodcutter',
       'char_quarryman',
       'char_collier',
+      'char_groom',
       'char_friar',
       'char_guard',
       'char_merchant',
@@ -980,6 +981,10 @@ export class ThreeIsometricRenderer {
     if (trade.includes('collier')) return 'char_collier';
     if (trade.includes('smelter')) return 'char_blacksmith';
     if (trade.includes('ore digger')) return 'char_farmer';
+    // The stable's crew (stable plan M5; kit.trades dresses the stablemaster, postilion, hay boy).
+    if (trade === 'groom' || trade === 'stablemaster' || trade === 'postilion' || trade === 'hay boy') return 'char_groom';
+    if (trade === 'farrier') return 'char_blacksmith';
+    if (trade === 'saddler') return 'char_tanner';
     if (trade.includes('baker')) return 'char_baker';
     if (trade.includes('tanner') || trade.includes('shoemaker') || trade.includes('furrier') || trade.includes('butcher')) return 'char_tanner';
     if (trade.includes('carpenter') || trade.includes('joiner') || trade.includes('wheelwright')) return 'char_carpenter';
@@ -1017,6 +1022,10 @@ export class ThreeIsometricRenderer {
       c.currentX = bx + rx * off - Math.sin(camYaw) * back;
       c.currentZ = bz + rz * off - Math.cos(camYaw) * back;
       c.isMoving = false;
+      c.hidden = false;                  // (those indoors or riding too)
+      c.pose = undefined;
+      c.activityAnim = undefined;        // the kit's own loop (or its trade's), not the spot's
+      c.y = 0;
       c.state = mode === 'work' ? 'WORKING' : 'IDLE';
     });
     this.crowd.pose(new Set(picked.map((c) => c.id)), camYaw - 0.45, mode === 'walk');

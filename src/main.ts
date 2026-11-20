@@ -14,6 +14,7 @@ import { Birds, installBirdDebug, treeSizes } from './engine/birds';
 import { Wildlife, installWildlifeDebug } from './engine/wildlife';
 import { Horses, installHorseDebug } from './engine/horses';
 import { Wagon, installWagonDebug } from './engine/wagon';
+import { StableCrew } from './engine/stable-crew';
 import { UIController } from './ui/inspector';
 import { IsometricCamera } from './engine/camera';
 import { TouchGestureManager } from './engine/touch';
@@ -77,6 +78,8 @@ async function bootstrap() {
   const horses = new Horses(threeRenderer.scene, plan, buildings);
   // The travelling wagon: the stable to the Kraków Gate and back twice a day (wagon.ts).
   const wagon = new Wagon(threeRenderer.scene, plan, buildings, sim, horses);
+  // The stable's crew: who takes which spot and stall (stable-crew.ts).
+  const stableCrew = new StableCrew(sim, buildings, horses);
   const listener: Listener = {
     x: 0, z: 0, zoom: 40,
     pan: (x, z) => (threeRenderer.worldToScreen(x, 0, z).x / webglCanvas.clientWidth) * 2 - 1,
@@ -513,6 +516,7 @@ async function bootstrap() {
       threeRenderer.snapTo(c?.currentX ?? x, c?.currentZ ?? z, zoom);
       if (c) threeRenderer.followingCitizen = c;
     });
+    (window as unknown as { __lublin: Record<string, unknown> }).__lublin.stable = stableCrew;
   }
   requestAnimationFrame(animate);
   console.log('[Lublin 1392] High-fidelity simulation running with Blender 3D assets & soft shadows!');

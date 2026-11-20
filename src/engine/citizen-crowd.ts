@@ -37,8 +37,16 @@ interface KitMeta {
   slots: Record<string, Palette>;
   anim: { work: string };
   /** Trades drawn with this kit that look different (kit.trades in build_characters.py):
-   *  lower-case trade substring -> forced variant options, slot colour factor (soot). */
-  trades?: Record<string, { pick?: Record<string, string>; dim?: number }>;
+   *  lower-case trade substring -> forced variant options, slot colour factor (soot), the
+   *  work loop played instead of anim.work, and a height factor (the stable's hay boy). */
+  trades?: Record<string, { pick?: Record<string, string>; dim?: number; anim?: string; scale?: number }>;
+}
+
+/** The kit.trades entry for this citizen's trade (first key the trade contains), or null. */
+function tradeLook(meta: KitMeta, c: Citizen) {
+  const trade = (c.trade || '').toLowerCase();
+  for (const [key, t] of Object.entries(meta.trades ?? {})) if (trade.includes(key)) return t;
+  return null;
 }
 
 const PARTS = ['body', 'head', 'arm_L', 'arm_R', 'leg_L', 'leg_R'] as const;
@@ -411,12 +419,10 @@ export class CitizenCrowd {
       }
       if (age > 0.8) colors.hair = colors.hair_old ?? colors.hair;
       // After every random draw, so other citizens' looks do not change.
-      const trade = (c.trade || '').toLowerCase();
-      for (const [key, t] of Object.entries(meta.trades ?? {})) {
-        if (!trade.includes(key)) continue;
+      const t = tradeLook(meta, c);
+      if (t) {
         Object.assign(choices, t.pick);
         if (t.dim) for (const [slot, col] of Object.entries(colors)) if (!/^(skin|hair)/.test(slot)) col.multiplyScalar(t.dim);
-        break;
       }
     }
     const sexScale = female ? 0.94 : 1.0;
@@ -425,7 +431,7 @@ export class CitizenCrowd {
       choices,
       colors,
       girth: (0.94 + rnd() * 0.12) * (female ? 0.93 : 1.0),
-      height: (0.95 + rnd() * 0.1) * sexScale * ageScale,
+      height: (0.95 + rnd() * 0.1) * sexScale * ageScale * ((meta && tradeLook(meta, c)?.scale) || 1),
     };
   }
 
@@ -456,7 +462,8 @@ export class CitizenCrowd {
       if (!arch) return;
       const look = this.look(c, arch.meta, rnd);
       this.looks[i] = { arch, look };
-      this.workAnim[i] = WORK_ANIMS[arch.meta?.anim.work ?? ''] ?? null;
+      const tl = arch.meta ? tradeLook(arch.meta, c) : null;
+      this.workAnim[i] = WORK_ANIMS[tl?.anim ?? arch.meta?.anim.work ?? ''] ?? null;
       arch.pieces.forEach((pc, k) => {
         if (!pc.conds || pc.conds.every(([g, o]) => look.choices[g] === o)) worn[i].push(k);
       });

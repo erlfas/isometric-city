@@ -969,7 +969,8 @@ def furnish(prop, x, y, face=(0, -1), room=0):
         qx, qy = _rot(ax, ay, th)
         _INTERIOR["slots"].append({"k": kind, "pose": pose, "p": _gl((x + ox, y + oy, z + lz)),
                                    "yaw": round(math.atan2(gx, -gy), 4),
-                                   "a": [round(x + qx, 3), round(-(y + qy), 3)], "room": room})
+                                   "a": [round(x + qx, 3), round(-(y + qy), 3)], "room": room,
+                                   "f": prop})
 
 
 def anchor_ladder(x, y, face, lower, upper):
@@ -5180,8 +5181,8 @@ def build_smithy_hut(mats):
 # ten stalls, tack room and hayloft; the carriage house; the farrier's forge; the paddock; and
 # the yard props (hitching post, water trough, hay rack, dung heap; placed from plan.props).
 # Horses stand at anchor_stall points, tied ones at anchor_tie (building-anchors.ts).
-# Spot tags that will name M5 work loops are "work" for now (check_models wants a loop file
-# for any other tag); the comment says which loop.
+# Spot tags name the crew's work loops (src/engine/work-anims/); stable-crew.ts says which
+# trades take them.
 # -------------------------------------------------------------
 STABLE_W, STABLE_D = 9.0, 24.0
 # Where generate_city_plan.py STABLE_PROPS puts the dung heap, in the stable's model space
@@ -5289,11 +5290,11 @@ def build_stable_long(mats):
     furnish("hay", -1.5, -9.6, (0, -1), loft)
     # Yard spots: grooms at the doors, the stablemaster's watch place, the hay boy at the
     # hatch under the hoist, a groom mucking out to the dung heap behind the -Y end.
-    anchor_spot((-hw - 2.0, -6.0), (1.0, 0.0), tag="work")  # M5: groom
-    anchor_spot((-hw - 2.0, 6.0), (1.0, 0.0), tag="work")  # M5: groom
+    anchor_spot((-hw - 2.0, -6.0), (1.0, 0.0), tag="muck")
+    anchor_spot((-hw - 2.0, 6.0), (1.0, 0.0), tag="muck")
     anchor_spot((-hw - 4.5, 0.0), (1.0, 0.0), tag="watch")
-    anchor_spot((0.9, -hd - 1.6), (-1.0, 0.0), tag="work")  # M5: forkhay
-    anchor_spot((STABLE_DUNG[0] - 2.1, STABLE_DUNG[1]), (1.0, 0.0), tag="work")  # M5: muck (at the dung heap)
+    anchor_spot((0.9, -hd - 1.6), (-1.0, 0.0), tag="forkhay")
+    anchor_spot((STABLE_DUNG[0] - 2.1, STABLE_DUNG[1]), (1.0, 0.0), tag="muck")                # at the dung heap
     _ws_finish(bm, mat_list, "Mesh_StableLong", "StableLong", "stable_long")
 
 
@@ -5353,7 +5354,7 @@ def build_carriage_house(mats):
     add_box(bm, 2.4, -hd + 0.6, 0.45, 1.8, 0.35, 0.06, mat_idx=PLANK)
     for sx in (-0.75, 0.75):
         add_box(bm, 2.4 + sx, -hd + 0.6, 0.21, 0.08, 0.3, 0.42, mat_idx=TIMBER)
-    anchor_spot((2.5, py - 0.9), (0.0, 1.0), tag="work")  # M5: harness
+    anchor_spot((2.5, py - 0.9), (0.0, 1.0), tag="harness")
     anchor_spot((-3.5, -hd - 1.2), (0.0, -1.0), tag="watch")
     _ws_finish(bm, mat_list, "Mesh_CarriageHouse", "CarriageHouse", "carriage_house")
 
@@ -5412,9 +5413,9 @@ def build_farrier_forge(mats):
     add_box(bm, tx, ty, 1.47, 0.3, 0.3, 0.06, mat_idx=TIMBER)
     _ws_cyl(bm, (tx + 0.11, ty, 1.15), (tx + 0.15, ty, 1.15), 0.07, segs=8, mat=IRON)
     anchor_tie((tx + 0.15, ty, 1.15), (tx + 1.45, ty), (-1.0, 0.0))
-    anchor_spot((ax, ay - 0.9), (0.0, 1.0), tag="work")  # M5: anvil
+    anchor_spot((ax, ay - 0.9), (0.0, 1.0))                                               # at the anvil
     anchor_spot((fx, fy - 1.0), (0.0, 1.0))
-    anchor_spot((tx + 2.2, ty + 0.7), (0.0, -1.0), tag="work")  # M5: shoe (a hind hoof up)
+    anchor_spot((tx + 2.2, ty + 0.7), (0.0, -1.0), tag="shoe")                             # a hind hoof up
     _ws_finish(bm, mat_list, "Mesh_FarrierForge", "FarrierForge", "farrier_forge")
 
 
@@ -5455,7 +5456,7 @@ def build_paddock(mats):
     rx, ry = hw - 3.0, 0.0
     _hay_rack(bm, rx, ry, TIMBER, PLANK, STRAW)
     anchor_spot((0.0, -hd - 1.6), (0.0, 1.0), tag="watch")      # at the gate
-    anchor_spot((rx - 1.4, ry), (1.0, 0.0), tag="work")  # M5: forkhay
+    anchor_spot((rx - 1.4, ry), (1.0, 0.0), tag="forkhay")
     _ws_finish(bm, mat_list, "Mesh_Paddock", "Paddock", "paddock")
 
 

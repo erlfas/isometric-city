@@ -199,6 +199,9 @@ export class SimulationEngine {
   public plan: CityPlan;
   /** Moving vehicles, set by their owner each frame (wagon.ts). */
   public vehicles: Vehicle[] = [];
+  /** Who may take a work spot or a work slot in building b (stable-crew.ts: the stable's
+   *  loops are its crew's, a stall's slot only while its horse stands in it). Unset: anyone. */
+  public workFits: ((c: Citizen, b: Building, s: Spot | Slot) => boolean) | null = null;
   public spatialGrid: SpatialHashGrid;
   readonly nav: NavGrid;
   readonly buildings: BuildingIndex;
@@ -660,8 +663,9 @@ export class SimulationEngine {
       const [x, z] = loc.slice(3).split(',').map(Number);
       return point(x, z, 0);
     }
-    const takeSpot = (spots: Spot[], tags: string[]): Spot | null => {
-      const free = spots.filter((s) => tags.includes(s.tag) && s.taken === 0);
+    const takeSpot = (spots: Spot[], tags: string[], in_: Building | null = null): Spot | null => {
+      const fits = in_ && this.workFits;
+      const free = spots.filter((s) => tags.includes(s.tag) && s.taken === 0 && (!fits || fits(ag.c, in_, s)));
       if (!free.length) return null;
       const s = free[Math.floor(ag.rng() * free.length)];
       s.taken++;
@@ -686,14 +690,14 @@ export class SimulationEngine {
     if (b) {
       if (working && b.spots.length) {
         // Visible work for about two in three workers when the building has free spots.
-        const s = ag.rng() < 0.67 || !b.doors.length ? takeSpot(b.spots, ['work', 'guard', 'sell']) : null;
+        const s = ag.rng() < 0.67 || !b.doors.length ? takeSpot(b.spots, ['work', 'guard', 'sell'], b) : null;
         if (s) return { b, door: null, spot: s, x: s.x, z: s.z, wander: 0, cx: s.x, cz: s.z };
       }
       if (b.doors.length) {
         const door = from === b && ag.inDoor ? ag.inDoor : b.doors[Math.floor(ag.rng() * b.doors.length)];
         return { b, door, spot: null, x: door.ax, z: door.az, wander: 0, cx: door.ax, cz: door.az };
       }
-      const s = takeSpot(b.spots, ['stand', 'work', 'guard', 'sell']);
+      const s = takeSpot(b.spots, ['stand', 'work', 'guard', 'sell'], b);
       if (s) return { b, door: null, spot: s, x: s.x, z: s.z, wander: 0, cx: s.x, cz: s.z };
       return point(b.x, b.z, 6);
     }
@@ -750,12 +754,14 @@ export class SimulationEngine {
     const want: Slot['kind'][] = st === 'SLEEPING' ? ['sleep']
       : st === 'WORKING' || st === 'PATROLLING' ? ['work', 'seat']
       : st === 'WAKING' ? ['hearth', 'seat'] : ['seat', 'hearth'];
+    const fits = this.workFits;
+    const ok = (s: Slot) => !s.taken && (s.kind !== 'work' || !fits || fits(ag.c, b, s));
     for (const kind of want) {
       let free = 0;
-      for (const s of slots) if (s.kind === kind && !s.taken) free++;
+      for (const s of slots) if (s.kind === kind && ok(s)) free++;
       if (!free) continue;
       let k = Math.floor(ag.rng() * free);
-      for (const s of slots) if (s.kind === kind && !s.taken && k-- === 0) return s;
+      for (const s of slots) if (s.kind === kind && ok(s) && k-- === 0) return s;
     }
     return null;
   }

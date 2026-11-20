@@ -27,7 +27,9 @@ def build(kit):
                  segs=8, mat_idx=lt)
 
     # Bloomery smelters (ironworks) wear this kit too: sooty, no hammer, long bloom tongs.
-    kit.trades = {"smelter": {"pick": {"hammer": "no", "tongs": "long"}, "dim": 0.68}}
+    # The stable's farrier: leather apron, bare head, no tongs (stable plan M5).
+    kit.trades = {"smelter": {"pick": {"hammer": "no", "tongs": "long"}, "dim": 0.68},
+                  "farrier": {"pick": {"hat": "bare", "tongs": "no", "apron": "bib"}}}
 
     # Cross-peen hammer in the right fist: handle forward-down, head across its end.
     kit.option("hammer", "yes", 1, 1)

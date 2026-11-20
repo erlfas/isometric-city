@@ -3,6 +3,8 @@
 def build(kit):
     """Tanner: high greased boots, oiled leather apron, curved fleshing knife."""
     kit.anim = {"work": "scrape"}
+    # The stable's saddler (stable plan M5) wears this kit and stitches leather.
+    kit.trades = {"saddler": {"anim": "stitch"}}
     kit_body(kit, tunic_slot="tunic", hose_slot="hose", shoe="boots", sleeves=("full", "rolled"), sleeve_w=(1, 3))
     kit.slot("tunic", [["#5f6346", 3, "pab"], ["#6b5d45", 3, "pab"], ["#555a4a", 2, "pab"]] + UNDYED + DYED[:3])
     kit.slot("hose", HOSE)

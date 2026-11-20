@@ -20,7 +20,8 @@ Checks:
   7. Work loops: every kit.anim name is a file in src/engine/work-anims/ (or "idle"), each file
      is used by exactly one kit (parallel kit authors overwrite a shared name). A work spot
      tag other than work/stand/sell/guard (anchor_spot in build_assets.py) names a loop file
-     too; the sim plays it there whatever the kit.
+     too; the sim plays it there whatever the kit. So does a kit.trades "anim" (a trade's own
+     loop, e.g. the saddler's stitch); spot and trade loops may be shared.
   8. Vegetation and wildlife triangle budgets (MODEL_TRIS, by model name prefix); wildlife parts
      have pivots (check_animal).
 """
@@ -168,6 +169,11 @@ def check_kit(name, gltf):
     for anim in kit.get("anim", {}).values():
         if anim != "idle":
             anim_users.setdefault(anim, []).append(name)
+    # kit.trades may give a trade its own loop (the saddler stitches); a loop either a trade
+    # or a spot tag plays may be shared, so these only count as uses.
+    for t in kit.get("trades", {}).values():
+        if t.get("anim") and t["anim"] not in anim_users:
+            spot_anims.setdefault(t["anim"], set()).add(name)
     if set(kit.get("pivots", {})) != KIT_PARTS:
         fail(f"{name}: kit pivots {sorted(kit.get('pivots', {}))} != {sorted(KIT_PARTS)}")
     mats = gltf.get("materials", [])

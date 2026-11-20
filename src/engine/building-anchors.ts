@@ -73,6 +73,8 @@ export interface Slot {
   /** World point to walk to before taking the slot. */
   ax: number; az: number;
   room: number;
+  /** The furniture it belongs to (PROPS name: bed, stall, workbench ...). */
+  prop?: string;
   taken: number;
 }
 /** Ladder from room `from` up to `to` (world points): foot -> top (same x z) -> off. */
@@ -117,7 +119,7 @@ interface RawAnchors {
   ties?: { p: number[]; a: number[]; yaw: number }[];
   rooms?: Room[];
   furniture?: { prop: string; p: number[]; yaw: number; room: number; s: number[]; h?: number }[];
-  slots?: { k: Slot['kind']; pose: Slot['pose']; p: number[]; yaw: number; a: number[]; room: number }[];
+  slots?: { k: Slot['kind']; pose: Slot['pose']; p: number[]; yaw: number; a: number[]; room: number; f?: string }[];
   ladders?: { from: number; to: number; foot: number[]; top: number[]; off: number[] }[];
   chimneys?: number[][];
 }
@@ -224,7 +226,7 @@ export class BuildingIndex {
           const [fx, fz] = dir(Math.sin(s.yaw), Math.cos(s.yaw));
           const a = w([s.a[0], s.p[1], s.a[1]]);
           return { kind: s.k, pose: s.pose, x: v.x, y: v.y, z: v.z, yaw: Math.atan2(fx, fz), ax: a.x, az: a.z,
-            room: s.room, taken: 0 };
+            room: s.room, prop: s.f, taken: 0 };
         });
         b.interior = {
           rooms: raw.rooms,
