@@ -535,6 +535,29 @@ export class Wagon {
     this.carryRiders(vNow * (1 - this.slow));
   }
 
+  /** A run on the road now (its team in harness). */
+  get running(): boolean { return this.run >= 0; }
+
+  /** The run leaving within `ahead` hours of `hour`: its team and departure hour (stable-crew.ts
+   *  leads the pair to the pole beforehand); null while a run is on. */
+  nextRun(hour: number, ahead: number): { names: string[]; dep: number } | null {
+    if (!this.track || !this.enabled || this.run >= 0) return null;
+    for (let k = 0; k < DEPART.length; k++) {
+      const dt = (((DEPART[k] - hour) % 24) + 24) % 24;
+      if (dt < ahead) return { names: TEAMS[k % 2], dep: DEPART[k] };
+    }
+    return null;
+  }
+
+  /** Where the team stands put to the pole in the stall (run time 0): near horse, off horse. */
+  teamPlaces(): { x: number; z: number; yaw: number }[] {
+    const tr = this.track;
+    if (!tr) return [];
+    const px = tr.px[0], pz = tr.pz[0], yaw = Math.atan2(px - tr.fx[0], pz - tr.fz[0]);
+    const ux = Math.sin(yaw), uz = Math.cos(yaw);
+    return [TEAM_SIDE, -TEAM_SIDE].map((side) => ({ x: px - ux * TEAM_BACK + uz * side, z: pz - uz * TEAM_BACK - ux * side, yaw }));
+  }
+
   private startRun(run: number, tau: number): void {
     const tr = this.track!;
     this.stat.runs++;

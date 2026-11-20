@@ -79,7 +79,7 @@ async function bootstrap() {
   // The travelling wagon: the stable to the Kraków Gate and back twice a day (wagon.ts).
   const wagon = new Wagon(threeRenderer.scene, plan, buildings, sim, horses);
   // The stable's crew: who takes which spot and stall (stable-crew.ts).
-  const stableCrew = new StableCrew(sim, buildings, horses);
+  const stableCrew = new StableCrew(sim, buildings, horses, wagon);
   const listener: Listener = {
     x: 0, z: 0, zoom: 40,
     pan: (x, z) => (threeRenderer.worldToScreen(x, 0, z).x / webglCanvas.clientWidth) * 2 - 1,
@@ -402,6 +402,8 @@ async function bootstrap() {
     birds.update(sim.isPaused ? 0 : dt, sim.simTimeHours, threeRenderer.camera, view, threeRenderer.zoom);
     wildlife.update(sim.simTimeHours, sim.citizens, view);
     horses.update(sim.simTimeHours, view);
+    // Grooms leading horses to and from the paddock, the wagon and the farrier.
+    stableCrew.update(sim.simTimeHours, dt);
     threeRenderer.updateSpeechBubbles(dt);
     listener.x = threeRenderer.targetPos.x;
     listener.z = threeRenderer.targetPos.z;

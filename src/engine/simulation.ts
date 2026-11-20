@@ -1787,14 +1787,15 @@ export class SimulationEngine {
     this.life.minds[i].lastTick = this.clock;
   }
 
-  /** Call citizen i to walk to (x, z) for the wagon (activity 'travel', there by clock `due`); it
+  /** Call citizen i to walk to (x, z) for the wagon or a groom's errand (activity 'travel', shown as
+   *  `state`, there by clock `due`); it
    *  waits there until carried or unsummoned. False if it is carried or called already. */
-  public summon(i: number, x: number, z: number, due: number, task: string): boolean {
+  public summon(i: number, x: number, z: number, due: number, task: string, state = 'TRAVELING'): boolean {
     const ag = this.agents[i];
     if (ag.phase === Phase.CARRIED || this.summoned.has(i)) return false;
     this.endChat(i);
     if (ag.act && (ag.act.kind === 'bread' || ag.act.kind === 'water') && !this.life.minds[i].carrying) this.life.release(i);
-    const act: Activity = { kind: 'travel', state: 'TRAVELING', location: `pt:${x.toFixed(1)},${z.toFixed(1)}`, task,
+    const act: Activity = { kind: 'travel', state, location: `pt:${x.toFixed(1)},${z.toFixed(1)}`, task,
       until: this.clock + 6, due, fixed: true };
     this.summoned.add(i);
     ag.act = act;
@@ -1806,6 +1807,15 @@ export class SimulationEngine {
   public unsummon(i: number): void {
     if (!this.summoned.delete(i)) return;
     const ag = this.agents[i];
+    ag.act = null;
+    ag.nextThink = this.clock;
+  }
+
+  /** Drop the current activity and plan afresh now (stable-crew.ts: the farrier, when a horse
+   *  is tied at his post). */
+  public replan(i: number): void {
+    const ag = this.agents[i];
+    if (ag.phase === Phase.CARRIED || this.summoned.has(i)) return;
     ag.act = null;
     ag.nextThink = this.clock;
   }

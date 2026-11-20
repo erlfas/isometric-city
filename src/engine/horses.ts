@@ -22,15 +22,19 @@ import { BlobShadows, commitRig, makeRigMesh, writeCoat, writePose, type RigDef,
  * Standing: weight on three legs with a hind hoof tipped, tail swishes, ears flick, dozing
  * (head low, ears slack), grazing and eating (jaw chewing) and drinking.
  *
- * Their day (until the grooms lead them, stable M5): from 7:00 to 19:30 in the paddock (graze,
- * wander, drink at the trough, eat at the hay rack, now and then a trot or a canter); the rest of
- * the day in their stalls (Building.stalls of stable_long), dozing and eating. Changing place
- * happens at once, for now. Motion runs on real time, like the wildlife.
+ * Their day: in the paddock (graze, wander, drink at the trough, eat at the hay rack, now and
+ * then a trot or a canter) or in their stalls (Building.stalls of stable_long), dozing and
+ * eating. The grooms move them (stable-crew.ts sets `managed`): out from about 5:40, in from
+ * 19:20, the wagon's pair to the pole and back, a palfrey to the farrier's post. Unmanaged (no
+ * crew), or on a clock jump, they are put in their place for the hour: the paddock from 7:00 to
+ * 19:30 (PADDOCK_DAY), the stalls otherwise. Motion runs on real time, like the wildlife.
  *
- * In harness (the travelling wagon, wagon.ts): hitch() takes a pair out of their day, drive()
- * places them every frame with a signed speed (backing = the walk run backwards) and the
- * travel speed-up (gait from v / travel, stride quickened by its square root), unhitch() puts
- * them back for the hour.
+ * Held (Horse.holder), their own day paused and drive() placing them every frame with a signed
+ * speed (backing = the walk run backwards) and the travel speed-up (gait from v / travel, stride
+ * quickened by its square root): 'wagon' in harness (hitch / unhitch, wagon.ts), 'lead' on a
+ * groom's rope (take), 'tied' standing (tie: at the pole before a run and after it, at the
+ * farrier's post). turnOut() lets one loose in the paddock, stable() puts one in its stall,
+ * call() brings a loose one to the gate.
  *
  * Debug: __lublin.horses (.stats(), .lineup), hash `horses=lineup[,walk|trot|canter|graze|
  * drink|eat|doze|stand[,zoom]]` (six horses side by side off the paddock gate, every tack),
@@ -133,8 +137,10 @@ export interface Horse {
   earT: [number, number]; swishT: number; stepT: number;
   /** Debug lineup: run in place at this gait / act. */
   fixed: { gait: GaitName; act: Act } | null;
-  /** In harness (the wagon, wagon.ts): placed by drive() every frame, its own day paused. */
+  /** Out of its own day: in harness (the wagon, wagon.ts), on a groom's lead, or tied up
+   *  (stable-crew.ts); placed by drive() every frame while held, its own day paused. */
   held: boolean;
+  holder: 'wagon' | 'lead' | 'tied' | null;
   /** Shown speed-up of its travel (the wagon goes at TRAVEL_SCALE like the citizens): the gait
    *  is chosen from v / travel and the stride quickened by its square root. */
   travel: number;
@@ -188,6 +194,11 @@ export class Horses {
   /** Debug lineup (horses=lineup): every kind and tack side by side here. */
   lineup: { x: number; z: number; gait: GaitName; act: Act } | null = null;
   enabled = true;
+  /** The grooms move the horses (stable-crew.ts): no change of place at 7:00 and 19:30, and
+   *  a team out of harness stays tied where it stands. */
+  managed = false;
+  /** Clock jumps seen (every horse re-placed for the hour; the crew drops its jobs). */
+  jumps = 0;
 
   private rnd = mulberry32(1392 * 11);
   private draws = new Map<Kind, Draw>();
@@ -224,7 +235,7 @@ export class Horses {
         go: false, tx: 0, tz: 0, goV: 0, tyaw: null, then: 'graze',
         stall: stalls[i] ?? null, inStall: false, rest: -1, restW: 0,
         earT: [this.rnd() * 4, this.rnd() * 4], swishT: this.rnd() * 5, stepT: 0, fixed: null,
-        held: false, travel: 1,
+        held: false, holder: null, travel: 1,
       };
       if (h.stall) h.stall.taken++;
       this.horses.push(h);
@@ -269,7 +280,14 @@ export class Horses {
 
   private placeAll(hour: number): void {
     const night = !inWin(hour, PADDOCK_DAY);
-    for (const h of this.horses) this.place(h, night);
+    for (const h of this.horses) {
+      if (h.holder === 'lead' || h.holder === 'tied') this.letGo(h);
+      this.place(h, night);
+    }
+  }
+
+  private letGo(h: Horse): void {
+    h.held = false; h.holder = null; h.travel = 1; h.v = 0; h.go = false;
   }
 
   private place(h: Horse, night: boolean): void {
@@ -308,8 +326,8 @@ export class Horses {
     this.lastHour = hour;
     if (this.lineup) this.poseLineup(dt);
     else {
-      if (jump) this.placeAll(hour);
-      else if (night !== wasNight) for (const h of this.horses) { h.fixed = null; this.place(h, night); }
+      if (jump) { this.placeAll(hour); this.jumps++; }
+      else if (night !== wasNight && !this.managed) for (const h of this.horses) { h.fixed = null; this.place(h, night); }
       for (const h of this.horses) {
         if (!h.held) {
           if (h.inStall) this.stallLife(h, dt);
@@ -580,10 +598,15 @@ export class Horses {
     const team = names.map((n) => this.horses.find((h) => h.name === n));
     if (team.some((h) => !h)) return null;
     for (const h of team as Horse[]) {
-      h.held = true; h.go = false; h.inStall = false; h.tyaw = null; h.fixed = null;
-      h.act = 'stand'; h.rest = -1; h.tack = TACK_DRAUGHT;
+      this.hold(h, 'wagon', TACK_DRAUGHT);
+      h.inStall = false;
     }
     return team as Horse[];
+  }
+
+  private hold(h: Horse, holder: Horse['holder'], tack: number): void {
+    h.held = true; h.holder = holder; h.go = false; h.tyaw = null; h.fixed = null;
+    h.act = 'stand'; h.rest = -1; h.tack = tack;
   }
 
   /** A horse in harness this frame: where, heading, signed speed (m/s shown; < 0 backing) and travel scale. */
@@ -594,9 +617,57 @@ export class Horses {
   /** Out of harness, back to its day (put in its stall or the paddock for the hour). */
   unhitch(team: Horse[], hour: number): void {
     for (const h of team) {
-      h.held = false; h.travel = 1;
+      if (this.managed) { this.tie(h); continue; }
+      this.letGo(h);
       this.place(h, !inWin(hour, PADDOCK_DAY));
     }
+  }
+
+  // ---------------------------------------------------------------- the grooms (stable-crew.ts)
+
+  /** On a groom's lead (halter and rope): out of its stall or the paddock, placed by drive(). */
+  take(h: Horse): void {
+    this.hold(h, 'lead', TACK_LED);
+    h.inStall = false;
+  }
+
+  /** Tied up where it stands (before the wagon, at the farrier's post): halter only, standing. */
+  tie(h: Horse): void {
+    this.hold(h, 'tied', TACK.halter);
+    h.v = 0; h.travel = 1;
+    h.act = this.rnd() < 0.5 ? 'stand' : 'doze';
+  }
+
+  /** Let loose inside the paddock gate: it wanders off to graze. */
+  turnOut(h: Horse): void {
+    this.letGo(h);
+    h.inStall = false; h.tack = TACK.halter;
+    const p = this.paddockPoint();
+    this.walkTo(h, p.x, p.z, GAIT_SPEED.walk * 0.8, 'graze');
+    h.actT = 30 + this.rnd() * 40;
+  }
+
+  /** Into its stall (the groom took it through the door). */
+  stable(h: Horse): void {
+    this.letGo(h);
+    this.place(h, true);
+  }
+
+  /** A loose horse in the paddock comes to (x, z) (the groom at the gate) and stands. */
+  call(h: Horse, x: number, z: number): void {
+    if (h.held || h.inStall) return;
+    this.walkTo(h, x, z, GAIT_SPEED.walk, 'stand');
+    h.actT = 60;
+  }
+
+  /** Loose in the paddock (not held, not stalled). */
+  loose(h: Horse): boolean { return !h.held && !h.inStall; }
+
+  /** A point inside the paddock gate, `inside` m in, and the yaw facing out of it. */
+  gate(inside: number): { x: number; z: number; yaw: number } | null {
+    const f = this.paddock;
+    if (!f) return null;
+    return { ...f.world(0, -PADDOCK.hd + inside), yaw: f.yaw(0, -1) };
   }
 
   // ---------------------------------------------------------------- debug

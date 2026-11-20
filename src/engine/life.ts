@@ -149,7 +149,8 @@ export class Life {
       // A charcoal burn runs for days: a collier who lives at the ironworks gets up twice a
       // night to check the clamp (the only night work at the industry sites).
       const watch = role === 'worker' && c.trade === 'Collier' && !!parcels.get(c.homeParcelId)?.model;
-      const blocks: Block[] =
+      const stable = role === 'worker' ? this.stableShift(c.trade, hh.wake) : null;
+      const blocks: Block[] = stable ? stable :
         watch ? [{ a: ws, b: 12, kind: 'work' }, { a: le, b: we, kind: 'work' }, { a: 3.1, b: hh.wake, kind: 'home' },
           { a: COMPLINE, b: 23.4, kind: 'home' }, { a: 23.4, b: 23.9, kind: 'work' }, { a: 23.9, b: 2.6, kind: 'home' },
           { a: 2.6, b: 3.1, kind: 'work' }]
@@ -167,6 +168,22 @@ export class Life {
         pietyRate: 0.008 + r() * 0.025, lastTick: 0, paidDay: -1, diary: [],
       });
     }
+  }
+
+  private groomN = 0;
+  /** The stable's crew (stable plan M5): the grooms in two shifts, so someone is with the horses
+   *  from the dawn lead-out (6:00) to the evening lead-in (to 20:30); the hay boy all day; the
+   *  postilion round the wagon runs (wagon.ts DEPART 8:30 and 15:30, back about 12:30 and 19:30). */
+  private stableShift(trade: string, wake: number): Block[] | null {
+    const home: Block = { a: COMPLINE, b: wake, kind: 'home' };
+    if (trade === 'Groom') {
+      return this.groomN++ % 2 === 0
+        ? [{ a: 5.6, b: 12, kind: 'work' }, { a: 13, b: 17, kind: 'work' }, home]
+        : [{ a: 7.5, b: 12.5, kind: 'work' }, { a: 13.5, b: 20.8, kind: 'work' }, home];
+    }
+    if (trade === 'Hay Boy') return [{ a: 5.8, b: 12, kind: 'work' }, { a: 13, b: 20.6, kind: 'work' }, home];
+    if (trade === 'Postilion') return [{ a: 7.8, b: 13, kind: 'work' }, { a: 14.6, b: 20.2, kind: 'work' }, home];
+    return null;
   }
 
   /** Needs and stores as they would plausibly be at this hour (start, or a clock jump). */
