@@ -535,6 +535,11 @@ export class Wagon {
     this.carryRiders(vNow * (1 - this.slow));
   }
 
+  /** Where the wagon is and its speed (m/s shown, < 0 backing) while a run is on; else null (audio). */
+  motion(): { x: number; z: number; v: number } | null {
+    return this.run >= 0 && this.enabled ? this.now : null;
+  }
+
   /** A run on the road now (its team in harness). */
   get running(): boolean { return this.run >= 0; }
 

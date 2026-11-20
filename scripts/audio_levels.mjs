@@ -33,6 +33,12 @@ const SCENES = {
   night: ['__lublin.sim.setTime(23); __lublin.snapTo(-60, -140, 30)', 6],
   // rooks wheeling over the rookery at dusk (birds.ts): their caws on sfx
   rooks: ['__lublin.sim.setTime(18.9); const r = __lublin.birds.focus("rookery"); __lublin.snapTo(r.x, r.z, 40)', 8],
+  // the town stable at night (horses in their stalls), the paddock by day, the wagon trotting
+  // on the road (camera on it), grooms leading the horses out at dawn (hoofbeats)
+  stable: ['__lublin.sim.setTime(23); emitter("stable")', 8],
+  paddock: ['__lublin.sim.setTime(11); emitter("paddock")', 10],
+  wagon: ['__lublin.sim.setTime(9.2); location.hash = "follow=wagon,20"', 8],
+  hooves: ['__lublin.sim.setTime(5.75); __lublin.snapTo(-236, 124, 18)', 16],
   // a door opening and shutting every 0.6 s at the view centre, zoomed in close
   doors: ['__lublin.sim.togglePause(); const d = __lublin.sim.buildings.byModel.get("house_baker")[0].doors[0]; __lublin.snapTo(d.x, d.z, 12); let k = 0; const iv = setInterval(() => { __lublin.audio.door(d.x, d.z, k++ % 2 === 0); if (k > 8) clearInterval(iv); }, 600)', 5],
 };

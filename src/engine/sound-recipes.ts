@@ -544,3 +544,93 @@ export function heraldHorn(ctx: BaseAudioContext, out: AudioNode, t: number, pea
   }
   return at - t;
 }
+
+// ---------------------------------------------------------------- horses and the wagon (stable)
+
+/** One hoof setting down: a dull thud and a scuff on soft earth, a hard clop with a short
+ *  ring on cobbles or boards. */
+export function hoof(ctx: BaseAudioContext, out: AudioNode, t: number, noise: Noise, hard: boolean, vel: number): void {
+  const f = (hard ? 320 : 150) * (0.9 + Math.random() * 0.2);
+  const o = tone(ctx, out, t, 'sine', f, (hard ? 0.35 : 0.5) * vel, 0.002, hard ? 0.09 : 0.14);
+  o.frequency.exponentialRampToValueAtTime(f * 0.6, t + 0.06);
+  noiseBurst(ctx, out, t, noise.brown, 'lowpass', hard ? 900 : 420, 0.7, 0.6 * vel, 0.08, 0.002);
+  if (hard) {
+    noiseBurst(ctx, out, t, noise.white, 'bandpass', 2600, 2.5, 0.25 * vel, 0.04, 0.001);
+    tone(ctx, out, t, 'triangle', 1250 + Math.random() * 300, 0.06 * vel, 0.001, 0.05);
+  } else noiseBurst(ctx, out, t + 0.01, noise.pink, 'bandpass', 1500, 1, 0.12 * vel, 0.06, 0.005);
+}
+
+/** A horse blowing through its nostrils: a rough, fluttering burst of breath. */
+export function snort(ctx: BaseAudioContext, out: AudioNode, t: number, noise: Noise, peak: number): void {
+  const dur = 0.35 + Math.random() * 0.3;
+  const f = filtered(ctx, 'bandpass', 700 + Math.random() * 300, 0.9);
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(peak, t + 0.03);
+  env.gain.setTargetAtTime(0, t + dur * 0.4, dur * 0.2);
+  // nostril flutter: a square LFO on the level
+  const chop = ctx.createGain();
+  chop.gain.value = 0.6;
+  const lfo = ctx.createOscillator();
+  lfo.type = 'square';
+  lfo.frequency.value = 22 + Math.random() * 10;
+  const depth = ctx.createGain();
+  depth.gain.value = 0.4;
+  lfo.connect(depth).connect(chop.gain);
+  noiseSource(ctx, noise.pink, t, dur).connect(f).connect(chop).connect(env).connect(out);
+  lfo.start(t);
+  lfo.stop(t + dur + 0.05);
+}
+
+/** A whinny: a high call breaking into a falling, shaking neigh. */
+export function whinny(ctx: BaseAudioContext, out: AudioNode, t: number, noise: Noise, peak: number): void {
+  const dur = 1.1 + Math.random() * 0.4;
+  const f0 = 620 + Math.random() * 160;
+  const o = ctx.createOscillator();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(f0 * 0.8, t);
+  o.frequency.linearRampToValueAtTime(f0 * 1.15, t + 0.12);
+  o.frequency.exponentialRampToValueAtTime(f0 * 0.45, t + dur);
+  const vib = ctx.createOscillator();
+  vib.frequency.setValueAtTime(9, t);
+  vib.frequency.linearRampToValueAtTime(14, t + dur);
+  const vd = ctx.createGain();
+  vd.gain.setValueAtTime(f0 * 0.02, t);
+  vd.gain.linearRampToValueAtTime(f0 * 0.09, t + dur);
+  vib.connect(vd).connect(o.frequency);
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(peak, t + 0.06);
+  env.gain.setValueAtTime(peak * 0.8, t + dur * 0.5);
+  env.gain.linearRampToValueAtTime(0, t + dur);
+  o.connect(filtered(ctx, 'bandpass', 1500, 0.8)).connect(env).connect(out);
+  o.start(t); vib.start(t);
+  o.stop(t + dur + 0.05); vib.stop(t + dur + 0.05);
+  snort(ctx, out, t + dur - 0.1, noise, peak * 0.5);
+}
+
+/** Straw shifting under a hoof, or a mouthful of hay pulled from the rack. */
+export function straw(ctx: BaseAudioContext, out: AudioNode, t: number, noise: Noise, peak: number): void {
+  const n = 2 + Math.floor(Math.random() * 4);
+  for (let i = 0; i < n; i++) {
+    noiseBurst(ctx, out, t + i * (0.05 + Math.random() * 0.08), noise.white, 'bandpass', 3200 + Math.random() * 2500, 1.5,
+      peak * (0.4 + Math.random() * 0.6), 0.07, 0.01);
+  }
+}
+
+/** Harness jingling: buckles and rings knocking at the horses' step. */
+export function jingle(ctx: BaseAudioContext, out: AudioNode, t: number, peak: number): void {
+  const n = 2 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < n; i++) {
+    const at = t + i * (0.03 + Math.random() * 0.05);
+    const f = 2400 + Math.random() * 2200;
+    tone(ctx, out, at, 'sine', f, peak * (0.5 + Math.random() * 0.5), 0.001, 0.12);
+    tone(ctx, out, at, 'sine', f * 2.7, peak * 0.25, 0.001, 0.06);
+  }
+}
+
+/** The wagon's wheels on the road: a low rumble of grit under iron tyres (dur s). */
+export function wheelRumble(ctx: BaseAudioContext, out: AudioNode, t: number, noise: Noise, dur: number, vel: number): void {
+  noiseBurst(ctx, out, t, noise.brown, 'lowpass', 260, 0.7, 0.5 * vel, dur, dur * 0.3);
+  noiseBurst(ctx, out, t, noise.pink, 'bandpass', 900, 0.8, 0.08 * vel, dur, dur * 0.3);
+}

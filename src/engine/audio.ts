@@ -7,6 +7,9 @@
  *   friary, rung per canonical hour by tollHour() (curfew = 9 slow tenor strokes).
  * - Workshops: forges, coopers, carpenters' saws and looms in working hours, from the
  *   parcels of the city plan (soundOf).
+ * - The stable: the farrier's hammer (a forge), straw and snorts in the stable (day and night),
+ *   the herd in the paddock, hoofbeats as each hoof sets down (horses.ts onHoof), and the
+ *   travelling wagon's wheels, axles and harness while it rolls (setWagon).
  * - Beds and nature: crowd murmur scaled by awake citizens near the view, wind (louder
  *   zoomed out), running water by the riverfront tanneries and along the Bystrzyca, birds by day, crickets and
  *   owls at night, the odd dog.
@@ -32,7 +35,7 @@ export interface Listener {
 }
 
 interface Point { x: number; z: number }
-type EmitterKind = 'forge' | 'cooper' | 'saw' | 'loom' | 'mill' | 'quarry' | 'bloomery' | 'clamp';
+type EmitterKind = 'forge' | 'cooper' | 'saw' | 'loom' | 'mill' | 'quarry' | 'bloomery' | 'clamp' | 'stable' | 'paddock';
 interface Emitter extends Point { kind: EmitterKind; next: number; pitch: number }
 type BellName = 'tenor' | 'treble' | 'friary';
 
@@ -52,6 +55,10 @@ function soundOf(p: Parcel, index: number): EmitterKind | 'water' | null {
         case 'bloomery': return 'bloomery';
         case 'forge_shed': return 'forge';
         case 'charcoal_clamp': return 'clamp';
+        // the town stable: the farrier's hammer is a forge's, the stable and paddock their horses
+        case 'farrier_forge': return 'forge';
+        case 'stable_long': return 'stable';
+        case 'paddock': return 'paddock';
         default: return null;
       }
     case 'brick': case 'half_timber': case 'log': case 'district':
@@ -64,10 +71,10 @@ function soundOf(p: Parcel, index: number): EmitterKind | 'water' | null {
 }
 /** Reference distance (m) per kind: full volume within it, falling off beyond (see reach). */
 const EMITTER_REF: Record<EmitterKind, number> = {
-  forge: 14, cooper: 9, saw: 7, loom: 7, mill: 14, quarry: 26, bloomery: 14, clamp: 9,
+  forge: 14, cooper: 9, saw: 7, loom: 7, mill: 14, quarry: 26, bloomery: 14, clamp: 9, stable: 9, paddock: 16,
 };
 /** Kinds that sound day and night (the rest only in working hours). */
-const ALWAYS: ReadonlySet<EmitterKind> = new Set<EmitterKind>(['mill', 'clamp']);
+const ALWAYS: ReadonlySet<EmitterKind> = new Set<EmitterKind>(['mill', 'clamp', 'stable']);
 const MAX_ACTIVE_EMITTERS = 5;
 const DOOR_RATE = 3;   // door sounds per second, sustained
 const DOOR_BURST = 4;
@@ -187,6 +194,7 @@ export class Soundscape {
       this.sample(listener, hour, citizens, t);
     }
     this.scheduleWorkshops(t, hour);
+    this.scheduleWagon(t);
     this.scheduleCrowd(t);
     this.scheduleNature(t, hour);
   }
@@ -281,6 +289,49 @@ export class Soundscape {
     else if (kind === 'heron') R.heronCroak(ctx, this.spot(r.gain * 0.3, r.pan, 0.35), at, this.noise, 0.5);
     else R.raptorCall(ctx, this.spot(r.gain * 0.14, r.pan, 0.5), at, 0.5, kind === 'kite');
   }
+  /** One hoof setting down (horses.ts onHoof): earth (the stable's road and yard). Rate-limited:
+   *  a herd cantering across the paddock is a drumming, not a hundred overlapping clops. */
+  public hoof(x: number, z: number, vel: number): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+    const t = ctx.currentTime;
+    this.hoofTokens = Math.min(6, this.hoofTokens + (t - this.hoofT) * 16);
+    this.hoofT = t;
+    if (this.hoofTokens < 1) return;
+    const r = this.reach(x, z, 6);
+    if (!r) return;
+    this.hoofTokens--;
+    R.hoof(ctx, this.spot(r.gain * 0.5, r.pan, 0.15), t + 0.01 + Math.random() * 0.02, this.noise, false, vel);
+  }
+  private hoofTokens = 6;
+  private hoofT = 0;
+
+  /** The travelling wagon this frame (wagon.ts motion(); null while it stands): its wheels'
+   *  rumble, the axles' creak and the harness jingling with the horses' step. */
+  public setWagon(m: { x: number; z: number; v: number } | null): void {
+    this.wagonNow = m;
+  }
+  private wagonNow: { x: number; z: number; v: number } | null = null;
+  private nextRumble = 0;
+  private nextJingle = 0;
+
+  private scheduleWagon(t: number): void {
+    const m = this.wagonNow;
+    if (!m || Math.abs(m.v) < 0.3) return;
+    const r = this.reach(m.x, m.z, 12);
+    if (!r) return;
+    const ctx = this.ctx!, sp = Math.min(1, Math.abs(m.v) / 6);
+    if (t >= this.nextRumble) {
+      R.wheelRumble(ctx, this.spot(r.gain * (0.14 + 0.22 * sp), r.pan, 0.04), t + 0.02, this.noise, 0.7, 1);
+      if (Math.random() < 0.25) R.wheelCreak(ctx, this.spot(r.gain * 0.22, r.pan, 0.1), t + rand(0, 0.4), this.noise, rand(80, 110), rand(0.3, 0.6), rand(0.5, 0.9));
+      this.nextRumble = t + 0.45;
+    }
+    if (t >= this.nextJingle) {
+      R.jingle(ctx, this.spot(r.gain * 0.07, r.pan, 0.1), t + 0.02, 0.5);
+      this.nextJingle = t + rand(0.25, 0.5) / (0.5 + sp);
+    }
+  }
+
   private cawTokens = 3;
   private cawT = 0;
   private doorTokens = DOOR_BURST;
@@ -572,6 +623,22 @@ export class Soundscape {
         for (let i = 0; i < n; i++) R.bellowsBreath(ctx, out, t + i * 0.6, nz, 0.55, rand(0.6, 1));
         R.fireRoar(ctx, out, t, nz, n * 0.6, 0.8);
         return n * 0.6 - 0.15;
+      }
+      case 'stable': {
+        // Horses in their stalls: straw shifting, a hoof on the boards, now and then a snort.
+        const n = 1 + Math.floor(Math.random() * 3);
+        let at = t;
+        for (let i = 0; i < n; i++) { R.straw(ctx, out, at, nz, rand(0.1, 0.2)); at += rand(0.3, 1.2); }
+        if (Math.random() < 0.35) R.hoof(ctx, out, t + rand(0, 1.5), nz, true, rand(0.4, 0.7));
+        if (Math.random() < 0.2) R.snort(ctx, out, t + rand(0, 2), nz, 0.25);
+        return at - t + rand(1, 3);
+      }
+      case 'paddock': {
+        // The herd out at grass: a snort, rarely a whinny across the field.
+        if (Math.random() < 0.08) R.whinny(ctx, out, t, nz, 0.22);
+        else if (Math.random() < 0.4) R.snort(ctx, out, t, nz, 0.22);
+        else R.straw(ctx, out, t, nz, 0.05);
+        return rand(2.5, 7);
       }
       case 'clamp': {
         // A smouldering clamp: a soft roar and a crackle, day and night.

@@ -80,6 +80,7 @@ async function bootstrap() {
   const wagon = new Wagon(threeRenderer.scene, plan, buildings, sim, horses);
   // The stable's crew: who takes which spot and stall (stable-crew.ts).
   const stableCrew = new StableCrew(sim, buildings, horses, wagon);
+  horses.onHoof = (x, z, vel) => audio.hoof(x, z, vel);
   const listener: Listener = {
     x: 0, z: 0, zoom: 40,
     pan: (x, z) => (threeRenderer.worldToScreen(x, 0, z).x / webglCanvas.clientWidth) * 2 - 1,
@@ -408,6 +409,7 @@ async function bootstrap() {
     listener.x = threeRenderer.targetPos.x;
     listener.z = threeRenderer.targetPos.z;
     listener.zoom = threeRenderer.zoom;
+    audio.setWagon(wagon.motion());
     audio.update(listener, sim.simTimeHours, sim.citizens);
 
     // 3. Render 3D Scene with PCF soft shadows

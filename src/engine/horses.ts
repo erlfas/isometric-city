@@ -141,6 +141,8 @@ export interface Horse {
    *  (stable-crew.ts); placed by drive() every frame while held, its own day paused. */
   held: boolean;
   holder: 'wagon' | 'lead' | 'tied' | null;
+  /** Legs in their stance (bit k = leg k), for footfalls. */
+  stance: number;
   /** Shown speed-up of its travel (the wagon goes at TRAVEL_SCALE like the citizens): the gait
    *  is chosen from v / travel and the stride quickened by its square root. */
   travel: number;
@@ -199,6 +201,8 @@ export class Horses {
   managed = false;
   /** Clock jumps seen (every horse re-placed for the hour; the crew drops its jobs). */
   jumps = 0;
+  /** A hoof setting down (horses in view, moving): where, and how hard (audio.hoof). */
+  onHoof: ((x: number, z: number, vel: number) => void) | null = null;
 
   private rnd = mulberry32(1392 * 11);
   private draws = new Map<Kind, Draw>();
@@ -235,7 +239,7 @@ export class Horses {
         go: false, tx: 0, tz: 0, goV: 0, tyaw: null, then: 'graze',
         stall: stalls[i] ?? null, inStall: false, rest: -1, restW: 0,
         earT: [this.rnd() * 4, this.rnd() * 4], swishT: this.rnd() * 5, stepT: 0, fixed: null,
-        held: false, holder: null, travel: 1,
+        held: false, holder: null, travel: 1, stance: 0,
       };
       if (h.stall) h.stall.taken++;
       this.horses.push(h);
@@ -484,6 +488,10 @@ export class Horses {
       if (k === h.rest) { const r = h.restW * (1 - moving); up += -0.06 * r; lo += -0.25 * r; ho += 0.75 * r; }
       ch[LEG_U + k] = up; ch[LEG_L + k] = lo; ch[HOOF + k] = ho;
       if (inStance > 0.5) { drop += LEG_LEN * (1 - Math.cos(up)); stanceN++; }
+      // footfall: this leg's hoof just set down
+      const bit = 1 << k, down = inStance > 0.5;
+      if (down && !(h.stance & bit) && moving > 0.3 && this.onHoof && !h.fixed) this.onHoof(h.x, h.z, 0.4 + 0.35 * w[1] + 0.55 * w[2]);
+      h.stance = down ? h.stance | bit : h.stance & ~bit;
     }
     const bodyDrop = stanceN ? drop / stanceN : 0;
 
