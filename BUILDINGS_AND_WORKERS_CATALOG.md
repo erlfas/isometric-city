@@ -318,6 +318,18 @@ All models bind to the unified 2048x2048 texture atlas through standard material
 - **Associated Workers:** `worker_peasant_farmer`.
 - **Blender Generator:** `build_house_timber_log()` $\rightarrow$ `public/models/house_timber_log.glb`.
 
+### Outside the Walls: Posting Yard
+
+#### 23. Town Stable & Posting Yard (*Stajnia miejska*)
+- **ID:** `p_stable_*` parcels (site `stable`).
+- **Location (as built):** the open meadow north-west of the Kraków suburb, yard ~(-240, 125) (`STABLE_SITE` in `generate_city_plan.py`); the wagon road (`road_stable`, 394 m) runs round the suburb's west end to the Kraków Gate. View `cam=-232,122,34&hour=10`.
+- **Buildings:** stable $9\text{m} \times 24\text{m}$ (log walls on a fieldstone footing, shingle roof, two plank doors, loft hatch with hoist), carriage house $10\text{m} \times 7\text{m}$ (open front, harness on pegs), farrier's lean-to forge $6\text{m} \times 5\text{m}$ (hearth, chimney, anvil, tie post), paddock $30\text{m} \times 44\text{m}$ (post-and-rail fence, trough, hay rack), and the stablemaster's house (an ordinary cottage parcel).
+- **Interior:** ten stalls along the back wall facing a 5 m aisle; the tack room with saddle racks and the saddler's bench; a hayloft over the middle, up a ladder.
+- **Yard Props:** hitching posts (also in town), water trough, hay rack and dung heap (`plan.props`).
+- **Animals and Vehicle:** ten horses, six palfreys and four draught horses (`animal_horse`, `animal_horse_draught`, `horses.ts`), and the travelling wagon under a linen hood (`vehicle_wagon`, `wagon.ts`); built by `build_animals.py`.
+- **Associated Workers:** stablemaster, 4 grooms, the hay boy and the postilion (`char_groom`), the farrier (`char_blacksmith`) and the saddler (`char_tanner`). Their work and leading are described in `src/engine/stable-crew.ts`.
+- **Blender Generators:** `build_stable_long()`, `build_carriage_house()`, `build_farrier_forge()`, `build_paddock()` $\rightarrow$ `public/models/stable_long.glb`, `carriage_house.glb`, `farrier_forge.glb`, `paddock.glb`. Findings: KEY_FINDINGS §22.
+
 ---
 
 ## 3. Living Guild Workers & Artisans
@@ -350,6 +362,17 @@ All 18 worker archetypes are modeled at $1.75\text{m}$ scale with distinct 14th-
 | 18 | worker_farmer_scyther      | Straw hat, loose linen| Curved harvest scythe  | Broad sweeping harvest stroke |
 +----+----------------------------+-----------------------+------------------------+-------------------------------+
 ```
+
+**The stable's crew** (as built, `char_groom` kit; KEY_FINDINGS §22):
+
+| Trade | Kit | Look | Work |
+|---|---|---|---|
+| Groom (4) | `char_groom` | short tunic, hood or cap, leather apron; hay fork, curry comb | `muck`, `forkhay`, `brush` in a stall; leads two horses at a time |
+| Hay boy | `char_groom` (0.8 scale) | cap, hay fork | `forkhay`, `muck`; helps lead |
+| Postilion | `char_groom` | riding boots, whip | rides the wagon's near horse; `harness` between runs |
+| Stablemaster | `char_groom` | dyed surcoat, felt hat, keys | `watch` in the yard |
+| Farrier | `char_blacksmith` | leather apron, bare head | `shoe` at the tie post, the anvil otherwise |
+| Saddler | `char_tanner` | oiled apron | `stitch` at the tack-room bench |
 
 ### Detailed Worker Profiles (Examples)
 
